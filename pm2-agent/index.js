@@ -7,8 +7,7 @@ const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS || '30000', 10);
 // Map PM2 process names → dashboard service IDs.
 // Add/remove entries to match your pm2 list output.
 const PM2_MAP = {
-  'redbot':      'redbot',
-  'zeppelin':    'zeppelin',
+  'Bass':        'redbot',
 };
 
 // ─── PM2 ─────────────────────────────────────────────────────────────────────
