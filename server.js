@@ -302,10 +302,14 @@ app.post('/api/services', (req, res) => {
 });
 
 app.put('/api/services/:id', (req, res) => {
-  const d = load();
-  const i = d.services.findIndex(s => s.id === req.params.id);
+  const d    = load();
+  const i    = d.services.findIndex(s => s.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: 'Not found' });
-  d.services[i] = { ...d.services[i], ...req.body };
+  const prev = d.services[i];
+  d.services[i] = { ...prev, ...req.body };
+  if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
+    d.services[i].status = req.body.maintenance ? 'maintenance' : 'unknown';
+  }
   save(d);
   res.json(d.services[i]);
 });
@@ -353,6 +357,15 @@ app.post('/api/services/:id/maintenance', (req, res) => {
   if (!svc) return res.status(404).json({ error: 'Not found' });
   svc.maintenance = !svc.maintenance;
   svc.status      = svc.maintenance ? 'maintenance' : 'unknown';
+  save(d);
+  res.json(svc);
+});
+
+app.post('/api/services/:id/pin', (req, res) => {
+  const d   = load();
+  const svc = d.services.find(s => s.id === req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+  svc.pinnedAt = svc.pinnedAt ? null : Date.now();
   save(d);
   res.json(svc);
 });

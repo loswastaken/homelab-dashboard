@@ -314,6 +314,17 @@
     .card-init  { animation: fadein .3s ease both; }
     .card-flash { animation: flash .9s ease-out forwards; }
 
+    /* ─── Pin + Section headers ─── */
+    .pin-tag { font-size: 9px; color: var(--amber); padding: 2px 6px;
+      border: 1px solid var(--amber-bg); border-radius: 4px; background: var(--amber-bg); }
+    .act-btn.pin-on { color: var(--amber); border-color: var(--amber-bg); background: var(--amber-bg); }
+    .act-btn.pin-on:hover { background: rgba(196,136,74,.25); }
+
+    .section-hdr { grid-column: 1 / -1; font-size: 10px; font-weight: 500;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--tm);
+      padding: 4px 0 8px; display: flex; align-items: center; gap: 8px; }
+    .section-hdr::after { content: ''; flex: 1; height: 1px; background: var(--b0); }
+
     /* ─── Responsive ─── */
     .sidebar-backdrop { display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,.55); z-index: 199; }
@@ -324,7 +335,8 @@
       font-size: 17px; line-height: 1; transition: all .15s; flex-shrink: 0; }
     .menu-btn:hover { color: var(--tp); border-color: var(--b1); }
 
-    .hdr-l { display: flex; align-items: center; gap: 12px; }
+    .hdr-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .hdr-info { min-width: 0; }
 
     @media (max-width: 1024px) {
       .hdr { padding: 20px 24px 16px; }
@@ -339,9 +351,15 @@
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
       .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
-      .hdr { padding: 14px 16px 12px; }
-      .greeting { font-size: 20px; }
-      .hdr-time { font-size: 20px; }
+      .hdr { padding: 14px 16px 12px; align-items: center; }
+      .hdr-l { overflow: hidden; }
+      .greeting { font-size: 18px; }
+      .greet-sub { flex-wrap: nowrap; overflow: hidden; }
+      #summary-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+      .countdown { display: none; }
+      .hdr-r { flex-shrink: 0; text-align: right; }
+      .hdr-date { display: none; }
+      .hdr-time { font-size: 15px; margin-top: 0; }
       .content { padding: 14px 16px 60px; }
       .alert { margin: 10px 16px 0; }
       .stats { grid-template-columns: repeat(2, 1fr); }
@@ -399,7 +417,7 @@
   <div class="hdr">
     <div class="hdr-l">
       <button class="menu-btn" id="menu-btn" onclick="openSidebar()" aria-label="Menu">≡</button>
-      <div>
+      <div class="hdr-info">
         <div class="greeting" id="greeting">Good evening, <b>Los.</b></div>
         <div class="greet-sub">
           <span class="live-dot" id="live-dot"></span>
@@ -506,6 +524,13 @@
           <div class="toggle-desc">Ping URL on each health check cycle</div>
         </div>
         <label class="toggle"><input type="checkbox" id="f-check" checked><span class="tslider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-name">Maintenance Mode</div>
+          <div class="toggle-desc">Pause health checks and suppress alerts</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="f-maint"><span class="tslider"></span></label>
       </div>
     </div>
     <div class="modal-foot">
@@ -716,9 +741,7 @@ function renderCard(s) {
   const resBtn  = (!isMaint && (s.status==='degraded'||s.status==='offline'))
     ? `<button class="act-btn resolve" onclick="resolveService('${s.id}')">✓ Resolve</button>`
     : '';
-  const maintBtn = isMaint
-    ? `<button class="act-btn" style="color:var(--slate);border-color:var(--slate-bg);background:var(--slate-bg)" onclick="toggleMaintenance('${s.id}')">End Maint</button>`
-    : `<button class="act-btn" onclick="toggleMaintenance('${s.id}')">🔧</button>`;
+  const pinBtn  = `<button class="act-btn${s.pinnedAt ? ' pin-on' : ''}" onclick="togglePin('${s.id}')">${s.pinnedAt ? 'Pinned' : 'Pin'}</button>`;
   const checked = (!isMaint && !s.checkEnabled) ? '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>' : '';
   const lastChk = s.lastChecked
     ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
@@ -734,13 +757,14 @@ function renderCard(s) {
           <div class="svc-desc">${s.desc||''}</div>
         </div>
         <div class="card-right">
+          ${s.pinnedAt ? '<span class="pin-tag">pinned</span>' : ''}
           <div class="badge ${s.status||'unknown'}">
             <span class="bdot"></span>${isMaint ? 'maintenance' : (s.status||'unknown')}
           </div>
           <div class="card-actions">
             ${resBtn}
             ${checked}
-            ${maintBtn}
+            ${pinBtn}
             <button class="act-btn" onclick="openEditModal('${s.id}')">✎</button>
             <button class="act-btn del" onclick="deleteSvc('${s.id}','${s.name}')">×</button>
           </div>
@@ -767,7 +791,7 @@ function renderCard(s) {
 
 /* ─── Per-service state snapshot for change detection ─── */
 const prevStates = new Map(); // id → "status|maintenance"
-function svcSnap(s) { return `${s.status}|${!!s.maintenance}`; }
+function svcSnap(s) { return `${s.status}|${!!s.maintenance}|${s.pinnedAt||''}`; }
 
 /* Silent in-place update of the fields that change every poll */
 function patchCard(el, s) {
@@ -793,8 +817,15 @@ function patchCard(el, s) {
   if (rp) rp.textContent = s.response || '—';
 }
 
+function getSortedSvcs(svcs) {
+  const pinned   = svcs.filter(s => s.pinnedAt).sort((a, b) => b.pinnedAt - a.pinnedAt);
+  const unpinned = svcs.filter(s => !s.pinnedAt);
+  return [...pinned, ...unpinned];
+}
+
 function renderAll(fresh = false) {
-  const svcs = filter==='all' ? APP.services : APP.services.filter(s=>s.cat===filter);
+  const raw  = filter==='all' ? APP.services : APP.services.filter(s=>s.cat===filter);
+  const svcs = getSortedSvcs(raw);
   const grid = document.getElementById('grid');
 
   /* ── Full (re)render: first load or filter switch ── */
@@ -806,7 +837,19 @@ function renderAll(fresh = false) {
           <div class="empty-txt">No services in this category yet.<br>Click <b>+ Add Service</b> to get started.</div>
          </div>`;
     } else {
-      grid.innerHTML = svcs.map(renderCard).join('');
+      const pinned   = svcs.filter(s => s.pinnedAt);
+      const unpinned = svcs.filter(s => !s.pinnedAt);
+      const hasBoth  = pinned.length > 0 && unpinned.length > 0;
+      let html = '';
+      if (hasBoth) {
+        html += `<div class="section-hdr" data-section="pinned">Pinned</div>`;
+        html += pinned.map(renderCard).join('');
+        html += `<div class="section-hdr" data-section="all">All Services</div>`;
+        html += unpinned.map(renderCard).join('');
+      } else {
+        html += svcs.map(renderCard).join('');
+      }
+      grid.innerHTML = html;
       grid.querySelectorAll('.card').forEach((el, i) => {
         el.classList.add('card-init');
         el.style.animationDelay = `${i * 40}ms`;
@@ -816,7 +859,11 @@ function renderAll(fresh = false) {
 
   /* ── Smart patch: poll update ── */
   } else {
-    const currentIds = new Set(svcs.map(s => s.id));
+    const expectedOrder = svcs.map(s => s.id).join(',');
+    const renderedOrder = [...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id).join(',');
+    if (expectedOrder !== renderedOrder) { renderAll(true); return; }
+
+    const currentIds  = new Set(svcs.map(s => s.id));
     const renderedIds = new Set([...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id));
 
     /* remove deleted */
@@ -959,6 +1006,7 @@ function openAddModal() {
   document.getElementById('f-port').value  = '';
   document.getElementById('f-hasui').checked = true;
   document.getElementById('f-check').checked = true;
+  document.getElementById('f-maint').checked = false;
   populateCatSelect('');
   document.getElementById('svc-overlay').classList.add('show');
 }
@@ -975,6 +1023,7 @@ function openEditModal(id) {
   document.getElementById('f-port').value  = s.port||'';
   document.getElementById('f-hasui').checked = !!s.hasUI;
   document.getElementById('f-check').checked = !!s.checkEnabled;
+  document.getElementById('f-maint').checked = !!s.maintenance;
   populateCatSelect(s.cat);
   document.getElementById('svc-overlay').classList.add('show');
 }
@@ -999,7 +1048,8 @@ async function submitSvc() {
     url:          document.getElementById('f-url').value.trim(),
     port:         document.getElementById('f-port').value.trim(),
     hasUI:        document.getElementById('f-hasui').checked,
-    checkEnabled: document.getElementById('f-check').checked
+    checkEnabled: document.getElementById('f-check').checked,
+    maintenance:  document.getElementById('f-maint').checked
   };
   if (!body.name || !body.abbr || !body.cat) {
     alert('Name, abbreviation, and category are required.');
@@ -1028,6 +1078,11 @@ async function resolveService(id) {
 
 async function toggleMaintenance(id) {
   await fetch(`/api/services/${id}/maintenance`, { method: 'POST' });
+  doRefreshAll();
+}
+
+async function togglePin(id) {
+  await fetch(`/api/services/${id}/pin`, { method: 'POST' });
   doRefreshAll();
 }
 
