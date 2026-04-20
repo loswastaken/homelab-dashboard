@@ -260,7 +260,10 @@ function scheduleChecks() {
 
 // ─── API: Services ───────────────────────────────────────────────────────────
 
-app.get('/api/services', (_, res) => res.json(load()));
+app.get('/api/services', (_, res) => {
+  const auth = loadAuth() || {};
+  res.json({ ...load(), apiKey: auth.apiKey });
+});
 
 app.post('/api/services', (req, res) => {
   const d   = load();
