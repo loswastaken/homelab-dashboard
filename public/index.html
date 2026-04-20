@@ -147,7 +147,7 @@
     .card { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
       padding: 16px 18px; border-left-width: 3px;
       transition: border-color .2s, background .2s, transform .2s;
-      animation: fadein .3s ease both; position: relative; }
+      position: relative; }
     .card:hover { border-color: var(--b2); background: var(--bg-cardh); transform: translateY(-2px); }
 
     .card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
@@ -304,13 +304,12 @@
     /* countdown */
     .countdown { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--tm); margin-left: 4px; }
 
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
-    @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    .card:nth-child(1){animation-delay:0ms} .card:nth-child(2){animation-delay:50ms}
-    .card:nth-child(3){animation-delay:100ms} .card:nth-child(4){animation-delay:150ms}
-    .card:nth-child(5){animation-delay:200ms} .card:nth-child(6){animation-delay:250ms}
-    .card:nth-child(7){animation-delay:300ms} .card:nth-child(8){animation-delay:350ms}
-    .card:nth-child(9){animation-delay:400ms}
+    @keyframes pulse   { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+    @keyframes fadein  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes flash   { 0%,55% { box-shadow: 0 0 0 1.5px rgba(196,136,74,.65); }
+                         100%   { box-shadow: 0 0 0 1.5px rgba(196,136,74,.0); } }
+    .card-init  { animation: fadein .3s ease both; }
+    .card-flash { animation: flash .9s ease-out forwards; }
   </style>
 </head>
 <body>
@@ -599,7 +598,7 @@ async function fetchData() {
     const res = await fetch('/api/services');
     if (res.status === 401) { window.location.href = '/login'; return; }
     APP = await res.json();
-    renderAll();
+    renderAll(false);
   } catch(e) {
     console.error('Fetch failed', e);
     document.getElementById('summary-txt').textContent = 'Connection error';
@@ -673,7 +672,7 @@ function renderCard(s) {
   const borderColor = isMaint ? 'var(--slate)' : colors.card;
 
   return `
-    <div class="card" style="border-left-color:${borderColor}${isMaint?';opacity:.75':''}">
+    <div class="card" data-id="${s.id}" style="border-left-color:${borderColor}${isMaint?';opacity:.75':''}">
       <div class="card-top">
         <div class="card-meta">
           <div class="svc-icon" style="background:${isMaint?'var(--slate-bg)':colors.icon};color:${isMaint?'var(--slate)':colors.card}">${s.abbr||'?'}</div>
@@ -700,8 +699,8 @@ function renderCard(s) {
       <hr class="divider">
 
       <div class="card-stats">
-        <div class="cs"><div class="cs-lbl">Uptime</div><div class="cs-val">${s.uptime||'—'}</div></div>
-        <div class="cs"><div class="cs-lbl">Response</div><div class="cs-val">${s.response||'—'}</div></div>
+        <div class="cs"><div class="cs-lbl">Uptime</div><div class="cs-val" data-field="uptime">${s.uptime||'—'}</div></div>
+        <div class="cs"><div class="cs-lbl">Response</div><div class="cs-val" data-field="response">${s.response||'—'}</div></div>
         <div class="cs"><div class="cs-lbl">Port</div><div class="cs-val">${s.port||'—'}</div></div>
       </div>
 
@@ -712,18 +711,93 @@ function renderCard(s) {
     </div>`;
 }
 
-function renderAll() {
-  const svcs = filter==='all' ? APP.services : APP.services.filter(s=>s.cat===filter);
+/* ─── Per-service state snapshot for change detection ─── */
+const prevStates = new Map(); // id → "status|maintenance"
+function svcSnap(s) { return `${s.status}|${!!s.maintenance}`; }
 
-  /* grid */
-  if (svcs.length === 0) {
-    document.getElementById('grid').innerHTML =
-      `<div class="empty" style="grid-column:1/-1">
-        <div class="empty-big">◇</div>
-        <div class="empty-txt">No services in this category yet.<br>Click <b>+ Add Service</b> to get started.</div>
-       </div>`;
+/* Silent in-place update of the fields that change every poll */
+function patchCard(el, s) {
+  const hist  = (s.history || []).slice(-30);
+  const isMaint = !!s.maintenance;
+  const lastChk = s.lastChecked
+    ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—';
+
+  const bar = el.querySelector('.uptime-bar');
+  if (bar) bar.innerHTML = hist.length
+    ? hist.map(v=>`<div class="tick ${tickCls(v)}"></div>`).join('')
+    : '<div class="tick unk" style="flex:1"></div>';
+
+  const lbl = el.querySelector('.tick-lbl');
+  if (lbl) lbl.textContent = isMaint
+    ? '🔧 in maintenance · history paused'
+    : `30-day history · checked ${lastChk}`;
+
+  const up = el.querySelector('[data-field="uptime"]');
+  if (up) up.textContent = s.uptime || '—';
+
+  const rp = el.querySelector('[data-field="response"]');
+  if (rp) rp.textContent = s.response || '—';
+}
+
+function renderAll(fresh = false) {
+  const svcs = filter==='all' ? APP.services : APP.services.filter(s=>s.cat===filter);
+  const grid = document.getElementById('grid');
+
+  /* ── Full (re)render: first load or filter switch ── */
+  if (fresh || grid.querySelector('[data-id]') === null) {
+    if (svcs.length === 0) {
+      grid.innerHTML =
+        `<div class="empty" style="grid-column:1/-1">
+          <div class="empty-big">◇</div>
+          <div class="empty-txt">No services in this category yet.<br>Click <b>+ Add Service</b> to get started.</div>
+         </div>`;
+    } else {
+      grid.innerHTML = svcs.map(renderCard).join('');
+      grid.querySelectorAll('.card').forEach((el, i) => {
+        el.classList.add('card-init');
+        el.style.animationDelay = `${i * 40}ms`;
+      });
+    }
+    svcs.forEach(s => prevStates.set(s.id, svcSnap(s)));
+
+  /* ── Smart patch: poll update ── */
   } else {
-    document.getElementById('grid').innerHTML = svcs.map(renderCard).join('');
+    const currentIds = new Set(svcs.map(s => s.id));
+    const renderedIds = new Set([...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id));
+
+    /* remove deleted */
+    for (const id of renderedIds) {
+      if (!currentIds.has(id)) {
+        grid.querySelector(`[data-id="${id}"]`)?.remove();
+        prevStates.delete(id);
+      }
+    }
+
+    for (const s of svcs) {
+      const el   = grid.querySelector(`[data-id="${s.id}"]`);
+      const snap = svcSnap(s);
+      const prev = prevStates.get(s.id);
+
+      if (!el) {
+        /* new service added since last render */
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderCard(s).trim();
+        const newEl = tmp.firstElementChild;
+        newEl.classList.add('card-init');
+        grid.appendChild(newEl);
+      } else if (prev !== snap) {
+        /* status / maintenance changed → replace card + flash */
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderCard(s).trim();
+        const newEl = tmp.firstElementChild;
+        newEl.classList.add('card-flash');
+        el.replaceWith(newEl);
+      } else {
+        /* no state change → silently patch dynamic fields */
+        patchCard(el, s);
+      }
+      prevStates.set(s.id, snap);
+    }
   }
 
   /* stats — exclude maintenance services from problem counts */
@@ -799,7 +873,7 @@ function setFilter(cat, navEl, tabEl) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if (navEl) navEl.classList.add('active');
   else if (cat==='all') document.querySelector('.nav-item')?.classList.add('active');
-  renderAll();
+  renderAll(true);
 }
 
 /* ═══════════════════════════════════════════════════
