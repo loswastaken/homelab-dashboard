@@ -1,6 +1,19 @@
 version: "3.8"
 
 services:
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300       # check every 5 minutes
+      - WATCHTOWER_CLEANUP=true            # remove old images after update
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_SCOPE=homelab           # only watch containers with this label
+    # Remove the SCOPE lines above to watch ALL containers on the NAS (broader)
+
   homelab-dashboard:
     # Pull pre-built image from GitHub Container Registry.
     # Run update.sh on the NAS to pull the latest and redeploy.
@@ -30,6 +43,8 @@ services:
       - /volume2/docker/homelab-dashboard/data:/app/data
 
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.scope=homelab"  # opt this container into watchtower
 
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:55964/api/services"]
