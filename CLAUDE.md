@@ -78,6 +78,7 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/services` | Returns all data + `apiKey` |
+| `GET` | `/api/weather` | Returns current weather for configured location |
 | `POST` | `/api/check-all` | Triggers immediate health check on all services |
 | `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate) |
 | `POST` | `/api/services/:id/check` | Re-check a single service |
@@ -121,6 +122,7 @@ Single-file vanilla JS app. No build step.
 - **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete.
 - **`prevStates` Map:** Tracks `"status|maintenance"` snapshot per service ID for change detection.
 - **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
+- **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location (`weatherLocation`, optional `weatherCountryCode`), unit selection (`weatherUnits`), and enable toggle (`weatherEnabled`). Frontend polls every 10 minutes.
 
 ### Color System
 

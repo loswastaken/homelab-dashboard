@@ -4,7 +4,11 @@
     "siteTitle": "Homelab Dashboard",
     "displayName": "",
     "serverLabel": "",
-    "nasIp": ""
+    "nasIp": "",
+    "weatherEnabled": false,
+    "weatherLocation": "",
+    "weatherCountryCode": "",
+    "weatherUnits": "fahrenheit"
   },
   "categories": [],
   "services": []

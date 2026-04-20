@@ -42,6 +42,10 @@ function defaults() {
       displayName:   '',
       serverLabel:   '',
       nasIp:         '',
+      weatherEnabled: false,
+      weatherLocation: '',
+      weatherCountryCode: '',
+      weatherUnits: 'fahrenheit',
     },
     categories: [],
     services:   []
@@ -189,20 +193,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
-function fetchJSON(url) {
+function fetchJSON(url, opts = {}) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
-    const req = https.request({
+    const isHttps = parsed.protocol === 'https:';
+    const mod = isHttps ? https : http;
+    const req = mod.request({
       hostname: parsed.hostname,
+      port:     parsed.port || (isHttps ? 443 : 80),
       path:     parsed.pathname + (parsed.search || ''),
       method:   'GET',
-      headers:  { 'User-Agent': `${REPO}/1.0`, 'Accept': 'application/vnd.github.v3+json' }
+      headers:  opts.headers || { 'User-Agent': `${REPO}/1.0`, 'Accept': 'application/json' }
     }, res => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        if (res.statusCode >= 400) return reject(new Error(`GitHub returned HTTP ${res.statusCode}`));
-        try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON from GitHub')); }
+        if (res.statusCode >= 400) {
+          return reject(new Error(`Remote API returned HTTP ${res.statusCode}`));
+        }
+        try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON from remote API')); }
       });
     });
     req.on('error', reject);
@@ -247,6 +256,107 @@ function calcUptime(history) {
 
 function pushHistory(hist, tick) {
   return [...(hist || []).slice(-29), tick];
+}
+
+const WEATHER_CODE_MAP = {
+  0: 'Clear',
+  1: 'Mostly clear',
+  2: 'Partly cloudy',
+  3: 'Overcast',
+  45: 'Fog',
+  48: 'Rime fog',
+  51: 'Light drizzle',
+  53: 'Drizzle',
+  55: 'Dense drizzle',
+  56: 'Freezing drizzle',
+  57: 'Dense freezing drizzle',
+  61: 'Light rain',
+  63: 'Rain',
+  65: 'Heavy rain',
+  66: 'Freezing rain',
+  67: 'Heavy freezing rain',
+  71: 'Light snow',
+  73: 'Snow',
+  75: 'Heavy snow',
+  77: 'Snow grains',
+  80: 'Rain showers',
+  81: 'Heavy showers',
+  82: 'Violent showers',
+  85: 'Snow showers',
+  86: 'Heavy snow showers',
+  95: 'Thunderstorm',
+  96: 'Thunderstorm with hail',
+  99: 'Severe hail storm',
+};
+
+const weatherCache = { key: '', expiresAt: 0, data: null };
+
+function normalizeWeatherSettings(raw = {}) {
+  const weatherUnits = raw.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
+  return {
+    weatherEnabled: !!raw.weatherEnabled,
+    weatherLocation: (raw.weatherLocation || '').trim(),
+    weatherCountryCode: (raw.weatherCountryCode || '').trim().toUpperCase(),
+    weatherUnits
+  };
+}
+
+async function getWeatherData(force = false) {
+  const d = load();
+  const w = normalizeWeatherSettings(d.settings);
+  if (!w.weatherEnabled) throw new Error('Weather is disabled');
+  if (!w.weatherLocation) throw new Error('Weather location is required');
+
+  const cacheKey = `${w.weatherLocation}|${w.weatherCountryCode}|${w.weatherUnits}`;
+  if (!force && weatherCache.data && weatherCache.key === cacheKey && weatherCache.expiresAt > Date.now()) {
+    return weatherCache.data;
+  }
+
+  const geoUrl = new URL('https://geocoding-api.open-meteo.com/v1/search');
+  geoUrl.searchParams.set('name', w.weatherLocation);
+  geoUrl.searchParams.set('count', '1');
+  geoUrl.searchParams.set('language', 'en');
+  if (w.weatherCountryCode) geoUrl.searchParams.set('countryCode', w.weatherCountryCode);
+
+  const geo = await fetchJSON(geoUrl.toString(), {
+    headers: { 'User-Agent': `${REPO}/1.0`, 'Accept': 'application/json' }
+  });
+  const place = Array.isArray(geo.results) ? geo.results[0] : null;
+  if (!place) throw new Error('Location not found. Try ZIP, city, or add country code.');
+
+  const forecastUrl = new URL('https://api.open-meteo.com/v1/forecast');
+  forecastUrl.searchParams.set('latitude', String(place.latitude));
+  forecastUrl.searchParams.set('longitude', String(place.longitude));
+  forecastUrl.searchParams.set('timezone', 'auto');
+  forecastUrl.searchParams.set('current', 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,is_day');
+  forecastUrl.searchParams.set('temperature_unit', w.weatherUnits);
+  forecastUrl.searchParams.set('wind_speed_unit', w.weatherUnits === 'celsius' ? 'kmh' : 'mph');
+
+  const forecast = await fetchJSON(forecastUrl.toString(), {
+    headers: { 'User-Agent': `${REPO}/1.0`, 'Accept': 'application/json' }
+  });
+  if (!forecast.current) throw new Error('Weather data unavailable');
+
+  const tempUnit = w.weatherUnits === 'celsius' ? 'C' : 'F';
+  const windUnit = w.weatherUnits === 'celsius' ? 'km/h' : 'mph';
+  const result = {
+    location: [place.name, place.admin1, place.country].filter(Boolean).join(', '),
+    latitude: place.latitude,
+    longitude: place.longitude,
+    temperature: forecast.current.temperature_2m,
+    feelsLike: forecast.current.apparent_temperature,
+    windSpeed: forecast.current.wind_speed_10m,
+    weatherCode: forecast.current.weather_code,
+    weatherText: WEATHER_CODE_MAP[forecast.current.weather_code] || 'Unknown',
+    isDay: !!forecast.current.is_day,
+    observedAt: forecast.current.time,
+    units: { temperature: tempUnit, windSpeed: windUnit }
+  };
+
+  weatherCache.key = cacheKey;
+  weatherCache.data = result;
+  weatherCache.expiresAt = Date.now() + 5 * 60 * 1000;
+  return result;
 }
 
 async function checkAll() {
@@ -299,6 +409,16 @@ function scheduleChecks() {
 app.get('/api/services', (_, res) => {
   const auth = loadAuth() || {};
   res.json({ ...load(), apiKey: auth.apiKey, version: BUILD_SHA.slice(0, 7) });
+});
+
+app.get('/api/weather', async (req, res) => {
+  try {
+    const force = req.query.force === '1';
+    const weather = await getWeatherData(force);
+    res.json(weather);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.post('/api/services', (req, res) => {
@@ -451,7 +571,12 @@ app.get('/api/config', (_, res) => {
 app.put('/api/config', (req, res) => {
   const d = load();
   if (req.body.settings) {
-    d.settings = { ...d.settings, ...req.body.settings };
+    const incoming = { ...req.body.settings };
+    if (incoming.weatherCountryCode !== undefined) incoming.weatherCountryCode = String(incoming.weatherCountryCode || '').trim().toUpperCase();
+    if (incoming.weatherLocation !== undefined) incoming.weatherLocation = String(incoming.weatherLocation || '').trim();
+    if (incoming.weatherUnits !== undefined) incoming.weatherUnits = incoming.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
+    if (incoming.weatherEnabled !== undefined) incoming.weatherEnabled = !!incoming.weatherEnabled;
+    d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
   }
   if (req.body.categories) d.categories = req.body.categories;

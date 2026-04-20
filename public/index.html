@@ -90,6 +90,12 @@
       color: var(--ts); text-transform: uppercase; }
     .hdr-time { font-family: 'JetBrains Mono', monospace; font-size: 26px;
       font-weight: 500; color: var(--tp); margin-top: 2px; letter-spacing: -.02em; }
+    .weather-pill { margin-top: 6px; display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11px; color: var(--ts); padding: 4px 8px; border-radius: 999px;
+      border: 1px solid var(--b0); background: var(--bg-surf); max-width: 320px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
+    .weather-pill strong { color: var(--tp); font-weight: 500; }
+    .weather-pill.err { color: var(--amber); border-color: rgba(196,136,74,.25); background: var(--amber-bg); }
 
     /* ─── Refresh indicator ─── */
     .refresh-ring { width: 10px; height: 10px; border: 1.5px solid var(--ts);
@@ -370,6 +376,7 @@
       .hdr-r { flex-shrink: 0; text-align: right; }
       .hdr-date { display: none; }
       .hdr-time { font-size: 15px; margin-top: 0; }
+      .weather-pill { margin-top: 4px; font-size: 10px; padding: 3px 7px; max-width: 180px; }
       .content { padding: 14px 16px 60px; }
       .alert { margin: 10px 16px 0; }
       .stats { grid-template-columns: repeat(2, 1fr); }
@@ -442,6 +449,7 @@
     <div class="hdr-r">
       <div class="hdr-date" id="hdr-date"></div>
       <div class="hdr-time" id="hdr-time">--:--</div>
+      <div class="weather-pill" id="weather-pill">Weather disabled</div>
     </div>
   </div>
 
@@ -590,6 +598,32 @@
         <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
       </div>
 
+      <div class="modal-sec">Weather</div>
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-name">Enable Weather</div>
+          <div class="toggle-desc">Show live weather in the dashboard header</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="cfg-weather-enabled"><span class="tslider"></span></label>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <div>
+          <label class="form-lbl">Location <span>(ZIP or city)</span></label>
+          <input class="form-inp" id="cfg-weather-location" placeholder="10001 or New York">
+        </div>
+        <div>
+          <label class="form-lbl">Country Code <span>(optional, e.g. US)</span></label>
+          <input class="form-inp" id="cfg-weather-country" placeholder="US" maxlength="2">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-lbl">Units</label>
+        <select class="form-inp" id="cfg-weather-units">
+          <option value="fahrenheit">Fahrenheit (F, mph)</option>
+          <option value="celsius">Celsius (C, km/h)</option>
+        </select>
+      </div>
+
       <div class="modal-sec">Report API Key</div>
       <div class="form-group">
         <label class="form-lbl">Used by external agents (PM2, etc.) via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
@@ -668,6 +702,8 @@
 let APP   = { services: [], categories: [], settings: {} };
 let filter = 'all';
 let pollTimer, countdownTimer, countdownSecs = 60;
+let weatherTimer = null;
+let weatherState = { text: 'Weather disabled', error: false };
 let pendingCats = [];
 let selectedColor = 'blue';
 
@@ -715,6 +751,7 @@ async function fetchData(fresh = false) {
     if (res.status === 401) { window.location.href = '/login'; return; }
     APP = await res.json();
     renderAll(fresh);
+    renderWeatherFromState();
     tick();
   } catch(e) {
     console.error('Fetch failed', e);
@@ -738,6 +775,51 @@ function startPoll() {
 function clearPoll() {
   clearInterval(pollTimer);
   clearInterval(countdownTimer);
+}
+
+function clearWeatherPoll() {
+  clearInterval(weatherTimer);
+}
+
+function renderWeatherFromState() {
+  const pill = document.getElementById('weather-pill');
+  if (!pill) return;
+  pill.textContent = weatherState.text;
+  pill.classList.toggle('err', !!weatherState.error);
+}
+
+async function fetchWeather(force = false) {
+  const s = APP.settings || {};
+  if (!s.weatherEnabled) {
+    weatherState = { text: 'Weather disabled', error: false };
+    renderWeatherFromState();
+    return;
+  }
+  if (!s.weatherLocation) {
+    weatherState = { text: 'Set weather location in Settings', error: true };
+    renderWeatherFromState();
+    return;
+  }
+
+  try {
+    const url = '/api/weather' + (force ? '?force=1' : '');
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Weather unavailable');
+    weatherState = {
+      text: `${data.location} · ${Math.round(data.temperature)} ${data.units.temperature} · ${data.weatherText}`,
+      error: false
+    };
+  } catch (e) {
+    weatherState = { text: `Weather error: ${e.message}`, error: true };
+  }
+  renderWeatherFromState();
+}
+
+function startWeatherPoll() {
+  clearWeatherPoll();
+  fetchWeather();
+  weatherTimer = setInterval(() => fetchWeather(), 10 * 60 * 1000);
 }
 
 function updateCountdown() {
@@ -1206,6 +1288,10 @@ function openSettings() {
   document.getElementById('cfg-serverlabel').value = s.serverLabel   || '';
   document.getElementById('cfg-ip').value          = s.nasIp         || '';
   document.getElementById('cfg-interval').value    = s.checkInterval || 60;
+  document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
+  document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
+  document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
+  document.getElementById('cfg-weather-units').value     = s.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
   document.getElementById('cfg-apikey').value      = APP.apiKey      || '—';
   document.getElementById('cfg-curpw').value       = '';
   document.getElementById('cfg-newuser').value     = '';
@@ -1322,12 +1408,18 @@ async function saveSettings() {
         serverLabel:   document.getElementById('cfg-serverlabel').value.trim(),
         nasIp:         document.getElementById('cfg-ip').value.trim(),
         checkInterval: Math.max(10, isNaN(interval) ? 60 : interval),
+        weatherEnabled: document.getElementById('cfg-weather-enabled').checked,
+        weatherLocation: document.getElementById('cfg-weather-location').value.trim(),
+        weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),
+        weatherUnits: document.getElementById('cfg-weather-units').value === 'celsius' ? 'celsius' : 'fahrenheit',
       },
       categories: pendingCats
     })
   });
   closeCfgModal();
   await doRefreshAll();
+  await fetchWeather(true);
+  startWeatherPoll();
 }
 
 async function changeAccount() {
@@ -1464,7 +1556,10 @@ function closeSidebar() {
 ═══════════════════════════════════════════════════ */
 tick();
 setInterval(tick, 30000);
-fetchData().then(startPoll);
+fetchData().then(() => {
+  startPoll();
+  startWeatherPoll();
+});
 </script>
 </body>
 </html>
