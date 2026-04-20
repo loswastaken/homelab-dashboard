@@ -120,7 +120,7 @@
     .stat-val { font-family: 'JetBrains Mono', monospace; font-size: 30px;
       font-weight: 500; line-height: 1; }
     .stat-sub { font-size: 11px; color: var(--tm); margin-top: 4px; }
-    .cg { color: var(--green); } .ca { color: var(--amber); } .cr { color: var(--red); }
+    .cg { color: var(--green); } .ca { color: var(--amber); } .cr { color: var(--red); } .cm { color: var(--slate); }
 
     /* ─── Filter row ─── */
     .filter-row { display: flex; align-items: center; justify-content: space-between;
@@ -385,6 +385,8 @@
         <div class="stat-val ca" id="s-degraded">—</div><div class="stat-sub">attention needed</div></div>
       <div class="stat"><div class="stat-lbl">Offline</div>
         <div class="stat-val cr" id="s-offline">—</div><div class="stat-sub">unreachable</div></div>
+      <div class="stat"><div class="stat-lbl">Maintenance</div>
+        <div class="stat-val cm" id="s-maint">—</div><div class="stat-sub">paused</div></div>
     </div>
 
     <div class="filter-row">
@@ -729,10 +731,12 @@ function renderAll() {
   const online   = APP.services.filter(s=>s.status==='online').length;
   const degraded = APP.services.filter(s=>!s.maintenance&&s.status==='degraded').length;
   const offline  = APP.services.filter(s=>!s.maintenance&&s.status==='offline').length;
+  const maint    = APP.services.filter(s=>s.maintenance).length;
   document.getElementById('s-total').textContent    = total;
   document.getElementById('s-online').textContent   = online;
   document.getElementById('s-degraded').textContent = degraded;
   document.getElementById('s-offline').textContent  = offline;
+  document.getElementById('s-maint').textContent    = maint;
 
   /* alert bar — ignore services in maintenance */
   const bad = APP.services.filter(s=>!s.maintenance&&(s.status==='degraded'||s.status==='offline'));
