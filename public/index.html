@@ -97,6 +97,9 @@
       display: none; animation: spin .8s linear infinite; }
     .refresh-ring.active { display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #refresh-icon { display: inline-block; }
+    #refresh-icon.spinning { animation: spin .7s linear infinite; }
+    #refresh-btn:disabled { opacity: .5; cursor: default; }
 
     /* ─── Alert ─── */
     .alert { margin: 18px 40px 0; padding: 11px 16px;
@@ -393,7 +396,7 @@
         <div class="tab active" data-filter="all" onclick="setFilter('all',null,this)">All</div>
       </div>
       <div class="row-right">
-        <button class="btn-sm" onclick="doRefreshAll()">↺ Refresh</button>
+        <button class="btn-sm" id="refresh-btn" onclick="doRefreshAll()"><span id="refresh-icon">↺</span> Refresh</button>
         <button class="btn-sm primary" onclick="openAddModal()">+ Add Service</button>
       </div>
     </div>
@@ -597,11 +600,15 @@ async function logout() {
 }
 
 async function doRefreshAll() {
+  const btn  = document.getElementById('refresh-btn');
+  const icon = document.getElementById('refresh-icon');
+  if (btn) { btn.disabled = true; icon.classList.add('spinning'); }
   clearPoll();
   document.getElementById('ring').classList.add('active');
   try { await fetch('/api/check-all', { method: 'POST' }); } catch(e) {}
   await fetchData(true);
   startPoll();
+  if (btn) { btn.disabled = false; icon.classList.remove('spinning'); }
 }
 
 async function fetchData(fresh = false) {
