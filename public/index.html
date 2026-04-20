@@ -313,9 +313,50 @@
                          100%   { box-shadow: 0 0 0 1.5px rgba(196,136,74,.0); } }
     .card-init  { animation: fadein .3s ease both; }
     .card-flash { animation: flash .9s ease-out forwards; }
+
+    /* ─── Responsive ─── */
+    .sidebar-backdrop { display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); z-index: 199; }
+    .sidebar-backdrop.show { display: block; }
+
+    .menu-btn { display: none; background: none; border: 1px solid var(--b0);
+      border-radius: 6px; color: var(--ts); cursor: pointer; padding: 6px 10px;
+      font-size: 17px; line-height: 1; transition: all .15s; flex-shrink: 0; }
+    .menu-btn:hover { color: var(--tp); border-color: var(--b1); }
+
+    .hdr-l { display: flex; align-items: center; gap: 12px; }
+
+    @media (max-width: 1024px) {
+      .hdr { padding: 20px 24px 16px; }
+      .content { padding: 20px 24px 60px; }
+      .alert { margin: 14px 24px 0; }
+      .stats { grid-template-columns: repeat(3, 1fr); }
+      .grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 640px) {
+      .sidebar { transform: translateX(-100%); transition: transform .25s ease; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
+      .hdr { padding: 14px 16px 12px; }
+      .greeting { font-size: 20px; }
+      .hdr-time { font-size: 20px; }
+      .content { padding: 14px 16px 60px; }
+      .alert { margin: 10px 16px 0; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .stats .stat:last-child { grid-column: 1 / -1; }
+      .grid { grid-template-columns: 1fr; }
+      .filter-row { flex-wrap: wrap; }
+      .tabs { flex-wrap: wrap; }
+      .row-right { flex-wrap: wrap; }
+      .card-actions { opacity: 1; }
+    }
   </style>
 </head>
 <body>
+
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
 <nav class="sidebar">
@@ -356,13 +397,16 @@
 <main class="main">
 
   <div class="hdr">
-    <div>
-      <div class="greeting" id="greeting">Good evening, <b>Los.</b></div>
-      <div class="greet-sub">
-        <span class="live-dot" id="live-dot"></span>
-        <span id="summary-txt">Loading…</span>
-        <div class="refresh-ring" id="ring"></div>
-        <span class="countdown" id="countdown"></span>
+    <div class="hdr-l">
+      <button class="menu-btn" id="menu-btn" onclick="openSidebar()" aria-label="Menu">≡</button>
+      <div>
+        <div class="greeting" id="greeting">Good evening, <b>Los.</b></div>
+        <div class="greet-sub">
+          <span class="live-dot" id="live-dot"></span>
+          <span id="summary-txt">Loading…</span>
+          <div class="refresh-ring" id="ring"></div>
+          <span class="countdown" id="countdown"></span>
+        </div>
       </div>
     </div>
     <div class="hdr-r">
@@ -883,6 +927,7 @@ function setFilter(cat, navEl, tabEl) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if (navEl) navEl.classList.add('active');
   else if (cat==='all') document.querySelector('.nav-item')?.classList.add('active');
+  if (window.innerWidth <= 640) closeSidebar();
   renderAll(true);
 }
 
@@ -990,6 +1035,7 @@ async function toggleMaintenance(id) {
    SETTINGS MODAL
 ═══════════════════════════════════════════════════ */
 function openSettings() {
+  if (window.innerWidth <= 640) closeSidebar();
   pendingCats = JSON.parse(JSON.stringify(APP.categories));
   const s = APP.settings || {};
   document.getElementById('cfg-name').value        = s.displayName   || '';
@@ -1144,6 +1190,20 @@ function execCopy(text, cb) {
   ta.focus(); ta.select();
   try { document.execCommand('copy'); cb(); } catch {}
   document.body.removeChild(ta);
+}
+
+/* ═══════════════════════════════════════════════════
+   SIDEBAR (MOBILE)
+═══════════════════════════════════════════════════ */
+function openSidebar() {
+  document.querySelector('.sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+  document.body.style.overflow = '';
 }
 
 /* ═══════════════════════════════════════════════════
