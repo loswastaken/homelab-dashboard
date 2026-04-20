@@ -10,6 +10,8 @@ const FileStore = require('session-file-store')(session);
 
 const app       = express();
 const PORT      = process.env.PORT || 55964;
+const BUILD_SHA = process.env.BUILD_SHA || 'dev';
+const REPO      = 'loswastaken/homelab-dashboard';
 const DATA_DIR  = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'services.json');
 const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
@@ -187,6 +189,28 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
+function fetchJSON(url) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = https.request({
+      hostname: parsed.hostname,
+      path:     parsed.pathname + (parsed.search || ''),
+      method:   'GET',
+      headers:  { 'User-Agent': `${REPO}/1.0`, 'Accept': 'application/vnd.github.v3+json' }
+    }, res => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 400) return reject(new Error(`GitHub returned HTTP ${res.statusCode}`));
+        try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON from GitHub')); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.end();
+  });
+}
+
 function ping(url, timeoutMs = 5000) {
   return new Promise(resolve => {
     let parsed;
@@ -274,7 +298,7 @@ function scheduleChecks() {
 
 app.get('/api/services', (_, res) => {
   const auth = loadAuth() || {};
-  res.json({ ...load(), apiKey: auth.apiKey });
+  res.json({ ...load(), apiKey: auth.apiKey, version: BUILD_SHA.slice(0, 7) });
 });
 
 app.post('/api/services', (req, res) => {
@@ -433,6 +457,60 @@ app.put('/api/config', (req, res) => {
   if (req.body.categories) d.categories = req.body.categories;
   save(d);
   res.json({ settings: d.settings, categories: d.categories });
+});
+
+// ─── API: Updates ────────────────────────────────────────────────────────────
+
+app.get('/api/update/check', async (req, res) => {
+  try {
+    const data      = await fetchJSON(`https://api.github.com/repos/${REPO}/commits/main`);
+    const latestSha = data.sha;
+    const isDev     = BUILD_SHA === 'dev';
+    res.json({
+      current:       isDev ? 'dev' : BUILD_SHA.slice(0, 7),
+      currentFull:   BUILD_SHA,
+      latest:        latestSha.slice(0, 7),
+      latestFull:    latestSha,
+      hasUpdate:     !isDev && BUILD_SHA !== latestSha,
+      isDev,
+      commitMessage: data.commit.message.split('\n')[0],
+      commitDate:    data.commit.committer.date,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to reach GitHub: ' + e.message });
+  }
+});
+
+app.post('/api/update/apply', async (req, res) => {
+  const token = process.env.WATCHTOWER_HTTP_API_TOKEN;
+  const base  = (process.env.WATCHTOWER_HTTP_API_URL || 'http://watchtower:8080').replace(/\/$/, '');
+
+  if (!token) {
+    return res.json({
+      ok: false, manual: true,
+      message: 'Add WATCHTOWER_HTTP_API_TOKEN to your docker-compose environment to enable one-click updates. Watchtower will apply this update automatically within 5 minutes.'
+    });
+  }
+
+  try {
+    const parsed = new URL(`${base}/v1/update`);
+    const mod    = parsed.protocol === 'https:' ? https : http;
+    await new Promise((resolve, reject) => {
+      const r = mod.request({
+        hostname: parsed.hostname,
+        port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+        path:     '/v1/update',
+        method:   'POST',
+        headers:  { 'Authorization': `Bearer ${token}` }
+      }, resp => { resolve(); resp.resume(); });
+      r.on('error', reject);
+      r.setTimeout(8000, () => { r.destroy(); reject(new Error('Timeout contacting Watchtower')); });
+      r.end();
+    });
+    res.json({ ok: true, message: 'Watchtower triggered — the container will restart momentarily.' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ─── Start ───────────────────────────────────────────────────────────────────

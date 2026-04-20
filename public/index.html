@@ -642,6 +642,17 @@
         <span id="acct-msg" style="font-size:11px;margin-left:10px;color:var(--ts)"></span>
       </div>
 
+      <div class="modal-sec">Updates</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+        <div>
+          <div style="font-size:12px;font-weight:500;color:var(--tp)">Current build</div>
+          <div id="upd-sha" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);margin-top:2px">—</div>
+        </div>
+        <button class="btn-sm" id="upd-check-btn" onclick="checkForUpdates()">Check for Updates</button>
+      </div>
+      <div id="upd-result" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:8px"></div>
+      <button class="btn-sm primary" id="upd-apply-btn" onclick="applyUpdate()" style="display:none">Apply Update</button>
+
     </div>
     <div class="modal-foot">
       <button class="btn-sec" onclick="closeCfgModal()">Cancel</button>
@@ -1183,6 +1194,11 @@ async function togglePin(id) {
 ═══════════════════════════════════════════════════ */
 function openSettings() {
   if (window.innerWidth <= 640) closeSidebar();
+  document.getElementById('upd-sha').textContent        = APP.version || 'dev';
+  document.getElementById('upd-result').style.display  = 'none';
+  document.getElementById('upd-apply-btn').style.display = 'none';
+  const cb = document.getElementById('upd-check-btn');
+  cb.disabled = false; cb.textContent = 'Check for Updates';
   pendingCats = JSON.parse(JSON.stringify(APP.categories));
   const s = APP.settings || {};
   document.getElementById('cfg-name').value        = s.displayName   || '';
@@ -1359,6 +1375,74 @@ function execCopy(text, cb) {
   ta.focus(); ta.select();
   try { document.execCommand('copy'); cb(); } catch {}
   document.body.removeChild(ta);
+}
+
+/* ═══════════════════════════════════════════════════
+   UPDATES
+═══════════════════════════════════════════════════ */
+function updResult(msg, type) {
+  const el = document.getElementById('upd-result');
+  const colors = {
+    green: ['var(--green-bg)', 'rgba(90,158,114,.22)',  'var(--green)'],
+    amber: ['var(--amber-bg)', 'rgba(196,136,74,.22)',  'var(--amber)'],
+    red:   ['var(--red-bg)',   'rgba(184,85,85,.22)',   'var(--red)'],
+  }[type] || colors.amber;
+  el.style.cssText = `display:block;padding:10px 12px;border-radius:6px;font-size:12px;
+    line-height:1.5;margin-bottom:8px;background:${colors[0]};
+    border:1px solid ${colors[1]};color:${colors[2]}`;
+  el.textContent = msg;
+}
+
+async function checkForUpdates() {
+  const btn = document.getElementById('upd-check-btn');
+  document.getElementById('upd-apply-btn').style.display = 'none';
+  document.getElementById('upd-result').style.display    = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    const res  = await fetch('/api/update/check');
+    const data = await res.json();
+    if (!res.ok) { updResult(data.error, 'red'); return; }
+    if (data.isDev) {
+      updResult('Running a local dev build — version tracking only works in deployed containers.', 'amber');
+    } else if (data.hasUpdate) {
+      updResult(`Update available: ${data.latest} — "${data.commitMessage}"`, 'amber');
+      document.getElementById('upd-apply-btn').style.display = 'inline-block';
+    } else {
+      updResult(`Up to date (${data.current})`, 'green');
+    }
+  } catch (e) {
+    updResult('Could not reach GitHub: ' + e.message, 'red');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check for Updates';
+  }
+}
+
+async function applyUpdate() {
+  const btn = document.getElementById('upd-apply-btn');
+  btn.disabled = true;
+  btn.textContent = 'Applying…';
+  try {
+    const res  = await fetch('/api/update/apply', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      updResult(data.message, 'green');
+      btn.style.display = 'none';
+    } else if (data.manual) {
+      updResult(data.message, 'amber');
+      btn.disabled = false;
+      btn.textContent = 'Apply Update';
+    } else {
+      updResult(data.error || 'Update failed.', 'red');
+      btn.disabled = false;
+      btn.textContent = 'Apply Update';
+    }
+  } catch (e) {
+    updResult('Request failed: ' + e.message, 'red');
+    btn.disabled = false;
+    btn.textContent = 'Apply Update';
+  }
 }
 
 /* ═══════════════════════════════════════════════════

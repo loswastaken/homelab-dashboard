@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+ARG BUILD_SHA=dev
+ENV BUILD_SHA=$BUILD_SHA
+
 WORKDIR /app
 
 COPY package*.json ./
