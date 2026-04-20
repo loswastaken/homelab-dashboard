@@ -357,6 +357,11 @@ app.post('/api/services/:id/maintenance', (req, res) => {
   res.json(svc);
 });
 
+app.post('/api/check-all', async (req, res) => {
+  await checkAll();
+  res.json({ ok: true });
+});
+
 app.post('/api/services/:id/check', async (req, res) => {
   const d   = load();
   const svc = d.services.find(s => s.id === req.params.id);

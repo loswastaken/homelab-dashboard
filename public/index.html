@@ -591,23 +591,6 @@ function getColors(colorKey) {
 /* ═══════════════════════════════════════════════════
    FETCH / POLL
 ═══════════════════════════════════════════════════ */
-async function fetchData() {
-  const ring = document.getElementById('ring');
-  ring.classList.add('active');
-  try {
-    const res = await fetch('/api/services');
-    if (res.status === 401) { window.location.href = '/login'; return; }
-    APP = await res.json();
-    renderAll(false);
-    tick(); // refresh greeting/time immediately with loaded settings
-  } catch(e) {
-    console.error('Fetch failed', e);
-    document.getElementById('summary-txt').textContent = 'Connection error';
-  } finally {
-    ring.classList.remove('active');
-  }
-}
-
 async function logout() {
   await fetch('/api/logout', { method: 'POST' });
   window.location.href = '/login';
@@ -615,8 +598,27 @@ async function logout() {
 
 async function doRefreshAll() {
   clearPoll();
-  await fetchData();
+  document.getElementById('ring').classList.add('active');
+  try { await fetch('/api/check-all', { method: 'POST' }); } catch(e) {}
+  await fetchData(true);
   startPoll();
+}
+
+async function fetchData(fresh = false) {
+  const ring = document.getElementById('ring');
+  ring.classList.add('active');
+  try {
+    const res = await fetch('/api/services');
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    APP = await res.json();
+    renderAll(fresh);
+    tick();
+  } catch(e) {
+    console.error('Fetch failed', e);
+    document.getElementById('summary-txt').textContent = 'Connection error';
+  } finally {
+    ring.classList.remove('active');
+  }
 }
 
 function startPoll() {
