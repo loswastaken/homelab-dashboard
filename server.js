@@ -258,6 +258,36 @@ function pushHistory(hist, tick) {
   return [...(hist || []).slice(-29), tick];
 }
 
+// ─── Daily history & event log helpers ───────────────────────────────────────
+
+const TODAY_KEY = () => new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+function pushEvent(svc, type, note = '') {
+  if (!Array.isArray(svc.events)) svc.events = [];
+  svc.events.push({ ts: new Date().toISOString(), type, note });
+  if (svc.events.length > 500) svc.events = svc.events.slice(-500);
+}
+
+function accumulateDailyTick(svc, tick) {
+  if (!Array.isArray(svc.dailyHistory)) svc.dailyHistory = [];
+  const today = TODAY_KEY();
+  let entry = svc.dailyHistory.find(e => e.date === today);
+  if (!entry) {
+    entry = { date: today, online: 0, degraded: 0, offline: 0, maintenance: 0, total: 0 };
+    svc.dailyHistory.push(entry);
+    // keep max 30 days
+    if (svc.dailyHistory.length > 30) svc.dailyHistory = svc.dailyHistory.slice(-30);
+  }
+  entry.total++;
+  if      (tick === 1) entry.online++;
+  else if (tick === 2) entry.degraded++;
+  else if (tick === 3) entry.maintenance++;
+  else                 entry.offline++;
+  // recalculate uptime% for the day (exclude maintenance from denominator)
+  const denom = entry.online + entry.degraded + entry.offline;
+  entry.uptime = denom > 0 ? parseFloat((entry.online / denom * 100).toFixed(2)) : null;
+}
+
 const WEATHER_CODE_MAP = {
   0: 'Clear',
   1: 'Mostly clear',
@@ -374,17 +404,26 @@ async function checkAll() {
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
     if (!svc) continue;
+    const prevStatus = svc.status;
     const tick   = r.ok ? 1 : 0;
     svc.history  = pushHistory(svc.history, tick);
     svc.status   = r.ok ? 'online' : (svc.status === 'degraded' ? 'degraded' : 'offline');
     svc.response = r.ok ? r.elapsed + 'ms' : '—';
     svc.uptime   = calcUptime(svc.history);
     svc.lastChecked = new Date().toISOString();
+    accumulateDailyTick(svc, tick);
+    // event log: record transitions
+    if (prevStatus !== svc.status) {
+      if (svc.status === 'offline')   pushEvent(svc, 'offline',   'Service became unreachable');
+      if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded'))
+                                       pushEvent(svc, 'recovery',  `Recovered from ${prevStatus}`);
+    }
   }
 
   for (const svc of fresh.services) {
     if (svc.maintenance) {
       svc.history     = pushHistory(svc.history, 3);
+      accumulateDailyTick(svc, 3);
       svc.status      = 'maintenance';
       svc.lastChecked = new Date().toISOString();
     }
@@ -485,6 +524,7 @@ app.post('/api/services/:id/report', (req, res) => {
   if (!svc) return res.status(404).json({ error: 'Not found' });
 
   const { status, desc } = req.body;
+  const prevStatus = svc.status;
   const tick = status === 'online' ? 1 : status === 'degraded' ? 2 : 0;
 
   if (status)             svc.status = status;
@@ -492,6 +532,13 @@ app.post('/api/services/:id/report', (req, res) => {
   svc.history     = pushHistory(svc.history, tick);
   svc.uptime      = calcUptime(svc.history);
   svc.lastChecked = new Date().toISOString();
+  accumulateDailyTick(svc, tick);
+  if (status === 'degraded' && prevStatus !== 'degraded')
+    pushEvent(svc, 'degraded', desc || 'Service reported degraded');
+  if (status === 'offline' && prevStatus !== 'offline')
+    pushEvent(svc, 'offline', desc || 'Service reported offline');
+  if (status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded'))
+    pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
 
   save(d);
   res.json(svc);
@@ -503,6 +550,8 @@ app.post('/api/services/:id/maintenance', (req, res) => {
   if (!svc) return res.status(404).json({ error: 'Not found' });
   svc.maintenance = !svc.maintenance;
   svc.status      = svc.maintenance ? 'maintenance' : 'unknown';
+  pushEvent(svc, svc.maintenance ? 'maintenance' : 'recovery',
+    svc.maintenance ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
   save(d);
   res.json(svc);
 });
@@ -640,9 +689,42 @@ app.post('/api/update/apply', async (req, res) => {
   }
 });
 
+// ─── API: History ────────────────────────────────────────────────────────────
+
+app.get('/api/history', (req, res) => {
+  const d = load();
+  const out = d.services.map(s => ({
+    id:           s.id,
+    name:         s.name,
+    abbr:         s.abbr,
+    cat:          s.cat,
+    status:       s.status,
+    maintenance:  !!s.maintenance,
+    uptime:       s.uptime,
+    dailyHistory: (s.dailyHistory || []).slice(-30),
+    events:       (s.events || []).slice(-500),
+  }));
+  res.json({ services: out, categories: d.categories });
+});
+
+// ─── Midnight daily-history rollover ─────────────────────────────────────────
+
+function scheduleMidnightRollover() {
+  const now  = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 5, 0); // 00:00:05 tomorrow
+  const msUntil = next - now;
+  setTimeout(() => {
+    // Seal today's entry (nothing to write — accumulateDailyTick already does it live)
+    console.log('[history] Daily rollover at', new Date().toISOString());
+    scheduleMidnightRollover(); // reschedule for tomorrow
+  }, msUntil);
+}
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`\n  🟢  Homelab Dashboard → http://localhost:${PORT}\n`);
   scheduleChecks();
+  scheduleMidnightRollover();
 });

@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>los.dev · Uptime History</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:   #131110;
+      --bg-side:   #0f0e0c;
+      --bg-surf:   #1a1815;
+      --bg-card:   #1e1c18;
+      --bg-cardh:  #232019;
+      --bg-hi:     #2c2922;
+      --bg-modal:  #1a1815;
+
+      --tp:  #ede8d5;
+      --ts:  #7a7165;
+      --tm:  #46423b;
+
+      --b0: rgba(237,232,213,.05);
+      --b1: rgba(237,232,213,.09);
+      --b2: rgba(237,232,213,.18);
+
+      --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
+      --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
+      --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
+      --blue:    #5285b8; --blue-bg:   rgba(82,133,184,.13);
+      --purple:  #7a60b8; --purple-bg: rgba(122,96,184,.13);
+      --pink:    #b85888; --pink-bg:   rgba(184,88,136,.13);
+      --slate:   #7a8a9e; --slate-bg:  rgba(122,138,158,.13);
+
+      --sw: 200px;
+    }
+
+    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased; }
+
+    body::before { content: ''; position: fixed; inset: 0;
+      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
+      background-size: 28px 28px; pointer-events: none; z-index: 0; }
+
+    /* ─── Sidebar ─── */
+    .sidebar { position: fixed; top:0; left:0; bottom:0; width: var(--sw);
+      background: var(--bg-side); border-right: 1px solid var(--b0);
+      display: flex; flex-direction: column; padding: 22px 0 20px; z-index: 200; }
+    .brand { padding: 0 20px 22px; border-bottom: 1px solid var(--b0); margin-bottom: 6px; }
+    .brand-lbl { font-size: 10px; font-weight: 500; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--tm); }
+    .brand-name { font-size: 22px; font-weight: 600; letter-spacing: -.03em; color: var(--tp); margin-top: 2px; }
+    .nav-sec { padding: 10px 0 4px; }
+    .nav-lbl { font-size: 10px; font-weight: 500; letter-spacing: .13em;
+      text-transform: uppercase; color: var(--tm); padding: 0 20px; margin-bottom: 2px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 20px;
+      font-size: 13px; color: var(--ts); cursor: pointer;
+      border-left: 2px solid transparent; transition: all .15s; user-select: none;
+      text-decoration: none; }
+    .nav-item:hover { color: var(--tp); background: var(--b0); }
+    .nav-item.active { color: var(--tp); border-left-color: rgba(237,232,213,.35); background: var(--bg-surf); }
+    .side-foot { margin-top: auto; padding: 16px 20px 0; border-top: 1px solid var(--b0); }
+    .foot-lbl { font-size: 10px; color: var(--tm); margin-bottom: 3px; }
+    .foot-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+
+    /* ─── Main ─── */
+    .main { margin-left: var(--sw); min-height: 100vh; display: flex;
+      flex-direction: column; position: relative; z-index: 1; }
+
+    /* ─── Header ─── */
+    .hdr { padding: 30px 40px 22px; border-bottom: 1px solid var(--b0);
+      display: flex; align-items: flex-start; justify-content: space-between; }
+    .hdr-l h1 { font-size: 30px; font-weight: 300; letter-spacing: -.03em; }
+    .hdr-l h1 b { font-weight: 600; }
+    .hdr-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); margin-top: 5px; }
+
+    /* ─── Controls bar ─── */
+    .controls { padding: 16px 40px; border-bottom: 1px solid var(--b0);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .seg { display: flex; background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 8px; overflow: hidden; }
+    .seg-btn { padding: 6px 14px; font-size: 12px; font-family: 'Sora', sans-serif;
+      color: var(--ts); background: none; border: none; cursor: pointer;
+      transition: all .15s; white-space: nowrap; }
+    .seg-btn:hover { color: var(--tp); background: var(--b0); }
+    .seg-btn.active { color: var(--tp); background: var(--bg-hi); }
+    .ctrl-sep { flex: 1; }
+    .svc-filter { background: var(--bg-surf); border: 1px solid var(--b1); border-radius: 8px;
+      padding: 6px 12px; font-size: 12px; font-family: 'Sora', sans-serif;
+      color: var(--tp); min-width: 160px; cursor: pointer; }
+    .svc-filter:focus { outline: none; border-color: var(--b2); }
+    .btn-sm { background: var(--bg-surf); border: 1px solid var(--b1); border-radius: 8px;
+      padding: 6px 14px; font-size: 12px; font-family: 'Sora', sans-serif;
+      color: var(--ts); cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .btn-sm:hover { color: var(--tp); border-color: var(--b2); }
+
+    /* ─── Content ─── */
+    .content { padding: 28px 40px 60px; }
+
+    /* ─── Summary stats ─── */
+    .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+    .sum-card { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 12px;
+      padding: 16px 20px; }
+    .sum-lbl { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); margin-bottom: 6px; }
+    .sum-val { font-family: 'JetBrains Mono', monospace; font-size: 26px;
+      font-weight: 500; letter-spacing: -.02em; color: var(--tp); }
+    .sum-val.cg { color: var(--green); }
+    .sum-val.cr { color: var(--red); }
+    .sum-val.ca { color: var(--amber); }
+    .sum-sub { font-size: 11px; color: var(--ts); margin-top: 3px; }
+
+    /* ─── Section headings ─── */
+    .sec-head { display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; }
+    .sec-title { font-size: 12px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); }
+
+    /* ─── Service list (Atlassian-style) ─── */
+    .svc-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 36px; }
+    .svc-row { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
+      padding: 14px 18px; display: flex; align-items: center; gap: 16px;
+      cursor: pointer; transition: all .15s; }
+    .svc-row:hover { background: var(--bg-cardh); border-color: var(--b1); }
+    .svc-row.selected { border-color: var(--b2); background: var(--bg-hi); }
+    .svc-abbr { width: 36px; height: 36px; border-radius: 8px; display: flex;
+      align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
+      letter-spacing: .04em; flex-shrink: 0; }
+    .svc-info { flex: 1; min-width: 0; }
+    .svc-name { font-size: 13px; font-weight: 500; color: var(--tp);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-meta { font-size: 11px; color: var(--ts); margin-top: 1px; }
+    .svc-uptime-label { font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      font-weight: 500; flex-shrink: 0; width: 52px; text-align: right; }
+    .svc-uptime-label.cg { color: var(--green); }
+    .svc-uptime-label.ca { color: var(--amber); }
+    .svc-uptime-label.cr { color: var(--red); }
+    .svc-uptime-label.cm { color: var(--slate); }
+
+    /* ─── 30-day bar strip ─── */
+    .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 28px;
+      flex-shrink: 0; }
+    .bar { flex: 1; min-width: 5px; max-width: 10px; border-radius: 3px 3px 0 0;
+      transition: opacity .15s; cursor: default; position: relative; }
+    .bar.ok     { background: var(--green); opacity: .75; }
+    .bar.warn   { background: var(--amber); opacity: .75; }
+    .bar.bad    { background: var(--red);   opacity: .75; }
+    .bar.maint  { background: var(--slate); opacity: .4; }
+    .bar.empty  { background: var(--b1);    opacity: 1; height: 4px !important; align-self: center; border-radius: 3px; }
+    .bar:hover { opacity: 1; }
+    .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 6px; padding: 5px 9px; white-space: nowrap; font-size: 11px;
+      color: var(--tp); pointer-events: none; z-index: 100; }
+    .bar:hover .bar-tooltip { display: block; }
+
+    /* ─── Status pip ─── */
+    .status-pip { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-pip.ok    { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
+    .status-pip.warn  { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
+    .status-pip.bad   { background: var(--red);   box-shadow: 0 0 0 3px var(--red-bg); }
+    .status-pip.maint { background: var(--slate);  box-shadow: 0 0 0 3px var(--slate-bg); }
+
+    /* ─── Detail panel (Downdetector-style) ─── */
+    .detail-panel { background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 14px; padding: 28px 32px; margin-bottom: 36px; }
+    .detail-hdr { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+    .detail-abbr { width: 48px; height: 48px; border-radius: 12px; display: flex;
+      align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
+      letter-spacing: .04em; flex-shrink: 0; }
+    .detail-title { font-size: 20px; font-weight: 600; letter-spacing: -.02em; }
+    .detail-status { font-size: 12px; color: var(--ts); margin-top: 2px; }
+    .detail-close { margin-left: auto; background: none; border: 1px solid var(--b1);
+      border-radius: 8px; padding: 6px 12px; font-size: 12px; font-family: 'Sora', sans-serif;
+      color: var(--ts); cursor: pointer; transition: all .15s; }
+    .detail-close:hover { color: var(--tp); border-color: var(--b2); }
+
+    /* uptime metric strip */
+    .metric-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+    .metric { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
+      padding: 14px 18px; }
+    .metric-lbl { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); margin-bottom: 5px; }
+    .metric-val { font-family: 'JetBrains Mono', monospace; font-size: 22px;
+      font-weight: 500; color: var(--tp); }
+    .metric-val.cg { color: var(--green); }
+    .metric-val.ca { color: var(--amber); }
+    .metric-val.cr { color: var(--red); }
+
+    /* chart area */
+    .chart-wrap { margin-bottom: 28px; }
+    .chart-title { font-size: 11px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); margin-bottom: 12px; }
+    .chart-canvas-wrap { position: relative; height: 140px; }
+    canvas.uptime-chart { width: 100%; height: 100%; display: block; }
+    .chart-axis { display: flex; justify-content: space-between;
+      font-size: 10px; color: var(--tm); margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
+
+    /* ─── Event log ─── */
+    .event-log { }
+    .event-empty { font-size: 12px; color: var(--ts); padding: 16px 0; text-align: center; }
+    .event-item { display: flex; align-items: flex-start; gap: 14px; padding: 11px 0;
+      border-bottom: 1px solid var(--b0); }
+    .event-item:last-child { border-bottom: none; }
+    .event-icon { width: 28px; height: 28px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+    .event-icon.offline    { background: var(--red-bg);   color: var(--red); }
+    .event-icon.degraded   { background: var(--amber-bg); color: var(--amber); }
+    .event-icon.recovery   { background: var(--green-bg); color: var(--green); }
+    .event-icon.maintenance{ background: var(--slate-bg); color: var(--slate); }
+    .event-icon.info       { background: var(--b0);       color: var(--ts); }
+    .event-body { flex: 1; min-width: 0; }
+    .event-title { font-size: 13px; color: var(--tp); font-weight: 500; }
+    .event-svc { font-size: 11px; color: var(--ts); margin-top: 1px; }
+    .event-time { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--tm); flex-shrink: 0; padding-top: 3px; }
+
+    /* ─── No data placeholder ─── */
+    .no-data { text-align: center; padding: 48px 0; color: var(--ts); }
+    .no-data-icon { font-size: 32px; margin-bottom: 10px; opacity: .4; }
+    .no-data-lbl { font-size: 13px; }
+    .no-data-sub { font-size: 11px; margin-top: 4px; color: var(--tm); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 900px) {
+      .summary-row { grid-template-columns: repeat(2, 1fr); }
+      .metric-row  { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .sidebar { transform: translateX(-100%); transition: transform .25s; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .hdr, .controls, .content { padding-left: 18px; padding-right: 18px; }
+      .summary-row { grid-template-columns: 1fr 1fr; }
+      .metric-row  { grid-template-columns: 1fr 1fr; }
+      .bar-strip { display: none; }
+      .svc-uptime-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<nav class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="brand-lbl">Homelab</div>
+    <div class="brand-name" id="brand-name">los.dev</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Overview</div>
+    <a class="nav-item" href="/">Dashboard</a>
+    <a class="nav-item active" href="/history.html">Uptime History</a>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">System</div>
+    <div class="nav-item" onclick="logout()">Settings</div>
+  </div>
+
+  <div class="side-foot">
+    <div class="foot-lbl" id="foot-label">Homelab Server</div>
+    <div class="foot-val" id="foot-ip"></div>
+    <button onclick="logout()" style="margin-top:10px;width:100%;font-family:'Sora',sans-serif;
+      font-size:11px;font-weight:500;color:var(--ts);background:none;border:1px solid var(--b0);
+      border-radius:5px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;"
+      onmouseover="this.style.color='var(--tp)';this.style.borderColor='var(--b1)'"
+      onmouseout="this.style.color='var(--ts)';this.style.borderColor='var(--b0)'">
+      Sign out →
+    </button>
+  </div>
+</nav>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="main">
+
+  <div class="hdr">
+    <div class="hdr-l">
+      <h1>Uptime <b>History</b></h1>
+      <div class="hdr-sub" id="hdr-sub">Loading data…</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="seg" id="range-seg">
+      <button class="seg-btn active" data-range="30" onclick="setRange(30,this)">30 days</button>
+      <button class="seg-btn" data-range="7"  onclick="setRange(7,this)">7 days</button>
+      <button class="seg-btn" data-range="1"  onclick="setRange(1,this)">24 hrs</button>
+    </div>
+    <div class="ctrl-sep"></div>
+    <select class="svc-filter" id="svc-filter" onchange="setServiceFilter(this.value)">
+      <option value="">All services</option>
+    </select>
+    <button class="btn-sm" onclick="loadData()">↺ Refresh</button>
+  </div>
+
+  <div class="content">
+
+    <!-- Summary stats -->
+    <div class="summary-row" id="summary-row">
+      <div class="sum-card">
+        <div class="sum-lbl">Avg Uptime</div>
+        <div class="sum-val cg" id="sum-avg">—</div>
+        <div class="sum-sub" id="sum-period">over selected period</div>
+      </div>
+      <div class="sum-card">
+        <div class="sum-lbl">Incidents</div>
+        <div class="sum-val" id="sum-incidents">—</div>
+        <div class="sum-sub">offline events</div>
+      </div>
+      <div class="sum-card">
+        <div class="sum-lbl">Services Tracked</div>
+        <div class="sum-val" id="sum-services">—</div>
+        <div class="sum-sub">with history data</div>
+      </div>
+      <div class="sum-card">
+        <div class="sum-lbl">Best Uptime</div>
+        <div class="sum-val cg" id="sum-best">—</div>
+        <div class="sum-sub" id="sum-best-name">—</div>
+      </div>
+    </div>
+
+    <!-- Detail panel (hidden until a service is selected) -->
+    <div class="detail-panel" id="detail-panel" style="display:none"></div>
+
+    <!-- Service list -->
+    <div class="sec-head">
+      <div class="sec-title" id="list-title">All Services</div>
+    </div>
+    <div class="svc-list" id="svc-list"></div>
+
+    <!-- Event log -->
+    <div class="sec-head" style="margin-top:8px">
+      <div class="sec-title">Recent Events</div>
+    </div>
+    <div class="event-log" id="event-log"></div>
+
+  </div>
+</main>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let DATA      = { services: [], categories: [] };
+let rangeDays = 30;
+let filterSvcId = '';
+let selectedSvcId = '';
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    // Load history + services config in parallel
+    const [hRes, sRes] = await Promise.all([
+      fetch('/api/history'),
+      fetch('/api/services')
+    ]);
+    if (hRes.status === 401 || sRes.status === 401) { window.location.href = '/login'; return; }
+    const hData = await hRes.json();
+    const sData = await sRes.json();
+
+    // Merge: add current status/uptime from services into history records
+    DATA.categories = hData.categories || [];
+    DATA.services = hData.services.map(hs => {
+      const live = (sData.services || []).find(s => s.id === hs.id);
+      return { ...hs, currentStatus: live ? live.status : hs.status };
+    });
+
+    // Populate settings
+    const s = sData.settings || {};
+    if (s.siteTitle)   document.querySelector('.brand-name').textContent = s.siteTitle.split('·')[0].trim() || 'los.dev';
+    if (s.serverLabel) document.getElementById('foot-label').textContent = s.serverLabel;
+    if (s.nasIp)       document.getElementById('foot-ip').textContent    = s.nasIp;
+
+    populateServiceFilter();
+    render();
+  } catch(e) {
+    document.getElementById('hdr-sub').textContent = 'Failed to load data';
+    console.error(e);
+  }
+}
+
+// ─── Controls ────────────────────────────────────────────────────────────────
+function setRange(days, btn) {
+  rangeDays = days;
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function setServiceFilter(id) {
+  filterSvcId = id;
+  selectedSvcId = '';
+  document.getElementById('detail-panel').style.display = 'none';
+  render();
+}
+
+function populateServiceFilter() {
+  const sel = document.getElementById('svc-filter');
+  sel.innerHTML = '<option value="">All services</option>';
+  DATA.services.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = s.name || s.id;
+    if (s.id === filterSvcId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function getColors(catId) {
+  const PRESETS = {
+    blue:   { card: 'rgba(82,133,184,.13)',   icon: '#5285b8' },
+    green:  { card: 'rgba(90,158,114,.14)',   icon: '#5a9e72' },
+    amber:  { card: 'rgba(196,136,74,.14)',   icon: '#c4884a' },
+    red:    { card: 'rgba(184,85,85,.14)',     icon: '#b85555' },
+    purple: { card: 'rgba(122,96,184,.13)',   icon: '#7a60b8' },
+    pink:   { card: 'rgba(184,88,136,.13)',   icon: '#b85888' },
+    slate:  { card: 'rgba(122,138,158,.13)',  icon: '#7a8a9e' },
+  };
+  const cat = DATA.categories.find(c => c.id === catId);
+  const key = cat ? cat.color : 'blue';
+  if (key && key.startsWith('#')) return { card: key + '22', icon: key };
+  return PRESETS[key] || PRESETS.blue;
+}
+
+function statusClass(s) {
+  if (s === 'online')      return 'ok';
+  if (s === 'degraded')    return 'warn';
+  if (s === 'maintenance') return 'maint';
+  return 'bad';
+}
+
+function uptimeClass(pct) {
+  if (pct === null || pct === undefined) return 'cm';
+  if (pct >= 99)  return 'cg';
+  if (pct >= 95)  return 'ca';
+  return 'cr';
+}
+
+function fmtUptime(pct) {
+  if (pct === null || pct === undefined) return '—';
+  return pct.toFixed(1) + '%';
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function fmtDateShort(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function barHeight(pct) {
+  if (pct === null || pct === undefined) return 8;
+  return Math.max(8, Math.round(pct / 100 * 28));
+}
+
+function sliceHistory(svc) {
+  // Returns daily entries filtered to rangeDays
+  const hist = svc.dailyHistory || [];
+  if (rangeDays === 1) {
+    // For 24hrs: collapse today's entry only
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = hist.find(e => e.date === today);
+    return entry ? [entry] : [];
+  }
+  return hist.slice(-rangeDays);
+}
+
+function calcAvgUptime(hist) {
+  const valid = hist.filter(e => e.uptime !== null && e.uptime !== undefined);
+  if (!valid.length) return null;
+  return valid.reduce((a, e) => a + e.uptime, 0) / valid.length;
+}
+
+function countIncidents(hist) {
+  return hist.reduce((n, e) => n + (e.offline || 0), 0);
+}
+
+function filterEvents(events) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - rangeDays);
+  return (events || []).filter(e => new Date(e.ts) >= cutoff).reverse();
+}
+
+// ─── Main render ─────────────────────────────────────────────────────────────
+function render() {
+  const svcs = filterSvcId
+    ? DATA.services.filter(s => s.id === filterSvcId)
+    : DATA.services;
+
+  renderSummary(svcs);
+  renderList(svcs);
+  renderEventLog(svcs);
+
+  if (selectedSvcId) {
+    const svc = DATA.services.find(s => s.id === selectedSvcId);
+    if (svc) renderDetail(svc);
+  }
+
+  // header subtitle
+  const label = rangeDays === 1 ? 'last 24 hours'
+    : rangeDays === 7 ? 'last 7 days' : 'last 30 days';
+  document.getElementById('hdr-sub').textContent =
+    `Showing ${svcs.length} service${svcs.length !== 1 ? 's' : ''} · ${label}`;
+}
+
+// ─── Summary cards ────────────────────────────────────────────────────────────
+function renderSummary(svcs) {
+  const allHist  = svcs.flatMap(s => sliceHistory(s));
+  const incidents = svcs.reduce((n, s) => n + countIncidents(sliceHistory(s)), 0);
+  const tracked   = svcs.filter(s => sliceHistory(s).length > 0).length;
+
+  // avg uptime across all services
+  const perSvc = svcs.map(s => calcAvgUptime(sliceHistory(s))).filter(v => v !== null);
+  const avg    = perSvc.length ? perSvc.reduce((a, v) => a + v, 0) / perSvc.length : null;
+
+  // best
+  let bestSvc = null, bestPct = -1;
+  svcs.forEach(s => {
+    const p = calcAvgUptime(sliceHistory(s));
+    if (p !== null && p > bestPct) { bestPct = p; bestSvc = s; }
+  });
+
+  const el = v => document.getElementById(v);
+  el('sum-avg').textContent       = avg !== null ? avg.toFixed(2) + '%' : '—';
+  el('sum-avg').className         = 'sum-val ' + (avg !== null ? uptimeClass(avg) : '');
+  el('sum-incidents').textContent = incidents;
+  el('sum-services').textContent  = tracked;
+  el('sum-best').textContent      = bestSvc ? fmtUptime(bestPct) : '—';
+  el('sum-best-name').textContent = bestSvc ? bestSvc.name : '—';
+  el('sum-period').textContent    = rangeDays === 1 ? 'in the last 24 hours'
+    : rangeDays === 7 ? 'over the last 7 days' : 'over the last 30 days';
+}
+
+// ─── Service list ─────────────────────────────────────────────────────────────
+function renderList(svcs) {
+  const el = document.getElementById('svc-list');
+  if (!svcs.length) {
+    el.innerHTML = `<div class="no-data"><div class="no-data-icon">📊</div>
+      <div class="no-data-lbl">No services found</div>
+      <div class="no-data-sub">Add services on the dashboard to start tracking uptime</div></div>`;
+    return;
+  }
+
+  // Build padded day array for display (30/7/1 slots)
+  const slots = rangeDays === 1 ? 1 : rangeDays;
+
+  el.innerHTML = svcs.map(svc => {
+    const hist    = sliceHistory(svc);
+    const avg     = calcAvgUptime(hist);
+    const colors  = getColors(svc.cat);
+    const sc      = statusClass(svc.currentStatus || svc.status);
+    const uc      = uptimeClass(avg);
+
+    // Build padded bars: fill from right, empty slots on left
+    const bars = [];
+    for (let i = 0; i < slots; i++) {
+      const histIdx = hist.length - slots + i;
+      if (histIdx < 0) {
+        bars.push('<div class="bar empty" style="height:4px"></div>');
+      } else {
+        const e   = hist[histIdx];
+        const pct = e.uptime;
+        const h   = barHeight(pct);
+        const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
+        const tip = `${fmtDateShort(e.date)}: ${fmtUptime(pct)}`;
+        bars.push(`<div class="bar ${cls}" style="height:${h}px"><span class="bar-tooltip">${tip}</span></div>`);
+      }
+    }
+
+    return `<div class="svc-row${selectedSvcId === svc.id ? ' selected' : ''}"
+        data-id="${svc.id}" onclick="selectService('${svc.id}')">
+      <div class="svc-abbr" style="background:${colors.card};color:${colors.icon}">${svc.abbr || '?'}</div>
+      <div class="svc-info">
+        <div class="svc-name">${svc.name || svc.id}</div>
+        <div class="svc-meta">${hist.length} day${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(hist)} incident${countIncidents(hist) !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="bar-strip">${bars.join('')}</div>
+      <div class="status-pip ${sc}"></div>
+      <div class="svc-uptime-label ${uc}">${avg !== null ? avg.toFixed(1) + '%' : '—'}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Detail panel ─────────────────────────────────────────────────────────────
+function selectService(id) {
+  if (selectedSvcId === id) {
+    selectedSvcId = '';
+    document.getElementById('detail-panel').style.display = 'none';
+    document.querySelectorAll('.svc-row').forEach(r => r.classList.remove('selected'));
+    return;
+  }
+  selectedSvcId = id;
+  document.querySelectorAll('.svc-row').forEach(r =>
+    r.classList.toggle('selected', r.dataset.id === id));
+  const svc = DATA.services.find(s => s.id === id);
+  if (svc) renderDetail(svc);
+}
+
+function renderDetail(svc) {
+  const panel  = document.getElementById('detail-panel');
+  const hist   = sliceHistory(svc);
+  const colors = getColors(svc.cat);
+  const avg    = calcAvgUptime(hist);
+  const incidents = countIncidents(hist);
+  const events = filterEvents(svc.events);
+
+  // Metrics: avg uptime, incidents, longest streak
+  let streak = 0, maxStreak = 0, cur = 0;
+  hist.forEach(e => {
+    if (e.uptime !== null && e.uptime >= 99.9) { cur++; maxStreak = Math.max(maxStreak, cur); }
+    else cur = 0;
+  });
+
+  const statusLabel = svc.currentStatus
+    ? svc.currentStatus.charAt(0).toUpperCase() + svc.currentStatus.slice(1)
+    : '—';
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="detail-hdr">
+      <div class="detail-abbr" style="background:${colors.card};color:${colors.icon}">${svc.abbr || '?'}</div>
+      <div>
+        <div class="detail-title">${svc.name || svc.id}</div>
+        <div class="detail-status">Current status: <span style="color:${
+          svc.currentStatus === 'online' ? 'var(--green)' :
+          svc.currentStatus === 'degraded' ? 'var(--amber)' :
+          svc.currentStatus === 'maintenance' ? 'var(--slate)' : 'var(--red)'
+        }">${statusLabel}</span></div>
+      </div>
+      <button class="detail-close" onclick="selectService('${svc.id}')">✕ Close</button>
+    </div>
+
+    <div class="metric-row">
+      <div class="metric">
+        <div class="metric-lbl">Avg Uptime</div>
+        <div class="metric-val ${uptimeClass(avg)}">${fmtUptime(avg)}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-lbl">Incidents</div>
+        <div class="metric-val ${incidents > 0 ? 'cr' : 'cg'}">${incidents}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-lbl">Best Streak</div>
+        <div class="metric-val cg">${maxStreak}d</div>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">Daily Uptime % — ${rangeDays === 1 ? 'Today' : rangeDays === 7 ? 'Last 7 Days' : 'Last 30 Days'}</div>
+      <div class="chart-canvas-wrap">
+        <canvas id="detail-chart" class="uptime-chart"></canvas>
+      </div>
+      <div class="chart-axis" id="detail-chart-axis"></div>
+    </div>
+
+    <div class="sec-head">
+      <div class="sec-title">Event Log</div>
+    </div>
+    <div class="event-log" id="detail-event-log"></div>
+  `;
+
+  // Scroll into view
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // Render chart
+  drawChart('detail-chart', hist, colors.icon);
+
+  // Axis labels
+  const axis = document.getElementById('detail-chart-axis');
+  if (hist.length) {
+    axis.innerHTML = `<span>${fmtDateShort(hist[0].date)}</span><span>Today</span>`;
+  }
+
+  // Detail event log
+  const evLog = document.getElementById('detail-event-log');
+  renderEvents(evLog, events);
+}
+
+// ─── Canvas chart ─────────────────────────────────────────────────────────────
+function drawChart(canvasId, hist, accentColor) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const dpr    = window.devicePixelRatio || 1;
+  const rect   = canvas.parentElement.getBoundingClientRect();
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  if (!hist.length) {
+    ctx.fillStyle = 'rgba(237,232,213,.15)';
+    ctx.font = '12px Sora, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('No data yet — uptime will appear here after the first full day', W / 2, H / 2);
+    return;
+  }
+
+  const pts = hist.map(e => e.uptime !== null ? e.uptime : 0);
+  const minY = 0, maxY = 100;
+  const padL = 0, padR = 0, padT = 10, padB = 4;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  // Grid lines at 0, 50, 100
+  ctx.strokeStyle = 'rgba(237,232,213,.05)';
+  ctx.lineWidth   = 1;
+  [0, 50, 100].forEach(v => {
+    const y = padT + plotH - (v / 100 * plotH);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+  });
+
+  // Area fill
+  const xStep = pts.length > 1 ? plotW / (pts.length - 1) : plotW;
+  const toX = i => padL + i * xStep;
+  const toY = v => padT + plotH - ((v - minY) / (maxY - minY) * plotH);
+
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
+  grad.addColorStop(0,   accentColor + '55');
+  grad.addColorStop(1,   accentColor + '00');
+  ctx.beginPath();
+  pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+  ctx.lineTo(toX(pts.length - 1), padT + plotH);
+  ctx.lineTo(padL, padT + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth   = 2;
+  ctx.lineJoin    = 'round';
+  pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+  ctx.stroke();
+
+  // Dots
+  pts.forEach((v, i) => {
+    ctx.beginPath();
+    ctx.arc(toX(i), toY(v), 3, 0, Math.PI * 2);
+    ctx.fillStyle   = accentColor;
+    ctx.strokeStyle = '#131110';
+    ctx.lineWidth   = 1.5;
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+// ─── Global event log ─────────────────────────────────────────────────────────
+function renderEventLog(svcs) {
+  const el = document.getElementById('event-log');
+  // Gather all events across all filtered services, tag with service name
+  const all = svcs.flatMap(s =>
+    filterEvents(s.events).map(e => ({ ...e, svcName: s.name, svcId: s.id }))
+  ).sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 50);
+
+  renderEvents(el, all, true);
+}
+
+function renderEvents(el, events, showSvc = false) {
+  if (!events.length) {
+    el.innerHTML = '<div class="event-empty">No events in this period — all clear.</div>';
+    return;
+  }
+
+  const ICONS = {
+    offline:     { icon: '↓', cls: 'offline' },
+    degraded:    { icon: '!', cls: 'degraded' },
+    recovery:    { icon: '↑', cls: 'recovery' },
+    maintenance: { icon: '⚙', cls: 'maintenance' },
+  };
+
+  el.innerHTML = events.map(e => {
+    const ic = ICONS[e.type] || { icon: 'i', cls: 'info' };
+    const title = e.note || (
+      e.type === 'offline'     ? 'Service went offline' :
+      e.type === 'degraded'    ? 'Service degraded' :
+      e.type === 'recovery'    ? 'Service recovered' :
+      e.type === 'maintenance' ? 'Maintenance toggled' : 'Status change'
+    );
+    return `<div class="event-item">
+      <div class="event-icon ${ic.cls}">${ic.icon}</div>
+      <div class="event-body">
+        <div class="event-title">${title}</div>
+        ${showSvc ? `<div class="event-svc">${e.svcName || e.svcId || ''}</div>` : ''}
+      </div>
+      <div class="event-time">${fmtDate(e.ts)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
