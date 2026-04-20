@@ -599,6 +599,7 @@ async function fetchData() {
     if (res.status === 401) { window.location.href = '/login'; return; }
     APP = await res.json();
     renderAll(false);
+    tick(); // refresh greeting/time immediately with loaded settings
   } catch(e) {
     console.error('Fetch failed', e);
     document.getElementById('summary-txt').textContent = 'Connection error';
