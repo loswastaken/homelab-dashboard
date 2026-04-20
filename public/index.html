@@ -1572,8 +1572,9 @@ async function applyUpdate() {
     const res  = await fetch('/api/update/apply', { method: 'POST' });
     const data = await res.json();
     if (data.ok) {
-      updResult(data.message, 'green');
+      updResult('Update triggered — restarting…', 'green');
       btn.style.display = 'none';
+      waitForRestart();
     } else if (data.manual) {
       updResult(data.message, 'amber');
       btn.disabled = false;
@@ -1584,10 +1585,29 @@ async function applyUpdate() {
       btn.textContent = 'Apply Update';
     }
   } catch (e) {
-    updResult('Request failed: ' + e.message, 'red');
-    btn.disabled = false;
-    btn.textContent = 'Apply Update';
+    // A network error / timeout here means Watchtower restarted the container — treat as success
+    updResult('Restarting…', 'green');
+    btn.style.display = 'none';
+    waitForRestart();
   }
+}
+
+function waitForRestart() {
+  updResult('Restarting — will reload automatically…', 'green');
+  // Give the container a moment to go down before we start polling
+  setTimeout(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/services', { cache: 'no-store' });
+        if (res.ok) {
+          clearInterval(interval);
+          window.location.reload();
+        }
+      } catch {
+        // still down — keep polling
+      }
+    }, 2000);
+  }, 4000);
 }
 
 /* ═══════════════════════════════════════════════════
