@@ -338,8 +338,8 @@
   </div>
 
   <div class="side-foot">
-    <div class="foot-lbl">Synology DS423+</div>
-    <div class="foot-val" id="foot-ip">10.24.4.26</div>
+    <div class="foot-lbl" id="foot-label">Homelab Server</div>
+    <div class="foot-val" id="foot-ip"></div>
     <button onclick="logout()" style="margin-top:10px;width:100%;font-family:'Sora',sans-serif;
       font-size:11px;font-weight:500;color:var(--ts);background:none;border:1px solid var(--b0);
       border-radius:5px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;"
@@ -480,12 +480,23 @@
 
       <div class="form-row">
         <div>
-          <label class="form-lbl">Site Title</label>
-          <input class="form-inp" id="cfg-title" placeholder="los.dev · Homelab">
+          <label class="form-lbl">Your Name <span>(shown in greeting)</span></label>
+          <input class="form-inp" id="cfg-name" placeholder="Alex">
         </div>
         <div>
-          <label class="form-lbl">NAS IP <span>(shown in sidebar)</span></label>
-          <input class="form-inp" id="cfg-ip" placeholder="10.24.4.26">
+          <label class="form-lbl">Site Title <span>(browser tab)</span></label>
+          <input class="form-inp" id="cfg-title" placeholder="Homelab Dashboard">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">Server Label <span>(sidebar footer)</span></label>
+          <input class="form-inp" id="cfg-serverlabel" placeholder="Synology DS423+">
+        </div>
+        <div>
+          <label class="form-lbl">Server IP <span>(sidebar footer)</span></label>
+          <input class="form-inp" id="cfg-ip" placeholder="10.0.0.1">
         </div>
       </div>
 
@@ -500,7 +511,7 @@
         <div style="display:flex;gap:8px">
           <input class="form-inp" id="cfg-apikey" readonly
             style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
-          <button class="btn-sm" onclick="copyApiKey()" style="flex-shrink:0">Copy</button>
+          <button class="btn-sm" onclick="copyApiKey(this)" style="flex-shrink:0">Copy</button>
         </div>
       </div>
 
@@ -521,6 +532,27 @@
         </div>
         <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
       </div>
+    </div>
+      <div class="modal-sec">Account</div>
+      <div class="form-group">
+        <label class="form-lbl">Current Password <span>(required to make changes)</span></label>
+        <input class="form-inp" id="cfg-curpw" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">New Username <span>(leave blank to keep)</span></label>
+          <input class="form-inp" id="cfg-newuser" placeholder="admin" autocomplete="username">
+        </div>
+        <div>
+          <label class="form-lbl">New Password <span>(leave blank to keep)</span></label>
+          <input class="form-inp" id="cfg-newpw" type="password" placeholder="••••••••" autocomplete="new-password">
+        </div>
+      </div>
+      <div style="margin-bottom:4px">
+        <button class="btn-sm" onclick="changeAccount()">Update Account</button>
+        <span id="acct-msg" style="font-size:11px;margin-left:10px;color:var(--ts)"></span>
+      </div>
+
     </div>
     <div class="modal-foot">
       <button class="btn-sec" onclick="closeCfgModal()">Cancel</button>
@@ -728,9 +760,11 @@ function renderAll() {
   /* filter tabs */
   renderTabs();
 
-  /* brand */
-  if (APP.settings?.siteTitle) document.title = APP.settings.siteTitle;
-  if (APP.settings?.nasIp) document.getElementById('foot-ip').textContent = APP.settings.nasIp;
+  /* brand + footer */
+  const s = APP.settings || {};
+  if (s.siteTitle)    { document.title = s.siteTitle; document.getElementById('brand-name').textContent = s.siteTitle; }
+  if (s.serverLabel)  document.getElementById('foot-label').textContent = s.serverLabel;
+  if (s.nasIp)        document.getElementById('foot-ip').textContent = s.nasIp;
 }
 
 function renderNavCats() {
@@ -769,9 +803,10 @@ function setFilter(cat, navEl, tabEl) {
 ═══════════════════════════════════════════════════ */
 function tick() {
   const now = new Date();
-  const h   = now.getHours();
-  const g   = h<12?'Good morning': h<17?'Good afternoon':'Good evening';
-  document.getElementById('greeting').innerHTML = `${g}, <b>Los.</b>`;
+  const h    = now.getHours();
+  const g    = h<12?'Good morning': h<17?'Good afternoon':'Good evening';
+  const name = APP.settings?.displayName || '';
+  document.getElementById('greeting').innerHTML = name ? `${g}, <b>${name}.</b>` : `${g}.`;
   document.getElementById('hdr-time').textContent =
     now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   document.getElementById('hdr-date').textContent =
@@ -867,11 +902,18 @@ async function toggleMaintenance(id) {
    SETTINGS MODAL
 ═══════════════════════════════════════════════════ */
 function openSettings() {
-  pendingCats = JSON.parse(JSON.stringify(APP.categories)); // deep copy
-  document.getElementById('cfg-title').value    = APP.settings?.siteTitle || '';
-  document.getElementById('cfg-ip').value       = APP.settings?.nasIp || '';
-  document.getElementById('cfg-interval').value = APP.settings?.checkInterval || 60;
-  document.getElementById('cfg-apikey').value   = APP.apiKey || '—';
+  pendingCats = JSON.parse(JSON.stringify(APP.categories));
+  const s = APP.settings || {};
+  document.getElementById('cfg-name').value        = s.displayName   || '';
+  document.getElementById('cfg-title').value       = s.siteTitle     || '';
+  document.getElementById('cfg-serverlabel').value = s.serverLabel   || '';
+  document.getElementById('cfg-ip').value          = s.nasIp         || '';
+  document.getElementById('cfg-interval').value    = s.checkInterval || 60;
+  document.getElementById('cfg-apikey').value      = APP.apiKey      || '—';
+  document.getElementById('cfg-curpw').value       = '';
+  document.getElementById('cfg-newuser').value     = '';
+  document.getElementById('cfg-newpw').value       = '';
+  document.getElementById('acct-msg').textContent  = '';
   renderCfgCats();
   renderSwatches();
   document.getElementById('cfg-overlay').classList.add('show');
@@ -950,21 +992,70 @@ function onHexInput(val) {
 }
 
 async function saveSettings() {
-  const interval = parseInt(document.getElementById('cfg-interval').value,10);
+  const interval = parseInt(document.getElementById('cfg-interval').value, 10);
   await fetch('/api/config', {
     method: 'PUT',
-    headers: {'Content-Type':'application/json'},
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       settings: {
+        displayName:   document.getElementById('cfg-name').value.trim(),
         siteTitle:     document.getElementById('cfg-title').value.trim(),
+        serverLabel:   document.getElementById('cfg-serverlabel').value.trim(),
         nasIp:         document.getElementById('cfg-ip').value.trim(),
-        checkInterval: Math.max(10, isNaN(interval)?60:interval)
+        checkInterval: Math.max(10, isNaN(interval) ? 60 : interval),
       },
       categories: pendingCats
     })
   });
   closeCfgModal();
   await doRefreshAll();
+}
+
+async function changeAccount() {
+  const msg        = document.getElementById('acct-msg');
+  const curpw      = document.getElementById('cfg-curpw').value;
+  const newUsername = document.getElementById('cfg-newuser').value.trim();
+  const newPassword = document.getElementById('cfg-newpw').value;
+
+  if (!curpw) { msg.style.color = 'var(--red)'; msg.textContent = 'Current password required.'; return; }
+  if (!newUsername && !newPassword) { msg.style.color = 'var(--amber)'; msg.textContent = 'Enter a new username or password.'; return; }
+
+  const res  = await fetch('/api/auth', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword: curpw, newUsername, newPassword })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = 'Account updated.';
+    document.getElementById('cfg-curpw').value  = '';
+    document.getElementById('cfg-newuser').value = '';
+    document.getElementById('cfg-newpw').value  = '';
+  } else {
+    msg.style.color = 'var(--red)';
+    msg.textContent = data.error || 'Update failed.';
+  }
+}
+
+function copyApiKey(btn) {
+  const key  = document.getElementById('cfg-apikey').value;
+  const done = () => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(key).then(done).catch(() => execCopy(key, done));
+  } else {
+    execCopy(key, done);
+  }
+}
+
+function execCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); cb(); } catch {}
+  document.body.removeChild(ta);
 }
 
 /* ═══════════════════════════════════════════════════

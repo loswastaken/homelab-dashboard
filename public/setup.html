@@ -89,6 +89,10 @@
 
     <form onsubmit="setup(event)">
       <div class="field">
+        <label>Your name <span style="color:var(--tm);font-weight:400">(shown in greeting)</span></label>
+        <input id="displayName" type="text" placeholder="Alex">
+      </div>
+      <div class="field">
         <label>Username</label>
         <input id="username" type="text" placeholder="admin" autocomplete="username" required>
       </div>
@@ -140,9 +144,10 @@
       const btn = document.getElementById('btn');
       err.classList.remove('show');
 
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      const confirm  = document.getElementById('confirm').value;
+      const displayName = document.getElementById('displayName').value.trim();
+      const username    = document.getElementById('username').value.trim();
+      const password    = document.getElementById('password').value;
+      const confirm     = document.getElementById('confirm').value;
 
       if (password !== confirm) {
         err.textContent = 'Passwords do not match';
@@ -162,7 +167,7 @@
         const res = await fetch('/api/setup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password }),
+          body: JSON.stringify({ username, password, displayName }),
         });
         const data = await res.json();
         if (res.ok) {

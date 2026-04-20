@@ -115,8 +115,8 @@
           btn.disabled = false;
           btn.textContent = 'Sign In';
         }
-      } catch {
-        err.textContent = 'Connection error — is the server running?';
+      } catch (e) {
+        err.textContent = 'Could not reach the server. Check your connection and try again.';
         err.classList.add('show');
         btn.disabled = false;
         btn.textContent = 'Sign In';

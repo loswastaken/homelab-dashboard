@@ -15,8 +15,10 @@ const DATA_FILE = path.join(DATA_DIR, 'services.json');
 const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
 const SESS_DIR  = path.join(DATA_DIR, 'sessions');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(DATA_DIR))  fs.mkdirSync(DATA_DIR,  { recursive: true });
+if (!fs.existsSync(SESS_DIR))  fs.mkdirSync(SESS_DIR,  { recursive: true });
 
+app.set('trust proxy', 1); // required when behind Cloudflare / any reverse proxy
 app.use(express.json());
 
 // ─── Data helpers ────────────────────────────────────────────────────────────
@@ -32,13 +34,15 @@ function save(d) {
 
 function defaults() {
   return {
-    settings: { checkInterval: 60, siteTitle: 'los.dev · Homelab', nasIp: '10.24.4.26' },
-    categories: [
-      { id: 'media', name: 'Media Stack',     color: 'blue'   },
-      { id: 'bot',   name: 'Bots',            color: 'purple' },
-      { id: 'infra', name: 'Infrastructure',  color: 'amber'  }
-    ],
-    services: []
+    settings: {
+      checkInterval: 60,
+      siteTitle:     'Homelab Dashboard',
+      displayName:   '',
+      serverLabel:   '',
+      nasIp:         '',
+    },
+    categories: [],
+    services:   []
   };
 }
 
@@ -92,7 +96,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   name: 'hld.sid',
-  cookie: { httpOnly: true, sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 },
 }));
 
 // ─── Auth routes (public — before the auth gate) ──────────────────────────────
@@ -104,12 +108,17 @@ app.get('/setup', (req, res) => {
 
 app.post('/api/setup', async (req, res) => {
   if (isSetupDone()) return res.status(403).json({ error: 'Already configured' });
-  const { username, password } = req.body;
+  const { username, password, displayName } = req.body;
   if (!username || !password || password.length < 8)
     return res.status(400).json({ error: 'Username required; password must be at least 8 characters' });
   const passwordHash = await bcrypt.hash(password, 12);
   const auth = loadAuth() || {};
   saveAuth({ ...auth, username, passwordHash });
+  if (displayName) {
+    const d = load();
+    d.settings.displayName = displayName.trim();
+    save(d);
+  }
   req.session.authenticated = true;
   req.session.username = username;
   res.json({ ok: true });
@@ -153,6 +162,9 @@ app.use((req, res, next) => {
     const auth = loadAuth();
     if (auth && req.headers['x-api-key'] === auth.apiKey) return next();
   }
+
+  // Allow static assets (images, fonts, etc.) so login/setup pages render correctly
+  if (/\.(svg|ico|png|jpg|webp|css|js|woff2?)$/.test(req.path)) return next();
 
   if (!isSetupDone()) {
     return req.path.startsWith('/api/')
@@ -361,6 +373,29 @@ app.post('/api/services/:id/check', async (req, res) => {
     save(d);
   }
   res.json(svc);
+});
+
+// ─── API: Account ────────────────────────────────────────────────────────────
+
+app.put('/api/auth', async (req, res) => {
+  const { currentPassword, newUsername, newPassword } = req.body;
+  const auth = loadAuth();
+  if (!auth) return res.status(400).json({ error: 'No account configured' });
+  if (!currentPassword) return res.status(400).json({ error: 'Current password required' });
+
+  const valid = await bcrypt.compare(currentPassword, auth.passwordHash);
+  if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+  if (newUsername) auth.username = newUsername.trim();
+  if (newPassword) {
+    if (newPassword.length < 8)
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  }
+
+  saveAuth(auth);
+  if (newUsername) req.session.username = newUsername.trim();
+  res.json({ ok: true });
 });
 
 // ─── API: Config ─────────────────────────────────────────────────────────────
