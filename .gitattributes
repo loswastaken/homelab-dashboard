@@ -1,0 +1,9 @@
+* text=auto
+
+# Shell scripts must use LF so they execute correctly on Linux/NAS
+*.sh text eol=lf
+
+# Docker/YAML — LF only
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+.github/workflows/*.yml text eol=lf

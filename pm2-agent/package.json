@@ -1,0 +1,12 @@
+{
+  "name": "pm2-agent",
+  "version": "1.0.0",
+  "description": "Polls pm2 jlist and PUTs status to homelab-dashboard API",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

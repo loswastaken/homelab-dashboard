@@ -1,0 +1,10 @@
+node_modules/
+pm2-agent/node_modules/
+
+# Live data lives in the NAS volume, not in the repo.
+# The committed data/services.json is a seed bundled into the Docker image.
+# If your seed contains sensitive URLs, uncomment the line below:
+# data/services.json
+
+.DS_Store
+*.log

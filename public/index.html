@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>los.dev · Homelab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:   #131110;
+      --bg-side:   #0f0e0c;
+      --bg-surf:   #1a1815;
+      --bg-card:   #1e1c18;
+      --bg-cardh:  #232019;
+      --bg-hi:     #2c2922;
+      --bg-modal:  #1a1815;
+
+      --tp:  #ede8d5;
+      --ts:  #7a7165;
+      --tm:  #46423b;
+
+      --b0: rgba(237,232,213,.05);
+      --b1: rgba(237,232,213,.09);
+      --b2: rgba(237,232,213,.18);
+
+      --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
+      --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
+      --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
+      --blue:    #5285b8; --blue-bg:   rgba(82,133,184,.13);
+      --purple:  #7a60b8; --purple-bg: rgba(122,96,184,.13);
+      --pink:    #b85888; --pink-bg:   rgba(184,88,136,.13);
+
+      --sw: 200px;
+    }
+
+    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased; }
+
+    body::before { content: ''; position: fixed; inset: 0;
+      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
+      background-size: 28px 28px; pointer-events: none; z-index: 0; }
+
+    /* ─── Sidebar ─── */
+    .sidebar { position: fixed; top:0; left:0; bottom:0; width: var(--sw);
+      background: var(--bg-side); border-right: 1px solid var(--b0);
+      display: flex; flex-direction: column; padding: 22px 0 20px; z-index: 200; }
+
+    .brand { padding: 0 20px 22px; border-bottom: 1px solid var(--b0); margin-bottom: 6px; }
+    .brand-lbl { font-size: 10px; font-weight: 500; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--tm); }
+    .brand-name { font-size: 22px; font-weight: 600; letter-spacing: -.03em; color: var(--tp); margin-top: 2px; }
+
+    .nav-sec { padding: 10px 0 4px; }
+    .nav-lbl { font-size: 10px; font-weight: 500; letter-spacing: .13em;
+      text-transform: uppercase; color: var(--tm); padding: 0 20px; margin-bottom: 2px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 20px;
+      font-size: 13px; color: var(--ts); cursor: pointer;
+      border-left: 2px solid transparent; transition: all .15s; user-select: none; }
+    .nav-item:hover { color: var(--tp); background: var(--b0); }
+    .nav-item.active { color: var(--tp); border-left-color: rgba(237,232,213,.35); background: var(--bg-surf); }
+    .nav-pip { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+    .side-foot { margin-top: auto; padding: 16px 20px 0; border-top: 1px solid var(--b0); }
+    .foot-lbl { font-size: 10px; color: var(--tm); margin-bottom: 3px; }
+    .foot-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+
+    /* ─── Main ─── */
+    .main { margin-left: var(--sw); min-height: 100vh; display: flex;
+      flex-direction: column; position: relative; z-index: 1; }
+
+    /* ─── Header ─── */
+    .hdr { padding: 30px 40px 22px; border-bottom: 1px solid var(--b0);
+      display: flex; align-items: flex-start; justify-content: space-between; }
+    .greeting { font-size: 30px; font-weight: 300; letter-spacing: -.03em; line-height: 1.1; }
+    .greeting b { font-weight: 600; }
+    .greet-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--ts); margin-top: 5px; display: flex; align-items: center; gap: 6px; }
+    .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+      flex-shrink: 0; animation: pulse 2.5s ease-in-out infinite; }
+    .live-dot.warn { background: var(--amber); }
+    .hdr-r { text-align: right; }
+    .hdr-date { font-size: 11px; font-weight: 500; letter-spacing: .08em;
+      color: var(--ts); text-transform: uppercase; }
+    .hdr-time { font-family: 'JetBrains Mono', monospace; font-size: 26px;
+      font-weight: 500; color: var(--tp); margin-top: 2px; letter-spacing: -.02em; }
+
+    /* ─── Refresh indicator ─── */
+    .refresh-ring { width: 10px; height: 10px; border: 1.5px solid var(--ts);
+      border-top-color: transparent; border-radius: 50%;
+      display: none; animation: spin .8s linear infinite; }
+    .refresh-ring.active { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Alert ─── */
+    .alert { margin: 18px 40px 0; padding: 11px 16px;
+      background: var(--amber-bg); border: 1px solid rgba(196,136,74,.22);
+      border-radius: 8px; display: none; align-items: center; gap: 10px;
+      font-size: 12.5px; color: var(--amber); }
+    .alert.show { display: flex; }
+    .alert-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber);
+      flex-shrink: 0; animation: pulse 2s ease-in-out infinite; }
+
+    /* ─── Content ─── */
+    .content { padding: 26px 40px 60px; flex: 1; }
+
+    /* ─── Stats ─── */
+    .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 30px; }
+    .stat { background: var(--bg-surf); border: 1px solid var(--b0); border-radius: 8px;
+      padding: 16px 18px; transition: border-color .2s; }
+    .stat:hover { border-color: var(--b1); }
+    .stat-lbl { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--tm); margin-bottom: 8px; }
+    .stat-val { font-family: 'JetBrains Mono', monospace; font-size: 30px;
+      font-weight: 500; line-height: 1; }
+    .stat-sub { font-size: 11px; color: var(--tm); margin-top: 4px; }
+    .cg { color: var(--green); } .ca { color: var(--amber); } .cr { color: var(--red); }
+
+    /* ─── Filter row ─── */
+    .filter-row { display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; gap: 12px; }
+    .tabs { display: flex; gap: 3px; background: var(--bg-surf);
+      border: 1px solid var(--b0); border-radius: 8px; padding: 4px; flex-shrink: 0; }
+    .tab { padding: 5px 15px; font-size: 12px; font-weight: 500; border-radius: 5px;
+      cursor: pointer; color: var(--ts); transition: all .15s; user-select: none; }
+    .tab:hover { color: var(--tp); }
+    .tab.active { background: var(--bg-hi); color: var(--tp); }
+
+    .row-right { display: flex; gap: 8px; }
+    .btn-sm { font-family: 'Sora', sans-serif; font-size: 12px; font-weight: 500;
+      color: var(--ts); background: var(--bg-surf); border: 1px solid var(--b0);
+      border-radius: 6px; padding: 6px 14px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .btn-sm:hover { color: var(--tp); border-color: var(--b2); }
+    .btn-sm.primary { color: var(--tp); border-color: var(--b1); background: var(--bg-hi); }
+    .btn-sm.primary:hover { border-color: var(--b2); }
+
+    /* ─── Grid ─── */
+    .grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+
+    /* ─── Card ─── */
+    .card { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
+      padding: 16px 18px; border-left-width: 3px;
+      transition: border-color .2s, background .2s, transform .2s;
+      animation: fadein .3s ease both; position: relative; }
+    .card:hover { border-color: var(--b2); background: var(--bg-cardh); transform: translateY(-2px); }
+
+    .card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+    .card-meta {}
+    .svc-icon { width: 30px; height: 30px; border-radius: 6px; display: flex;
+      align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
+      letter-spacing: .04em; margin-bottom: 7px; }
+    .svc-name { font-size: 14px; font-weight: 600; color: var(--tp); }
+    .svc-desc { font-size: 11px; color: var(--ts); margin-top: 1px; }
+
+    .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .badge { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
+      padding: 3px 9px; border-radius: 20px; flex-shrink: 0; }
+    .bdot { width: 5px; height: 5px; border-radius: 50%; }
+    .badge.online  { background: var(--green-bg);  color: var(--green); }
+    .badge.degraded{ background: var(--amber-bg);  color: var(--amber); }
+    .badge.offline { background: var(--red-bg);    color: var(--red);   }
+    .badge.unknown { background: var(--b0);         color: var(--ts);   }
+    .badge.online  .bdot { background: var(--green); }
+    .badge.degraded .bdot { background: var(--amber); animation: pulse 2s infinite; }
+    .badge.offline .bdot { background: var(--red); }
+    .badge.unknown .bdot { background: var(--ts); }
+
+    /* card action buttons (top-right) */
+    .card-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+    .card:hover .card-actions { opacity: 1; }
+    .act-btn { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 4px;
+      cursor: pointer; border: 1px solid var(--b1); background: var(--bg-surf);
+      color: var(--ts); transition: all .15s; font-family: 'Sora', sans-serif; }
+    .act-btn:hover { color: var(--tp); border-color: var(--b2); }
+    .act-btn.resolve { color: var(--green); border-color: var(--green-bg); background: var(--green-bg); }
+    .act-btn.resolve:hover { background: rgba(90,158,114,.25); }
+    .act-btn.del:hover { color: var(--red); border-color: var(--red-bg); }
+
+    /* uptime bar */
+    .uptime-bar { display: flex; gap: 2px; margin: 6px 0 2px; }
+    .tick { height: 18px; flex: 1; border-radius: 2px; }
+    .tick.ok   { background: rgba(90,158,114,.38); }
+    .tick.warn { background: rgba(196,136,74,.42); }
+    .tick.bad  { background: rgba(184,85,85,.55); }
+    .tick.unk  { background: rgba(237,232,213,.08); }
+    .tick-lbl  { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--tm); }
+
+    .divider { border: none; border-top: 1px solid var(--b0); margin: 10px 0; }
+
+    .card-stats { display: flex; gap: 14px; }
+    .cs { flex: 1; }
+    .cs-lbl { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--tm); margin-bottom: 1px; }
+    .cs-val { font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+      font-weight: 500; color: var(--tp); }
+
+    .card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+    .cat-tag { font-size: 9.5px; font-weight: 500; letter-spacing: .09em;
+      text-transform: uppercase; color: var(--tm); }
+    .open-link { font-size: 11px; color: var(--ts); text-decoration: none; transition: color .15s; }
+    .open-link:hover { color: var(--tp); }
+    .open-link.dim { opacity: .3; pointer-events: none; }
+
+    /* ─── Modal ─── */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px); z-index: 500; display: none;
+      align-items: center; justify-content: center; }
+    .overlay.show { display: flex; }
+
+    .modal { background: var(--bg-modal); border: 1px solid var(--b1);
+      border-radius: 12px; width: 520px; max-width: calc(100vw - 40px);
+      max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+    .modal-hdr { padding: 20px 24px 16px; border-bottom: 1px solid var(--b0);
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .modal-title { font-size: 16px; font-weight: 600; }
+    .modal-close { font-size: 18px; color: var(--ts); cursor: pointer; line-height: 1;
+      transition: color .15s; background: none; border: none; }
+    .modal-close:hover { color: var(--tp); }
+    .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    .modal-foot { padding: 16px 24px; border-top: 1px solid var(--b0);
+      display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .form-lbl { font-size: 11px; font-weight: 500; color: var(--ts);
+      margin-bottom: 5px; display: block; letter-spacing: .04em; }
+    .form-lbl span { color: var(--tm); font-weight: 400; }
+    .form-inp { width: 100%; background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 6px; padding: 8px 12px; color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 13px; outline: none; transition: border-color .15s; }
+    .form-inp:focus { border-color: var(--b2); }
+    .form-inp::placeholder { color: var(--tm); }
+    select.form-inp { cursor: pointer; }
+    select.form-inp option { background: var(--bg-surf); }
+
+    /* toggle */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--b0); }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-info { }
+    .toggle-name { font-size: 13px; font-weight: 500; }
+    .toggle-desc { font-size: 11px; color: var(--ts); margin-top: 1px; }
+    .toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .tslider { position: absolute; cursor: pointer; inset: 0;
+      background: var(--bg-hi); border-radius: 22px; transition: .2s; border: 1px solid var(--b1); }
+    .tslider:before { content: ''; position: absolute; height: 14px; width: 14px;
+      left: 3px; top: 3px; background: var(--ts); border-radius: 50%; transition: .2s; }
+    input:checked + .tslider { background: var(--green-bg); border-color: rgba(90,158,114,.35); }
+    input:checked + .tslider:before { transform: translateX(16px); background: var(--green); }
+
+    /* section divider in modal */
+    .modal-sec { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--tm); margin: 20px 0 12px;
+      display: flex; align-items: center; gap: 8px; }
+    .modal-sec::after { content: ''; flex:1; height: 1px; background: var(--b0); }
+
+    /* settings: category list */
+    .cat-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .cat-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      background: var(--bg-surf); border: 1px solid var(--b0); border-radius: 6px; }
+    .cat-pip { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .cat-name { flex: 1; font-size: 13px; }
+    .cat-del { font-size: 16px; color: var(--tm); cursor: pointer; transition: color .15s;
+      line-height: 1; background: none; border: none; padding: 0 2px; }
+    .cat-del:hover { color: var(--red); }
+
+    /* color swatch picker */
+    .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .swatch { width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+      border: 2px solid transparent; transition: border-color .15s; }
+    .swatch.selected { border-color: var(--tp); }
+
+    /* btn variants */
+    .btn-prim { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--tp); background: var(--bg-hi); border: 1px solid var(--b2);
+      border-radius: 6px; padding: 8px 20px; cursor: pointer; transition: all .15s; }
+    .btn-prim:hover { background: var(--b1); }
+    .btn-sec { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--ts); background: transparent; border: 1px solid var(--b0);
+      border-radius: 6px; padding: 8px 20px; cursor: pointer; transition: all .15s; }
+    .btn-sec:hover { color: var(--tp); border-color: var(--b1); }
+
+    /* empty state */
+    .empty { text-align: center; padding: 60px 20px; color: var(--tm); }
+    .empty-big { font-size: 36px; margin-bottom: 8px; opacity: .3; }
+    .empty-txt { font-size: 13px; }
+
+    /* countdown */
+    .countdown { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--tm); margin-left: 4px; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+    @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .card:nth-child(1){animation-delay:0ms} .card:nth-child(2){animation-delay:50ms}
+    .card:nth-child(3){animation-delay:100ms} .card:nth-child(4){animation-delay:150ms}
+    .card:nth-child(5){animation-delay:200ms} .card:nth-child(6){animation-delay:250ms}
+    .card:nth-child(7){animation-delay:300ms} .card:nth-child(8){animation-delay:350ms}
+    .card:nth-child(9){animation-delay:400ms}
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<nav class="sidebar">
+  <div class="brand">
+    <div class="brand-lbl">Homelab</div>
+    <div class="brand-name" id="brand-name">los.dev</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Overview</div>
+    <div class="nav-item active" onclick="setFilter('all',this)">Dashboard</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Services</div>
+    <div id="nav-cats"></div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">System</div>
+    <div class="nav-item" onclick="openSettings()">Settings</div>
+  </div>
+
+  <div class="side-foot">
+    <div class="foot-lbl">Synology DS423+</div>
+    <div class="foot-val" id="foot-ip">10.24.4.26</div>
+  </div>
+</nav>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="main">
+
+  <div class="hdr">
+    <div>
+      <div class="greeting" id="greeting">Good evening, <b>Los.</b></div>
+      <div class="greet-sub">
+        <span class="live-dot" id="live-dot"></span>
+        <span id="summary-txt">Loading…</span>
+        <div class="refresh-ring" id="ring"></div>
+        <span class="countdown" id="countdown"></span>
+      </div>
+    </div>
+    <div class="hdr-r">
+      <div class="hdr-date" id="hdr-date"></div>
+      <div class="hdr-time" id="hdr-time">--:--</div>
+    </div>
+  </div>
+
+  <div class="alert" id="alert-bar">
+    <span class="alert-dot"></span>
+    <span id="alert-txt"></span>
+  </div>
+
+  <div class="content">
+
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Services</div>
+        <div class="stat-val" id="s-total">—</div><div class="stat-sub">monitored</div></div>
+      <div class="stat"><div class="stat-lbl">Online</div>
+        <div class="stat-val cg" id="s-online">—</div><div class="stat-sub">healthy</div></div>
+      <div class="stat"><div class="stat-lbl">Degraded</div>
+        <div class="stat-val ca" id="s-degraded">—</div><div class="stat-sub">attention needed</div></div>
+      <div class="stat"><div class="stat-lbl">Offline</div>
+        <div class="stat-val cr" id="s-offline">—</div><div class="stat-sub">unreachable</div></div>
+    </div>
+
+    <div class="filter-row">
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-filter="all" onclick="setFilter('all',null,this)">All</div>
+      </div>
+      <div class="row-right">
+        <button class="btn-sm" onclick="doRefreshAll()">↺ Refresh</button>
+        <button class="btn-sm primary" onclick="openAddModal()">+ Add Service</button>
+      </div>
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </div>
+</main>
+
+<!-- ══════════════ SERVICE MODAL ══════════════ -->
+<div class="overlay" id="svc-overlay" onclick="if(event.target===this)closeSvcModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="modal-title">Add Service</div>
+      <button class="modal-close" onclick="closeSvcModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">Name *</label>
+          <input class="form-inp" id="f-name" placeholder="Plex">
+        </div>
+        <div>
+          <label class="form-lbl">Abbreviation * <span>(3 chars)</span></label>
+          <input class="form-inp" id="f-abbr" placeholder="PLX" maxlength="4">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Description</label>
+        <input class="form-inp" id="f-desc" placeholder="Media Server">
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">Category *</label>
+          <select class="form-inp" id="f-cat"></select>
+        </div>
+        <div>
+          <label class="form-lbl">Port <span>(display only)</span></label>
+          <input class="form-inp" id="f-port" placeholder="32400">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Check URL <span>(leave blank to skip auto-check)</span></label>
+        <input class="form-inp" id="f-url" placeholder="http://10.24.4.26:32400">
+      </div>
+
+      <div class="modal-sec">Options</div>
+
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-name">Has Web UI</div>
+          <div class="toggle-desc">Show "Open ↗" link on the card</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="f-hasui" checked><span class="tslider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-name">Enable Auto-Check</div>
+          <div class="toggle-desc">Ping URL on each health check cycle</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="f-check" checked><span class="tslider"></span></label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sec" onclick="closeSvcModal()">Cancel</button>
+      <button class="btn-prim" onclick="submitSvc()">Save Service</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SETTINGS MODAL ══════════════ -->
+<div class="overlay" id="cfg-overlay" onclick="if(event.target===this)closeCfgModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Settings</div>
+      <button class="modal-close" onclick="closeCfgModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="modal-sec">General</div>
+
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">Site Title</label>
+          <input class="form-inp" id="cfg-title" placeholder="los.dev · Homelab">
+        </div>
+        <div>
+          <label class="form-lbl">NAS IP <span>(shown in sidebar)</span></label>
+          <input class="form-inp" id="cfg-ip" placeholder="10.24.4.26">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Health Check Interval <span>(seconds, min 10)</span></label>
+        <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
+      </div>
+
+      <div class="modal-sec">Categories</div>
+      <div class="cat-list" id="cfg-cat-list"></div>
+
+      <div style="display:flex; gap:8px; align-items:flex-end;">
+        <div style="flex:1">
+          <label class="form-lbl">New Category Name</label>
+          <input class="form-inp" id="new-cat-name" placeholder="Storage">
+        </div>
+        <div>
+          <label class="form-lbl">Color</label>
+          <div class="color-swatches" id="color-swatches"></div>
+        </div>
+        <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sec" onclick="closeCfgModal()">Cancel</button>
+      <button class="btn-prim" onclick="saveSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════ */
+let APP   = { services: [], categories: [], settings: {} };
+let filter = 'all';
+let pollTimer, countdownTimer, countdownSecs = 60;
+let pendingCats = [];
+let selectedColor = 'blue';
+
+const COLOR_CSS = {
+  blue:   { card: 'var(--blue)',   icon: 'var(--blue-bg)',   pip: '#5285b8' },
+  purple: { card: 'var(--purple)', icon: 'var(--purple-bg)', pip: '#7a60b8' },
+  amber:  { card: 'var(--amber)',  icon: 'var(--amber-bg)',  pip: '#c4884a' },
+  green:  { card: 'var(--green)',  icon: 'var(--green-bg)',  pip: '#5a9e72' },
+  red:    { card: 'var(--red)',    icon: 'var(--red-bg)',    pip: '#b85555' },
+  pink:   { card: 'var(--pink)',   icon: 'var(--pink-bg)',   pip: '#b85888' }
+};
+
+/* ═══════════════════════════════════════════════════
+   FETCH / POLL
+═══════════════════════════════════════════════════ */
+async function fetchData() {
+  const ring = document.getElementById('ring');
+  ring.classList.add('active');
+  try {
+    const res = await fetch('/api/services');
+    APP = await res.json();
+    renderAll();
+  } catch(e) {
+    console.error('Fetch failed', e);
+    document.getElementById('summary-txt').textContent = 'Connection error';
+  } finally {
+    ring.classList.remove('active');
+  }
+}
+
+async function doRefreshAll() {
+  clearPoll();
+  await fetchData();
+  startPoll();
+}
+
+function startPoll() {
+  clearPoll();
+  countdownSecs = APP.settings?.checkInterval || 60;
+  updateCountdown();
+  countdownTimer = setInterval(() => {
+    countdownSecs--;
+    updateCountdown();
+    if (countdownSecs <= 0) { doRefreshAll(); }
+  }, 1000);
+}
+
+function clearPoll() {
+  clearInterval(pollTimer);
+  clearInterval(countdownTimer);
+}
+
+function updateCountdown() {
+  document.getElementById('countdown').textContent =
+    countdownSecs > 0 ? `· ${countdownSecs}s` : '';
+}
+
+/* ═══════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════ */
+function catFor(id) {
+  return APP.categories.find(c => c.id === id) || { id, name: id, color: 'blue' };
+}
+
+function tickCls(v) { return v===1?'ok': v===2?'warn': v===0?'bad':'unk'; }
+
+function renderCard(s) {
+  const cat    = catFor(s.cat);
+  const colors = COLOR_CSS[cat.color] || COLOR_CSS.blue;
+  const hist   = (s.history || []).slice(-30);
+  const ticks  = hist.map(v=>`<div class="tick ${tickCls(v)}"></div>`).join('');
+  const hasUrl = s.url && s.hasUI;
+  const linkHtml = hasUrl
+    ? `<a class="open-link" href="${s.url}" target="_blank">Open ↗</a>`
+    : `<span class="open-link dim">No UI ↗</span>`;
+
+  const resBtn  = (s.status==='degraded'||s.status==='offline')
+    ? `<button class="act-btn resolve" onclick="resolveService('${s.id}')">✓ Resolve</button>`
+    : '';
+  const checked = s.checkEnabled ? '' : '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>';
+  const lastChk = s.lastChecked
+    ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+    : '—';
+
+  return `
+    <div class="card" style="border-left-color:${colors.card}">
+      <div class="card-top">
+        <div class="card-meta">
+          <div class="svc-icon" style="background:${colors.icon};color:${colors.card}">${s.abbr||'?'}</div>
+          <div class="svc-name">${s.name}</div>
+          <div class="svc-desc">${s.desc||''}</div>
+        </div>
+        <div class="card-right">
+          <div class="badge ${s.status||'unknown'}">
+            <span class="bdot"></span>${s.status||'unknown'}
+          </div>
+          <div class="card-actions">
+            ${resBtn}
+            ${checked}
+            <button class="act-btn" onclick="openEditModal('${s.id}')">✎</button>
+            <button class="act-btn del" onclick="deleteSvc('${s.id}','${s.name}')">×</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="uptime-bar">${ticks.length ? ticks : '<div class="tick unk" style="flex:1"></div>'}</div>
+      <div class="tick-lbl">30-day history · checked ${lastChk}</div>
+
+      <hr class="divider">
+
+      <div class="card-stats">
+        <div class="cs"><div class="cs-lbl">Uptime</div><div class="cs-val">${s.uptime||'—'}</div></div>
+        <div class="cs"><div class="cs-lbl">Response</div><div class="cs-val">${s.response||'—'}</div></div>
+        <div class="cs"><div class="cs-lbl">Port</div><div class="cs-val">${s.port||'—'}</div></div>
+      </div>
+
+      <div class="card-foot">
+        <span class="cat-tag" style="color:${colors.card}">${cat.name}</span>
+        ${linkHtml}
+      </div>
+    </div>`;
+}
+
+function renderAll() {
+  const svcs = filter==='all' ? APP.services : APP.services.filter(s=>s.cat===filter);
+
+  /* grid */
+  if (svcs.length === 0) {
+    document.getElementById('grid').innerHTML =
+      `<div class="empty" style="grid-column:1/-1">
+        <div class="empty-big">◇</div>
+        <div class="empty-txt">No services in this category yet.<br>Click <b>+ Add Service</b> to get started.</div>
+       </div>`;
+  } else {
+    document.getElementById('grid').innerHTML = svcs.map(renderCard).join('');
+  }
+
+  /* stats */
+  const total    = APP.services.length;
+  const online   = APP.services.filter(s=>s.status==='online').length;
+  const degraded = APP.services.filter(s=>s.status==='degraded').length;
+  const offline  = APP.services.filter(s=>s.status==='offline').length;
+  document.getElementById('s-total').textContent    = total;
+  document.getElementById('s-online').textContent   = online;
+  document.getElementById('s-degraded').textContent = degraded;
+  document.getElementById('s-offline').textContent  = offline;
+
+  /* alert bar */
+  const bad = APP.services.filter(s=>s.status==='degraded'||s.status==='offline');
+  const bar = document.getElementById('alert-bar');
+  if (bad.length) {
+    bar.classList.add('show');
+    document.getElementById('alert-txt').textContent =
+      bad.map(s=>`${s.name} is ${s.status}`).join(' · ') + ' — check service logs or use Resolve.';
+  } else { bar.classList.remove('show'); }
+
+  /* live dot */
+  const dot = document.getElementById('live-dot');
+  dot.className = 'live-dot' + (degraded||offline ? ' warn' : '');
+
+  /* summary */
+  const ts = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('summary-txt').textContent =
+    (degraded===0&&offline===0)
+      ? `All systems nominal · Last checked ${ts}`
+      : `${degraded+offline} service(s) need attention · ${ts}`;
+
+  /* sidebar categories */
+  renderNavCats();
+
+  /* filter tabs */
+  renderTabs();
+
+  /* brand */
+  if (APP.settings?.siteTitle) document.title = APP.settings.siteTitle;
+  if (APP.settings?.nasIp) document.getElementById('foot-ip').textContent = APP.settings.nasIp;
+}
+
+function renderNavCats() {
+  document.getElementById('nav-cats').innerHTML = APP.categories.map(c=>{
+    const pip = COLOR_CSS[c.color]?.pip || '#888';
+    const act = filter===c.id ? ' active' : '';
+    return `<div class="nav-item${act}" onclick="setFilter('${c.id}',this)">
+      <span class="nav-pip" style="background:${pip}"></span>${c.name}
+    </div>`;
+  }).join('');
+}
+
+function renderTabs() {
+  const tabs = document.getElementById('tabs');
+  const extra = APP.categories.map(c=>
+    `<div class="tab${filter===c.id?' active':''}" data-filter="${c.id}"
+      onclick="setFilter('${c.id}',null,this)">${c.name}</div>`).join('');
+  tabs.innerHTML =
+    `<div class="tab${filter==='all'?' active':''}" data-filter="all"
+      onclick="setFilter('all',null,this)">All</div>` + extra;
+}
+
+/* ═══════════════════════════════════════════════════
+   FILTER
+═══════════════════════════════════════════════════ */
+function setFilter(cat, navEl, tabEl) {
+  filter = cat;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if (navEl) navEl.classList.add('active');
+  else if (cat==='all') document.querySelector('.nav-item')?.classList.add('active');
+  renderAll();
+}
+
+/* ═══════════════════════════════════════════════════
+   CLOCK
+═══════════════════════════════════════════════════ */
+function tick() {
+  const now = new Date();
+  const h   = now.getHours();
+  const g   = h<12?'Good morning': h<17?'Good afternoon':'Good evening';
+  document.getElementById('greeting').innerHTML = `${g}, <b>Los.</b>`;
+  document.getElementById('hdr-time').textContent =
+    now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('hdr-date').textContent =
+    now.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'}).toUpperCase();
+}
+
+/* ═══════════════════════════════════════════════════
+   SERVICE MODAL
+═══════════════════════════════════════════════════ */
+function openAddModal() {
+  document.getElementById('modal-title').textContent = 'Add Service';
+  document.getElementById('edit-id').value = '';
+  document.getElementById('f-name').value  = '';
+  document.getElementById('f-abbr').value  = '';
+  document.getElementById('f-desc').value  = '';
+  document.getElementById('f-url').value   = '';
+  document.getElementById('f-port').value  = '';
+  document.getElementById('f-hasui').checked = true;
+  document.getElementById('f-check').checked = true;
+  populateCatSelect('');
+  document.getElementById('svc-overlay').classList.add('show');
+}
+
+function openEditModal(id) {
+  const s = APP.services.find(s=>s.id===id);
+  if (!s) return;
+  document.getElementById('modal-title').textContent = 'Edit Service';
+  document.getElementById('edit-id').value = s.id;
+  document.getElementById('f-name').value  = s.name||'';
+  document.getElementById('f-abbr').value  = s.abbr||'';
+  document.getElementById('f-desc').value  = s.desc||'';
+  document.getElementById('f-url').value   = s.url||'';
+  document.getElementById('f-port').value  = s.port||'';
+  document.getElementById('f-hasui').checked = !!s.hasUI;
+  document.getElementById('f-check').checked = !!s.checkEnabled;
+  populateCatSelect(s.cat);
+  document.getElementById('svc-overlay').classList.add('show');
+}
+
+function populateCatSelect(selected) {
+  document.getElementById('f-cat').innerHTML = APP.categories.map(c=>
+    `<option value="${c.id}" ${c.id===selected?'selected':''}>${c.name}</option>`
+  ).join('');
+}
+
+function closeSvcModal() {
+  document.getElementById('svc-overlay').classList.remove('show');
+}
+
+async function submitSvc() {
+  const id   = document.getElementById('edit-id').value;
+  const body = {
+    name:         document.getElementById('f-name').value.trim(),
+    abbr:         document.getElementById('f-abbr').value.trim().toUpperCase().slice(0,4),
+    desc:         document.getElementById('f-desc').value.trim(),
+    cat:          document.getElementById('f-cat').value,
+    url:          document.getElementById('f-url').value.trim(),
+    port:         document.getElementById('f-port').value.trim(),
+    hasUI:        document.getElementById('f-hasui').checked,
+    checkEnabled: document.getElementById('f-check').checked
+  };
+  if (!body.name || !body.abbr || !body.cat) {
+    alert('Name, abbreviation, and category are required.');
+    return;
+  }
+  const method = id ? 'PUT' : 'POST';
+  const url    = id ? `/api/services/${id}` : '/api/services';
+  await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  closeSvcModal();
+  await doRefreshAll();
+}
+
+/* ═══════════════════════════════════════════════════
+   DELETE / RESOLVE
+═══════════════════════════════════════════════════ */
+async function deleteSvc(id, name) {
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  await fetch(`/api/services/${id}`, { method: 'DELETE' });
+  doRefreshAll();
+}
+
+async function resolveService(id) {
+  await fetch(`/api/services/${id}/resolve`, { method: 'POST' });
+  doRefreshAll();
+}
+
+/* ═══════════════════════════════════════════════════
+   SETTINGS MODAL
+═══════════════════════════════════════════════════ */
+function openSettings() {
+  pendingCats = JSON.parse(JSON.stringify(APP.categories)); // deep copy
+  document.getElementById('cfg-title').value    = APP.settings?.siteTitle || '';
+  document.getElementById('cfg-ip').value       = APP.settings?.nasIp || '';
+  document.getElementById('cfg-interval').value = APP.settings?.checkInterval || 60;
+  renderCfgCats();
+  renderSwatches();
+  document.getElementById('cfg-overlay').classList.add('show');
+}
+
+function closeCfgModal() {
+  document.getElementById('cfg-overlay').classList.remove('show');
+}
+
+function renderCfgCats() {
+  document.getElementById('cfg-cat-list').innerHTML = pendingCats.map((c,i)=>{
+    const pip = COLOR_CSS[c.color]?.pip || '#888';
+    return `<div class="cat-item">
+      <span class="cat-pip" style="background:${pip}"></span>
+      <span class="cat-name">${c.name}</span>
+      <span style="font-size:10px;color:var(--tm)">${c.color}</span>
+      <button class="cat-del" onclick="removeCat(${i})">×</button>
+    </div>`;
+  }).join('');
+}
+
+function removeCat(i) {
+  pendingCats.splice(i,1);
+  renderCfgCats();
+}
+
+function addCategory() {
+  const name = document.getElementById('new-cat-name').value.trim();
+  if (!name) return;
+  const id = name.toLowerCase().replace(/\s+/g,'-');
+  if (pendingCats.find(c=>c.id===id)) { alert('Category ID already exists.'); return; }
+  pendingCats.push({ id, name, color: selectedColor });
+  document.getElementById('new-cat-name').value = '';
+  renderCfgCats();
+}
+
+function renderSwatches() {
+  document.getElementById('color-swatches').innerHTML = Object.entries(COLOR_CSS).map(([color,v])=>
+    `<div class="swatch${selectedColor===color?' selected':''}"
+      style="background:${v.pip}"
+      onclick="selectColor('${color}')"></div>`
+  ).join('');
+}
+
+function selectColor(c) {
+  selectedColor = c;
+  document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
+  event.target.classList.add('selected');
+}
+
+async function saveSettings() {
+  const interval = parseInt(document.getElementById('cfg-interval').value,10);
+  await fetch('/api/config', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      settings: {
+        siteTitle:     document.getElementById('cfg-title').value.trim(),
+        nasIp:         document.getElementById('cfg-ip').value.trim(),
+        checkInterval: Math.max(10, isNaN(interval)?60:interval)
+      },
+      categories: pendingCats
+    })
+  });
+  closeCfgModal();
+  await doRefreshAll();
+}
+
+/* ═══════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════ */
+tick();
+setInterval(tick, 30000);
+fetchData().then(startPoll);
+</script>
+</body>
+</html>

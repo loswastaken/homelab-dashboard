@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  homelab-dashboard:
+    # Pull pre-built image from GitHub Container Registry.
+    # Run update.sh on the NAS to pull the latest and redeploy.
+    image: ghcr.io/YOUR_GITHUB_USERNAME/homelab-dashboard:latest
+
+    # Uncomment `build` to build locally instead of pulling from GHCR.
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+
+    container_name: homelab-dashboard
+
+    # Host networking lets the health-check reach other containers and LAN
+    # IPs (Plex, Sonarr, etc.) without NAT hairpin issues on Synology.
+    # Remove this and uncomment `ports` below if you prefer bridge networking.
+    network_mode: host
+
+    # ports:           # ← use this instead of network_mode: host if preferred
+    #   - "55964:55964"
+
+    environment:
+      - PORT=55964
+      - TZ=America/New_York
+
+    volumes:
+      # Persist services.json — edit this path to match your NAS volume layout.
+      - /volume2/docker/homelab-dashboard/data:/app/data
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:55964/api/services"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
