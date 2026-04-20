@@ -340,6 +340,13 @@
   <div class="side-foot">
     <div class="foot-lbl">Synology DS423+</div>
     <div class="foot-val" id="foot-ip">10.24.4.26</div>
+    <button onclick="logout()" style="margin-top:10px;width:100%;font-family:'Sora',sans-serif;
+      font-size:11px;font-weight:500;color:var(--ts);background:none;border:1px solid var(--b0);
+      border-radius:5px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;"
+      onmouseover="this.style.color='var(--tp)';this.style.borderColor='var(--b1)'"
+      onmouseout="this.style.color='var(--ts)';this.style.borderColor='var(--b0)'">
+      Sign out →
+    </button>
   </div>
 </nav>
 
@@ -487,6 +494,16 @@
         <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
       </div>
 
+      <div class="modal-sec">Report API Key</div>
+      <div class="form-group">
+        <label class="form-lbl">Used by external agents (PM2, etc.) via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
+        <div style="display:flex;gap:8px">
+          <input class="form-inp" id="cfg-apikey" readonly
+            style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
+          <button class="btn-sm" onclick="copyApiKey()" style="flex-shrink:0">Copy</button>
+        </div>
+      </div>
+
       <div class="modal-sec">Categories</div>
       <div class="cat-list" id="cfg-cat-list"></div>
 
@@ -546,6 +563,7 @@ async function fetchData() {
   ring.classList.add('active');
   try {
     const res = await fetch('/api/services');
+    if (res.status === 401) { window.location.href = '/login'; return; }
     APP = await res.json();
     renderAll();
   } catch(e) {
@@ -554,6 +572,11 @@ async function fetchData() {
   } finally {
     ring.classList.remove('active');
   }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
 }
 
 async function doRefreshAll() {
@@ -848,9 +871,19 @@ function openSettings() {
   document.getElementById('cfg-title').value    = APP.settings?.siteTitle || '';
   document.getElementById('cfg-ip').value       = APP.settings?.nasIp || '';
   document.getElementById('cfg-interval').value = APP.settings?.checkInterval || 60;
+  document.getElementById('cfg-apikey').value   = APP.apiKey || '—';
   renderCfgCats();
   renderSwatches();
   document.getElementById('cfg-overlay').classList.add('show');
+}
+
+function copyApiKey() {
+  const key = document.getElementById('cfg-apikey').value;
+  navigator.clipboard.writeText(key).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
 }
 
 function closeCfgModal() {

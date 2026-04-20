@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In · los.dev Homelab</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-base: #131110; --bg-surf: #1a1815; --bg-card: #1e1c18; --bg-hi: #2c2922;
+      --tp: #ede8d5; --ts: #7a7165; --tm: #46423b;
+      --b0: rgba(237,232,213,.05); --b1: rgba(237,232,213,.09); --b2: rgba(237,232,213,.18);
+      --green: #5a9e72; --green-bg: rgba(90,158,114,.14);
+      --red: #b85555; --red-bg: rgba(184,85,85,.14);
+    }
+    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
+    body { display: flex; align-items: center; justify-content: center; }
+    body::before { content: ''; position: fixed; inset: 0;
+      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
+      background-size: 28px 28px; pointer-events: none; }
+
+    .card { position: relative; z-index: 1; width: 360px; background: var(--bg-card);
+      border: 1px solid var(--b1); border-radius: 14px; padding: 36px 32px; }
+
+    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+    .logo img { width: 36px; height: 36px; border-radius: 8px; }
+    .logo-text {}
+    .logo-label { font-size: 10px; font-weight: 500; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--tm); }
+    .logo-name { font-size: 18px; font-weight: 600; letter-spacing: -.03em; color: var(--tp); }
+
+    h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 6px; }
+    .sub { font-size: 12px; color: var(--ts); margin-bottom: 28px; }
+
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 11px; font-weight: 500; color: var(--ts);
+      letter-spacing: .04em; margin-bottom: 5px; }
+    input { width: 100%; background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 7px; padding: 10px 14px; color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 13px; outline: none;
+      transition: border-color .15s; }
+    input:focus { border-color: var(--b2); }
+    input::placeholder { color: var(--tm); }
+
+    .btn { width: 100%; margin-top: 6px; padding: 11px; font-family: 'Sora', sans-serif;
+      font-size: 13px; font-weight: 600; color: var(--tp); background: var(--bg-hi);
+      border: 1px solid var(--b2); border-radius: 7px; cursor: pointer;
+      transition: all .15s; letter-spacing: .01em; }
+    .btn:hover { background: rgba(237,232,213,.12); }
+    .btn:disabled { opacity: .5; cursor: default; }
+
+    .error { display: none; margin-top: 14px; padding: 10px 14px; border-radius: 7px;
+      background: var(--red-bg); border: 1px solid rgba(184,85,85,.22);
+      font-size: 12px; color: var(--red); }
+    .error.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <img src="/favicon.svg" alt="logo">
+      <div class="logo-text">
+        <div class="logo-label">Homelab</div>
+        <div class="logo-name">los.dev</div>
+      </div>
+    </div>
+
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to access your dashboard</p>
+
+    <form onsubmit="login(event)">
+      <div class="field">
+        <label>Username</label>
+        <input id="username" type="text" placeholder="admin" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+      </div>
+      <button class="btn" id="btn" type="submit">Sign In</button>
+    </form>
+
+    <div class="error" id="err"></div>
+  </div>
+
+  <script>
+    async function login(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn');
+      const err = document.getElementById('err');
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      err.classList.remove('show');
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window.location.href = '/';
+        } else {
+          err.textContent = data.error || 'Login failed';
+          err.classList.add('show');
+          btn.disabled = false;
+          btn.textContent = 'Sign In';
+        }
+      } catch {
+        err.textContent = 'Connection error — is the server running?';
+        err.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    }
+  </script>
+</body>
+</html>

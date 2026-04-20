@@ -1,18 +1,23 @@
-const express = require('express');
-const fs      = require('fs');
-const path    = require('path');
-const http    = require('http');
-const https   = require('https');
+const express   = require('express');
+const fs        = require('fs');
+const path      = require('path');
+const http      = require('http');
+const https     = require('https');
+const crypto    = require('crypto');
+const bcrypt    = require('bcryptjs');
+const session   = require('express-session');
+const FileStore = require('session-file-store')(session);
 
 const app       = express();
 const PORT      = process.env.PORT || 55964;
 const DATA_DIR  = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'services.json');
+const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
+const SESS_DIR  = path.join(DATA_DIR, 'sessions');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Data helpers ────────────────────────────────────────────────────────────
 
@@ -37,6 +42,137 @@ function defaults() {
   };
 }
 
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+function loadAuth() {
+  try   { return JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8')); }
+  catch { return null; }
+}
+
+function saveAuth(data) {
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(data, null, 2));
+}
+
+function isSetupDone() {
+  const auth = loadAuth();
+  return !!(auth && auth.passwordHash);
+}
+
+// Generate stable session secret + report API key on first start, persist in auth.json.
+function initSecrets() {
+  const auth = loadAuth() || {};
+  let changed = false;
+  if (!auth.sessionSecret) { auth.sessionSecret = crypto.randomBytes(48).toString('hex'); changed = true; }
+  if (!auth.apiKey)        { auth.apiKey        = crypto.randomBytes(24).toString('hex'); changed = true; }
+  if (changed) saveAuth(auth);
+  return auth;
+}
+
+const secrets = initSecrets();
+
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+
+const loginAttempts = new Map();
+
+function checkRateLimit(ip) {
+  const now  = Date.now();
+  let entry  = loginAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 15 * 60 * 1000 };
+    loginAttempts.set(ip, entry);
+  }
+  return entry;
+}
+
+// ─── Session ─────────────────────────────────────────────────────────────────
+
+app.use(session({
+  store: new FileStore({ path: SESS_DIR, ttl: 7 * 24 * 3600, retries: 0, logFn: () => {} }),
+  secret: secrets.sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  name: 'hld.sid',
+  cookie: { httpOnly: true, sameSite: 'strict', maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
+
+// ─── Auth routes (public — before the auth gate) ──────────────────────────────
+
+app.get('/setup', (req, res) => {
+  if (isSetupDone()) return res.redirect('/login');
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+});
+
+app.post('/api/setup', async (req, res) => {
+  if (isSetupDone()) return res.status(403).json({ error: 'Already configured' });
+  const { username, password } = req.body;
+  if (!username || !password || password.length < 8)
+    return res.status(400).json({ error: 'Username required; password must be at least 8 characters' });
+  const passwordHash = await bcrypt.hash(password, 12);
+  const auth = loadAuth() || {};
+  saveAuth({ ...auth, username, passwordHash });
+  req.session.authenticated = true;
+  req.session.username = username;
+  res.json({ ok: true });
+});
+
+app.get('/login', (req, res) => {
+  if (req.session.authenticated) return res.redirect('/');
+  if (!isSetupDone()) return res.redirect('/setup');
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.post('/api/login', async (req, res) => {
+  const ip    = req.ip || req.socket.remoteAddress || 'unknown';
+  const entry = checkRateLimit(ip);
+  if (entry.count >= 5) {
+    const mins = Math.ceil((entry.resetAt - Date.now()) / 60000);
+    return res.status(429).json({ error: `Too many attempts — try again in ${mins} min` });
+  }
+  const { username, password } = req.body;
+  const auth  = loadAuth();
+  const valid = auth && username === auth.username && await bcrypt.compare(password, auth.passwordHash);
+  if (!valid) {
+    entry.count++;
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  entry.count = 0;
+  req.session.authenticated = true;
+  req.session.username = username;
+  res.json({ ok: true });
+});
+
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/login'));
+});
+
+// ─── Auth gate ────────────────────────────────────────────────────────────────
+
+app.use((req, res, next) => {
+  // Report endpoint: accept valid API key in lieu of a session
+  if (req.path.match(/^\/api\/services\/[^/]+\/report$/) && req.method === 'POST') {
+    const auth = loadAuth();
+    if (auth && req.headers['x-api-key'] === auth.apiKey) return next();
+  }
+
+  if (!isSetupDone()) {
+    return req.path.startsWith('/api/')
+      ? res.status(403).json({ error: 'Setup required' })
+      : res.redirect('/setup');
+  }
+
+  if (!req.session.authenticated) {
+    return req.path.startsWith('/api/')
+      ? res.status(401).json({ error: 'Unauthorized' })
+      : res.redirect('/login');
+  }
+
+  next();
+});
+
+// ─── Static files (protected) ────────────────────────────────────────────────
+
+app.use(express.static(path.join(__dirname, 'public')));
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 
 function ping(url, timeoutMs = 5000) {
@@ -54,7 +190,7 @@ function ping(url, timeoutMs = 5000) {
       path:     parsed.pathname || '/',
       method:   'HEAD',
       timeout:  timeoutMs,
-      rejectUnauthorized: false  // allow self-signed certs (Cloudflare tunnels, Proxmox, etc.)
+      rejectUnauthorized: false
     }, res => {
       resolve({ ok: res.statusCode < 500, elapsed: Date.now() - t0 });
       res.resume();
@@ -68,7 +204,7 @@ function ping(url, timeoutMs = 5000) {
 
 function calcUptime(history) {
   if (!history || history.length === 0) return '—';
-  const relevant = history.filter(v => v !== 3); // exclude maintenance ticks
+  const relevant = history.filter(v => v !== 3);
   if (relevant.length === 0) return '—';
   return (relevant.filter(v => v === 1).length / relevant.length * 100).toFixed(1) + '%';
 }
@@ -78,24 +214,18 @@ function pushHistory(hist, tick) {
 }
 
 async function checkAll() {
-  // Step 1: snapshot only IDs + URLs to ping — hold nothing else.
-  // If we kept the full `d` object during pings and saved it afterwards
-  // we would overwrite any concurrent writes (add service, delete, config change).
   const toCheck = load().services
     .filter(s => s.url && s.checkEnabled && !s.maintenance)
     .map(s => ({ id: s.id, url: s.url }));
 
-  // Step 2: run all pings concurrently (each can block up to 5 s on timeout)
   const results = await Promise.all(
     toCheck.map(async ({ id, url }) => ({ id, r: await ping(url) }))
   );
 
-  // Step 3: re-load the FRESH file — this picks up any adds/deletes/config
-  //         changes that happened while pings were in flight
   const fresh = load();
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
-    if (!svc) continue; // deleted while pinging — skip it
+    if (!svc) continue;
     const tick   = r.ok ? 1 : 0;
     svc.history  = pushHistory(svc.history, tick);
     svc.status   = r.ok ? 'online' : (svc.status === 'degraded' ? 'degraded' : 'offline');
@@ -104,7 +234,6 @@ async function checkAll() {
     svc.lastChecked = new Date().toISOString();
   }
 
-  // Push maintenance tick for services currently in maintenance mode
   for (const svc of fresh.services) {
     if (svc.maintenance) {
       svc.history     = pushHistory(svc.history, 3);
@@ -113,7 +242,6 @@ async function checkAll() {
     }
   }
 
-  // Step 4: save fresh data with health results merged in
   save(fresh);
   console.log(`[${new Date().toLocaleTimeString()}] Checked ${results.length} services`);
 }
@@ -127,7 +255,7 @@ function scheduleChecks() {
   const interval = Math.max(10, (load().settings?.checkInterval || 60)) * 1000;
   checkTimer = setInterval(checkAll, interval);
   console.log(`[scheduler] Checks every ${interval / 1000}s`);
-  checkAll(); // run immediately on start / reschedule
+  checkAll();
 }
 
 // ─── API: Services ───────────────────────────────────────────────────────────
@@ -137,20 +265,20 @@ app.get('/api/services', (_, res) => res.json(load()));
 app.post('/api/services', (req, res) => {
   const d   = load();
   const svc = {
-    id:          Date.now().toString(),
-    name:        '',
-    desc:        '',
-    abbr:        '',
-    cat:         '',
-    url:         '',
-    port:        '',
-    hasUI:       true,
+    id:           Date.now().toString(),
+    name:         '',
+    desc:         '',
+    abbr:         '',
+    cat:          '',
+    url:          '',
+    port:         '',
+    hasUI:        true,
     checkEnabled: true,
-    status:      'unknown',
-    response:    '—',
-    uptime:      '—',
-    history:     [],
-    lastChecked: null,
+    status:       'unknown',
+    response:     '—',
+    uptime:       '—',
+    history:      [],
+    lastChecked:  null,
     ...req.body
   };
   d.services.push(svc);
@@ -174,7 +302,6 @@ app.delete('/api/services/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Resolve: manually clear degraded/offline → online
 app.post('/api/services/:id/resolve', (req, res) => {
   const d   = load();
   const svc = d.services.find(s => s.id === req.params.id);
@@ -186,7 +313,7 @@ app.post('/api/services/:id/resolve', (req, res) => {
   res.json(svc);
 });
 
-// External status report (e.g. PM2 agent) — updates status, desc, and appends a history tick
+// External status report — accepts session auth OR X-Api-Key header (for PM2 agent, etc.)
 app.post('/api/services/:id/report', (req, res) => {
   const d   = load();
   const svc = d.services.find(s => s.id === req.params.id);
@@ -195,8 +322,8 @@ app.post('/api/services/:id/report', (req, res) => {
   const { status, desc } = req.body;
   const tick = status === 'online' ? 1 : status === 'degraded' ? 2 : 0;
 
-  if (status)          svc.status = status;
-  if (desc !== undefined) svc.desc = desc;
+  if (status)             svc.status = status;
+  if (desc !== undefined) svc.desc   = desc;
   svc.history     = pushHistory(svc.history, tick);
   svc.uptime      = calcUptime(svc.history);
   svc.lastChecked = new Date().toISOString();
@@ -205,7 +332,6 @@ app.post('/api/services/:id/report', (req, res) => {
   res.json(svc);
 });
 
-// Toggle maintenance mode — disables auto-check and records maint ticks in history
 app.post('/api/services/:id/maintenance', (req, res) => {
   const d   = load();
   const svc = d.services.find(s => s.id === req.params.id);
@@ -216,17 +342,16 @@ app.post('/api/services/:id/maintenance', (req, res) => {
   res.json(svc);
 });
 
-// Force-check a single service now
 app.post('/api/services/:id/check', async (req, res) => {
   const d   = load();
   const svc = d.services.find(s => s.id === req.params.id);
   if (!svc) return res.status(404).json({ error: 'Not found' });
 
   if (svc.url && svc.checkEnabled) {
-    const r     = await ping(svc.url);
-    const tick  = r.ok ? 1 : 0;
-    svc.history = pushHistory(svc.history, tick);
-    svc.status  = r.ok ? 'online' : 'offline';
+    const r      = await ping(svc.url);
+    const tick   = r.ok ? 1 : 0;
+    svc.history  = pushHistory(svc.history, tick);
+    svc.status   = r.ok ? 'online' : 'offline';
     svc.response     = r.ok ? r.elapsed + 'ms' : '—';
     svc.uptime       = calcUptime(svc.history);
     svc.lastChecked  = new Date().toISOString();
@@ -238,15 +363,16 @@ app.post('/api/services/:id/check', async (req, res) => {
 // ─── API: Config ─────────────────────────────────────────────────────────────
 
 app.get('/api/config', (_, res) => {
-  const d = load();
-  res.json({ settings: d.settings, categories: d.categories });
+  const d    = load();
+  const auth = loadAuth() || {};
+  res.json({ settings: d.settings, categories: d.categories, apiKey: auth.apiKey });
 });
 
 app.put('/api/config', (req, res) => {
   const d = load();
   if (req.body.settings) {
     d.settings = { ...d.settings, ...req.body.settings };
-    scheduleChecks(); // restart timer if interval changed
+    scheduleChecks();
   }
   if (req.body.categories) d.categories = req.body.categories;
   save(d);

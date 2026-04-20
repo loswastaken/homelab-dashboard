@@ -3,6 +3,7 @@ const http = require('http');
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://10.24.4.26:55964';
 const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS || '30000', 10);
+const API_KEY       = process.env.REPORT_API_KEY || '';
 
 // Map PM2 process names → dashboard service IDs.
 // Add/remove entries to match your pm2 list output.
@@ -47,6 +48,7 @@ function put(serviceId, body) {
       headers: {
         'Content-Type':   'application/json',
         'Content-Length': Buffer.byteLength(payload),
+        ...(API_KEY ? { 'X-Api-Key': API_KEY } : {}),
       },
     }, res => {
       res.resume();
