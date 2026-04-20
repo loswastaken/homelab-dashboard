@@ -68,7 +68,9 @@ function ping(url, timeoutMs = 5000) {
 
 function calcUptime(history) {
   if (!history || history.length === 0) return '—';
-  return (history.filter(v => v === 1).length / history.length * 100).toFixed(1) + '%';
+  const relevant = history.filter(v => v !== 3); // exclude maintenance ticks
+  if (relevant.length === 0) return '—';
+  return (relevant.filter(v => v === 1).length / relevant.length * 100).toFixed(1) + '%';
 }
 
 function pushHistory(hist, tick) {
@@ -80,7 +82,7 @@ async function checkAll() {
   // If we kept the full `d` object during pings and saved it afterwards
   // we would overwrite any concurrent writes (add service, delete, config change).
   const toCheck = load().services
-    .filter(s => s.url && s.checkEnabled)
+    .filter(s => s.url && s.checkEnabled && !s.maintenance)
     .map(s => ({ id: s.id, url: s.url }));
 
   // Step 2: run all pings concurrently (each can block up to 5 s on timeout)
@@ -100,6 +102,15 @@ async function checkAll() {
     svc.response = r.ok ? r.elapsed + 'ms' : '—';
     svc.uptime   = calcUptime(svc.history);
     svc.lastChecked = new Date().toISOString();
+  }
+
+  // Push maintenance tick for services currently in maintenance mode
+  for (const svc of fresh.services) {
+    if (svc.maintenance) {
+      svc.history     = pushHistory(svc.history, 3);
+      svc.status      = 'maintenance';
+      svc.lastChecked = new Date().toISOString();
+    }
   }
 
   // Step 4: save fresh data with health results merged in
@@ -171,6 +182,17 @@ app.post('/api/services/:id/resolve', (req, res) => {
   svc.status  = 'online';
   svc.history = pushHistory(svc.history, 1);
   svc.uptime  = calcUptime(svc.history);
+  save(d);
+  res.json(svc);
+});
+
+// Toggle maintenance mode — disables auto-check and records maint ticks in history
+app.post('/api/services/:id/maintenance', (req, res) => {
+  const d   = load();
+  const svc = d.services.find(s => s.id === req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+  svc.maintenance = !svc.maintenance;
+  svc.status      = svc.maintenance ? 'maintenance' : 'unknown';
   save(d);
   res.json(svc);
 });

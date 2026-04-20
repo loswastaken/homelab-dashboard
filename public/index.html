@@ -33,6 +33,7 @@
       --blue:    #5285b8; --blue-bg:   rgba(82,133,184,.13);
       --purple:  #7a60b8; --purple-bg: rgba(122,96,184,.13);
       --pink:    #b85888; --pink-bg:   rgba(184,88,136,.13);
+      --slate:   #7a8a9e; --slate-bg:  rgba(122,138,158,.13);
 
       --sw: 200px;
     }
@@ -160,14 +161,16 @@
     .badge { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500;
       padding: 3px 9px; border-radius: 20px; flex-shrink: 0; }
     .bdot { width: 5px; height: 5px; border-radius: 50%; }
-    .badge.online  { background: var(--green-bg);  color: var(--green); }
-    .badge.degraded{ background: var(--amber-bg);  color: var(--amber); }
-    .badge.offline { background: var(--red-bg);    color: var(--red);   }
-    .badge.unknown { background: var(--b0);         color: var(--ts);   }
-    .badge.online  .bdot { background: var(--green); }
-    .badge.degraded .bdot { background: var(--amber); animation: pulse 2s infinite; }
-    .badge.offline .bdot { background: var(--red); }
-    .badge.unknown .bdot { background: var(--ts); }
+    .badge.online       { background: var(--green-bg);  color: var(--green); }
+    .badge.degraded     { background: var(--amber-bg);  color: var(--amber); }
+    .badge.offline      { background: var(--red-bg);    color: var(--red);   }
+    .badge.unknown      { background: var(--b0);        color: var(--ts);    }
+    .badge.maintenance  { background: var(--slate-bg);  color: var(--slate); }
+    .badge.online       .bdot { background: var(--green); }
+    .badge.degraded     .bdot { background: var(--amber); animation: pulse 2s infinite; }
+    .badge.offline      .bdot { background: var(--red); }
+    .badge.unknown      .bdot { background: var(--ts); }
+    .badge.maintenance  .bdot { background: var(--slate); }
 
     /* card action buttons (top-right) */
     .card-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
@@ -183,10 +186,11 @@
     /* uptime bar */
     .uptime-bar { display: flex; gap: 2px; margin: 6px 0 2px; }
     .tick { height: 18px; flex: 1; border-radius: 2px; }
-    .tick.ok   { background: rgba(90,158,114,.38); }
-    .tick.warn { background: rgba(196,136,74,.42); }
-    .tick.bad  { background: rgba(184,85,85,.55); }
-    .tick.unk  { background: rgba(237,232,213,.08); }
+    .tick.ok    { background: rgba(90,158,114,.38); }
+    .tick.warn  { background: rgba(196,136,74,.42); }
+    .tick.bad   { background: rgba(184,85,85,.55); }
+    .tick.unk   { background: rgba(237,232,213,.08); }
+    .tick.maint { background: rgba(122,138,158,.30); }
     .tick-lbl  { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--tm); }
 
     .divider { border: none; border-top: 1px solid var(--b0); margin: 10px 0; }
@@ -569,7 +573,7 @@ function catFor(id) {
   return APP.categories.find(c => c.id === id) || { id, name: id, color: 'blue' };
 }
 
-function tickCls(v) { return v===1?'ok': v===2?'warn': v===0?'bad':'unk'; }
+function tickCls(v) { return v===1?'ok': v===2?'warn': v===3?'maint': v===0?'bad':'unk'; }
 
 function renderCard(s) {
   const cat    = catFor(s.cat);
@@ -581,29 +585,35 @@ function renderCard(s) {
     ? `<a class="open-link" href="${s.url}" target="_blank">Open ↗</a>`
     : `<span class="open-link dim">No UI ↗</span>`;
 
-  const resBtn  = (s.status==='degraded'||s.status==='offline')
+  const isMaint = !!s.maintenance;
+  const resBtn  = (!isMaint && (s.status==='degraded'||s.status==='offline'))
     ? `<button class="act-btn resolve" onclick="resolveService('${s.id}')">✓ Resolve</button>`
     : '';
-  const checked = s.checkEnabled ? '' : '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>';
+  const maintBtn = isMaint
+    ? `<button class="act-btn" style="color:var(--slate);border-color:var(--slate-bg);background:var(--slate-bg)" onclick="toggleMaintenance('${s.id}')">End Maint</button>`
+    : `<button class="act-btn" onclick="toggleMaintenance('${s.id}')">🔧</button>`;
+  const checked = (!isMaint && !s.checkEnabled) ? '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>' : '';
   const lastChk = s.lastChecked
     ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
     : '—';
+  const borderColor = isMaint ? 'var(--slate)' : colors.card;
 
   return `
-    <div class="card" style="border-left-color:${colors.card}">
+    <div class="card" style="border-left-color:${borderColor}${isMaint?';opacity:.75':''}">
       <div class="card-top">
         <div class="card-meta">
-          <div class="svc-icon" style="background:${colors.icon};color:${colors.card}">${s.abbr||'?'}</div>
+          <div class="svc-icon" style="background:${isMaint?'var(--slate-bg)':colors.icon};color:${isMaint?'var(--slate)':colors.card}">${s.abbr||'?'}</div>
           <div class="svc-name">${s.name}</div>
           <div class="svc-desc">${s.desc||''}</div>
         </div>
         <div class="card-right">
           <div class="badge ${s.status||'unknown'}">
-            <span class="bdot"></span>${s.status||'unknown'}
+            <span class="bdot"></span>${isMaint ? 'maintenance' : (s.status||'unknown')}
           </div>
           <div class="card-actions">
             ${resBtn}
             ${checked}
+            ${maintBtn}
             <button class="act-btn" onclick="openEditModal('${s.id}')">✎</button>
             <button class="act-btn del" onclick="deleteSvc('${s.id}','${s.name}')">×</button>
           </div>
@@ -611,7 +621,7 @@ function renderCard(s) {
       </div>
 
       <div class="uptime-bar">${ticks.length ? ticks : '<div class="tick unk" style="flex:1"></div>'}</div>
-      <div class="tick-lbl">30-day history · checked ${lastChk}</div>
+      <div class="tick-lbl">${isMaint ? '🔧 in maintenance · history paused' : `30-day history · checked ${lastChk}`}</div>
 
       <hr class="divider">
 
@@ -642,18 +652,18 @@ function renderAll() {
     document.getElementById('grid').innerHTML = svcs.map(renderCard).join('');
   }
 
-  /* stats */
+  /* stats — exclude maintenance services from problem counts */
   const total    = APP.services.length;
   const online   = APP.services.filter(s=>s.status==='online').length;
-  const degraded = APP.services.filter(s=>s.status==='degraded').length;
-  const offline  = APP.services.filter(s=>s.status==='offline').length;
+  const degraded = APP.services.filter(s=>!s.maintenance&&s.status==='degraded').length;
+  const offline  = APP.services.filter(s=>!s.maintenance&&s.status==='offline').length;
   document.getElementById('s-total').textContent    = total;
   document.getElementById('s-online').textContent   = online;
   document.getElementById('s-degraded').textContent = degraded;
   document.getElementById('s-offline').textContent  = offline;
 
-  /* alert bar */
-  const bad = APP.services.filter(s=>s.status==='degraded'||s.status==='offline');
+  /* alert bar — ignore services in maintenance */
+  const bad = APP.services.filter(s=>!s.maintenance&&(s.status==='degraded'||s.status==='offline'));
   const bar = document.getElementById('alert-bar');
   if (bad.length) {
     bar.classList.add('show');
@@ -805,6 +815,11 @@ async function deleteSvc(id, name) {
 
 async function resolveService(id) {
   await fetch(`/api/services/${id}/resolve`, { method: 'POST' });
+  doRefreshAll();
+}
+
+async function toggleMaintenance(id) {
+  await fetch(`/api/services/${id}/maintenance`, { method: 'POST' });
   doRefreshAll();
 }
 
