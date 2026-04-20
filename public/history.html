@@ -458,21 +458,31 @@ function fmtDateShort(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function fmtHour(tsHour) {
+  // tsHour is 'YYYY-MM-DDTHH' — format as '2pm', '12am', etc.
+  const d = new Date(tsHour + ':00:00');
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+}
+
 function barHeight(pct) {
   if (pct === null || pct === undefined) return 8;
   return Math.max(8, Math.round(pct / 100 * 28));
 }
 
 function sliceHistory(svc) {
-  // Returns daily entries filtered to rangeDays
-  const hist = svc.dailyHistory || [];
   if (rangeDays === 1) {
-    // For 24hrs: collapse today's entry only
-    const today = new Date().toISOString().slice(0, 10);
-    const entry = hist.find(e => e.date === today);
-    return entry ? [entry] : [];
+    // 24h view: use hourly data, last 24 entries
+    return (svc.hourlyHistory || []).slice(-24);
   }
-  return hist.slice(-rangeDays);
+  // 7d / 30d: use daily data
+  return (svc.dailyHistory || []).slice(-rangeDays);
+}
+
+function entryLabel(entry) {
+  // Returns a display label for a history entry (hourly or daily)
+  if (entry.ts) return fmtHour(entry.ts);       // hourly entry
+  if (entry.date) return fmtDateShort(entry.date); // daily entry
+  return '';
 }
 
 function calcAvgUptime(hist) {
@@ -551,8 +561,8 @@ function renderList(svcs) {
     return;
   }
 
-  // Build padded day array for display (30/7/1 slots)
-  const slots = rangeDays === 1 ? 1 : rangeDays;
+  // slots: 24 for hourly, otherwise match rangeDays
+  const slots = rangeDays === 1 ? 24 : rangeDays;
 
   el.innerHTML = svcs.map(svc => {
     const hist    = sliceHistory(svc);
@@ -560,6 +570,8 @@ function renderList(svcs) {
     const colors  = getColors(svc.cat);
     const sc      = statusClass(svc.currentStatus || svc.status);
     const uc      = uptimeClass(avg);
+    const isHourly = rangeDays === 1;
+    const unit     = isHourly ? 'hr' : 'day';
 
     // Build padded bars: fill from right, empty slots on left
     const bars = [];
@@ -572,7 +584,7 @@ function renderList(svcs) {
         const pct = e.uptime;
         const h   = barHeight(pct);
         const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
-        const tip = `${fmtDateShort(e.date)}: ${fmtUptime(pct)}`;
+        const tip = `${entryLabel(e)}: ${fmtUptime(pct)}`;
         bars.push(`<div class="bar ${cls}" style="height:${h}px"><span class="bar-tooltip">${tip}</span></div>`);
       }
     }
@@ -582,7 +594,7 @@ function renderList(svcs) {
       <div class="svc-abbr" style="background:${colors.card};color:${colors.icon}">${svc.abbr || '?'}</div>
       <div class="svc-info">
         <div class="svc-name">${svc.name || svc.id}</div>
-        <div class="svc-meta">${hist.length} day${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(hist)} incident${countIncidents(hist) !== 1 ? 's' : ''}</div>
+        <div class="svc-meta">${hist.length} ${unit}${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(hist)} incident${countIncidents(hist) !== 1 ? 's' : ''}</div>
       </div>
       <div class="bar-strip">${bars.join('')}</div>
       <div class="status-pip ${sc}"></div>
@@ -656,7 +668,7 @@ function renderDetail(svc) {
     </div>
 
     <div class="chart-wrap">
-      <div class="chart-title">Daily Uptime % — ${rangeDays === 1 ? 'Today' : rangeDays === 7 ? 'Last 7 Days' : 'Last 30 Days'}</div>
+      <div class="chart-title">${rangeDays === 1 ? 'Hourly' : 'Daily'} Uptime % — ${rangeDays === 1 ? 'Last 24 Hours' : rangeDays === 7 ? 'Last 7 Days' : 'Last 30 Days'}</div>
       <div class="chart-canvas-wrap">
         <canvas id="detail-chart" class="uptime-chart"></canvas>
       </div>
@@ -678,7 +690,16 @@ function renderDetail(svc) {
   // Axis labels
   const axis = document.getElementById('detail-chart-axis');
   if (hist.length) {
-    axis.innerHTML = `<span>${fmtDateShort(hist[0].date)}</span><span>Today</span>`;
+    if (rangeDays === 1) {
+      // Hourly: show time labels at start, middle, end
+      const mid = hist[Math.floor(hist.length / 2)];
+      axis.innerHTML =
+        `<span>${entryLabel(hist[0])}</span>` +
+        (mid ? `<span>${entryLabel(mid)}</span>` : '') +
+        `<span>Now</span>`;
+    } else {
+      axis.innerHTML = `<span>${fmtDateShort(hist[0].date)}</span><span>Today</span>`;
+    }
   }
 
   // Detail event log

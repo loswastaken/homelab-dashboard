@@ -261,6 +261,7 @@ function pushHistory(hist, tick) {
 // ─── Daily history & event log helpers ───────────────────────────────────────
 
 const TODAY_KEY = () => new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+const HOUR_KEY  = () => new Date().toISOString().slice(0, 13); // 'YYYY-MM-DDTHH'
 
 function pushEvent(svc, type, note = '') {
   if (!Array.isArray(svc.events)) svc.events = [];
@@ -284,6 +285,25 @@ function accumulateDailyTick(svc, tick) {
   else if (tick === 3) entry.maintenance++;
   else                 entry.offline++;
   // recalculate uptime% for the day (exclude maintenance from denominator)
+  const denom = entry.online + entry.degraded + entry.offline;
+  entry.uptime = denom > 0 ? parseFloat((entry.online / denom * 100).toFixed(2)) : null;
+}
+
+function accumulateHourlyTick(svc, tick) {
+  if (!Array.isArray(svc.hourlyHistory)) svc.hourlyHistory = [];
+  const hour = HOUR_KEY();
+  let entry = svc.hourlyHistory.find(e => e.ts === hour);
+  if (!entry) {
+    entry = { ts: hour, online: 0, degraded: 0, offline: 0, maintenance: 0, total: 0 };
+    svc.hourlyHistory.push(entry);
+    // keep max 168 hours (7 days)
+    if (svc.hourlyHistory.length > 168) svc.hourlyHistory = svc.hourlyHistory.slice(-168);
+  }
+  entry.total++;
+  if      (tick === 1) entry.online++;
+  else if (tick === 2) entry.degraded++;
+  else if (tick === 3) entry.maintenance++;
+  else                 entry.offline++;
   const denom = entry.online + entry.degraded + entry.offline;
   entry.uptime = denom > 0 ? parseFloat((entry.online / denom * 100).toFixed(2)) : null;
 }
@@ -412,6 +432,7 @@ async function checkAll() {
     svc.uptime   = calcUptime(svc.history);
     svc.lastChecked = new Date().toISOString();
     accumulateDailyTick(svc, tick);
+    accumulateHourlyTick(svc, tick);
     // event log: record transitions
     if (prevStatus !== svc.status) {
       if (svc.status === 'offline')   pushEvent(svc, 'offline',   'Service became unreachable');
@@ -424,6 +445,7 @@ async function checkAll() {
     if (svc.maintenance) {
       svc.history     = pushHistory(svc.history, 3);
       accumulateDailyTick(svc, 3);
+      accumulateHourlyTick(svc, 3);
       svc.status      = 'maintenance';
       svc.lastChecked = new Date().toISOString();
     }
@@ -533,6 +555,7 @@ app.post('/api/services/:id/report', (req, res) => {
   svc.uptime      = calcUptime(svc.history);
   svc.lastChecked = new Date().toISOString();
   accumulateDailyTick(svc, tick);
+  accumulateHourlyTick(svc, tick);
   if (status === 'degraded' && prevStatus !== 'degraded')
     pushEvent(svc, 'degraded', desc || 'Service reported degraded');
   if (status === 'offline' && prevStatus !== 'offline')
@@ -705,8 +728,9 @@ app.get('/api/history', (req, res) => {
     status:       s.status,
     maintenance:  !!s.maintenance,
     uptime:       s.uptime,
-    dailyHistory: (s.dailyHistory || []).slice(-30),
-    events:       (s.events || []).slice(-500),
+    dailyHistory:  (s.dailyHistory  || []).slice(-30),
+    hourlyHistory: (s.hourlyHistory || []).slice(-168),
+    events:        (s.events        || []).slice(-500),
   }));
   res.json({ services: out, categories: d.categories });
 });
