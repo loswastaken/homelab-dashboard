@@ -340,7 +340,9 @@ async function getWeatherData(force = false) {
   const tempUnit = w.weatherUnits === 'celsius' ? 'C' : 'F';
   const windUnit = w.weatherUnits === 'celsius' ? 'km/h' : 'mph';
   const result = {
-    location: [place.name, place.admin1, place.country].filter(Boolean).join(', '),
+    location: place.name || '',
+    admin1: place.admin1 || '',
+    countryCode: place.country_code ? place.country_code.toUpperCase() : (place.country || ''),
     latitude: place.latitude,
     longitude: place.longitude,
     temperature: forecast.current.temperature_2m,

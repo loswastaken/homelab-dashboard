@@ -90,11 +90,15 @@
       color: var(--ts); text-transform: uppercase; }
     .hdr-time { font-family: 'JetBrains Mono', monospace; font-size: 26px;
       font-weight: 500; color: var(--tp); margin-top: 2px; letter-spacing: -.02em; }
-    .weather-pill { margin-top: 6px; display: inline-flex; align-items: center; gap: 8px;
-      font-size: 11px; color: var(--ts); padding: 4px 8px; border-radius: 999px;
-      border: 1px solid var(--b0); background: var(--bg-surf); max-width: 320px; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; }
-    .weather-pill strong { color: var(--tp); font-weight: 500; }
+    .weather-pill { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--ts); padding: 4px 10px 4px 7px; border-radius: 999px;
+      border: 1px solid var(--b0); background: var(--bg-surf); white-space: nowrap; }
+    .weather-pill .w-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+    .weather-pill .w-temp { font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      font-weight: 600; color: var(--tp); letter-spacing: -.02em; }
+    .weather-pill .w-sep { opacity: .35; margin: 0 1px; }
+    .weather-pill .w-loc { color: var(--ts); }
+    .weather-pill .w-cond { color: var(--ts); }
     .weather-pill.err { color: var(--amber); border-color: rgba(196,136,74,.25); background: var(--amber-bg); }
 
     /* ─── Refresh indicator ─── */
@@ -781,22 +785,56 @@ function clearWeatherPoll() {
   clearInterval(weatherTimer);
 }
 
+const US_STATES = { 'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+  'Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI',
+  'Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY',
+  'Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI',
+  'Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE',
+  'Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY',
+  'North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR',
+  'Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD',
+  'Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA',
+  'West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC' };
+
+const WEATHER_ICONS = {
+  0:'☀️', 1:'🌤️', 2:'⛅', 3:'☁️', 45:'🌫️', 48:'🌫️',
+  51:'🌦️', 53:'🌦️', 55:'🌧️', 56:'🌧️', 57:'🌧️',
+  61:'🌧️', 63:'🌧️', 65:'🌧️', 66:'🌨️', 67:'🌨️',
+  71:'🌨️', 73:'❄️', 75:'❄️', 77:'❄️',
+  80:'🌦️', 81:'🌧️', 82:'⛈️', 85:'🌨️', 86:'❄️',
+  95:'⛈️', 96:'⛈️', 99:'⛈️'
+};
+
 function renderWeatherFromState() {
   const pill = document.getElementById('weather-pill');
   if (!pill) return;
-  pill.textContent = weatherState.text;
   pill.classList.toggle('err', !!weatherState.error);
+  if (weatherState.error || !weatherState.data) {
+    pill.innerHTML = `<span class="w-cond">${weatherState.text}</span>`;
+    return;
+  }
+  const d = weatherState.data;
+  const icon = WEATHER_ICONS[d.weatherCode] || '🌡️';
+  const state = US_STATES[d.admin1] || d.admin1;
+  const loc = [d.location, state].filter(Boolean).join(', ');
+  pill.innerHTML =
+    `<span class="w-icon">${icon}</span>` +
+    `<span class="w-temp">${Math.round(d.temperature)}°${d.units.temperature}</span>` +
+    `<span class="w-sep">·</span>` +
+    `<span class="w-loc">${loc}</span>` +
+    `<span class="w-sep">·</span>` +
+    `<span class="w-cond">${d.weatherText}</span>`;
 }
 
 async function fetchWeather(force = false) {
   const s = APP.settings || {};
   if (!s.weatherEnabled) {
-    weatherState = { text: 'Weather disabled', error: false };
+    weatherState = { text: 'Weather disabled', error: false, data: null };
     renderWeatherFromState();
     return;
   }
   if (!s.weatherLocation) {
-    weatherState = { text: 'Set weather location in Settings', error: true };
+    weatherState = { text: 'Set weather location in Settings', error: true, data: null };
     renderWeatherFromState();
     return;
   }
@@ -806,12 +844,9 @@ async function fetchWeather(force = false) {
     const res = await fetch(url);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Weather unavailable');
-    weatherState = {
-      text: `${data.location} · ${Math.round(data.temperature)} ${data.units.temperature} · ${data.weatherText}`,
-      error: false
-    };
+    weatherState = { data, error: false };
   } catch (e) {
-    weatherState = { text: `Weather error: ${e.message}`, error: true };
+    weatherState = { text: `Weather error: ${e.message}`, error: true, data: null };
   }
   renderWeatherFromState();
 }
