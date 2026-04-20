@@ -4,7 +4,7 @@ services:
   homelab-dashboard:
     # Pull pre-built image from GitHub Container Registry.
     # Run update.sh on the NAS to pull the latest and redeploy.
-    image: ghcr.io/YOUR_GITHUB_USERNAME/homelab-dashboard:latest
+    image: ghcr.io/loswastaken/homelab-dashboard:latest
 
     # Uncomment `build` to build locally instead of pulling from GHCR.
     # build:

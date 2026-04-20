@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-IMAGE="ghcr.io/YOUR_GITHUB_USERNAME/homelab-dashboard:latest"
+IMAGE="ghcr.io/loswastaken/homelab-dashboard:latest"
 COMPOSE_FILE="/volume2/docker/homelab-dashboard/docker-compose.yml"
 
 echo ""
@@ -20,7 +20,7 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Redeploying container..."
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pruning old images..."
-docker image prune -f --filter "label=org.opencontainers.image.source=https://github.com/YOUR_GITHUB_USERNAME/homelab-dashboard" 2>/dev/null || true
+docker image prune -f --filter "label=org.opencontainers.image.source=https://github.com/loswastaken/homelab-dashboard" 2>/dev/null || true
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Done."
 docker ps --filter name=homelab-dashboard --format "  container: {{.Names}}  status: {{.Status}}"
