@@ -14,7 +14,7 @@ const PM2_MAP = {
 // ─── PM2 ─────────────────────────────────────────────────────────────────────
 
 function pm2List() {
-  const raw = execSync('pm2 jlist', { encoding: 'utf8', timeout: 10_000 });
+  const raw = execSync('pm2 jlist', { encoding: 'utf8', timeout: 10000 });
   return JSON.parse(raw);
 }
 
@@ -78,7 +78,7 @@ async function poll() {
 
     const env      = proc.pm2_env || {};
     const status   = pm2ToDashboardStatus(env.status);
-    const restarts = env.restart_time ?? 0;
+    const restarts = env.restart_time != null ? env.restart_time : 0;
     const uptime   = env.pm_uptime ? fmtUptime(Date.now() - env.pm_uptime) : null;
 
     const body = {
