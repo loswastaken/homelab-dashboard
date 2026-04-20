@@ -324,6 +324,15 @@
       letter-spacing: .12em; text-transform: uppercase; color: var(--tm);
       padding: 4px 0 8px; display: flex; align-items: center; gap: 8px; }
     .section-hdr::after { content: ''; flex: 1; height: 1px; background: var(--b0); }
+    .section-pip { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ─── Subcategory sidebar items ─── */
+    .nav-item.nav-sub { padding-left: 34px; font-size: 12.5px; color: var(--ts); }
+    .nav-item.nav-sub .nav-pip { width: 5px; height: 5px; }
+
+    /* ─── Subcategory rows in settings ─── */
+    .cat-item.cat-sub { margin-left: 20px; border-left: 2px solid var(--b0);
+      background: var(--bg-base); }
 
     /* ─── Responsive ─── */
     .sidebar-backdrop { display: none; position: fixed; inset: 0;
@@ -594,10 +603,14 @@
       <div class="modal-sec">Categories</div>
       <div class="cat-list" id="cfg-cat-list"></div>
 
-      <div style="display:flex; gap:8px; align-items:flex-end;">
-        <div style="flex:1">
+      <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+        <div style="flex:1; min-width:120px">
           <label class="form-lbl">New Category Name</label>
           <input class="form-inp" id="new-cat-name" placeholder="Storage">
+        </div>
+        <div style="min-width:130px">
+          <label class="form-lbl">Parent <span>(optional)</span></label>
+          <select class="form-inp" id="new-cat-parent"></select>
         </div>
         <div>
           <label class="form-lbl">Color</label>
@@ -831,14 +844,69 @@ function patchCard(el, s) {
   if (rp) rp.textContent = s.response || '—';
 }
 
+/* ─── Category helpers ─── */
+function subCatsOf(parentId) {
+  return APP.categories.filter(c => c.parentId === parentId);
+}
+function isTopLevel(catId) {
+  const cat = APP.categories.find(c => c.id === catId);
+  return !cat || !cat.parentId;
+}
+
 function getSortedSvcs(svcs) {
   const pinned   = svcs.filter(s => s.pinnedAt).sort((a, b) => b.pinnedAt - a.pinnedAt);
   const unpinned = svcs.filter(s => !s.pinnedAt);
   return [...pinned, ...unpinned];
 }
 
+function buildGridHtml(svcs) {
+  const cat      = (filter !== 'all') ? APP.categories.find(c => c.id === filter) : null;
+  const subs     = (cat && !cat.parentId) ? subCatsOf(filter) : [];
+  const hasSubs  = subs.some(sub => svcs.some(s => s.cat === sub.id));
+  const pinned   = svcs.filter(s => s.pinnedAt);
+  const unpinned = svcs.filter(s => !s.pinnedAt);
+
+  if (!hasSubs) {
+    if (pinned.length && unpinned.length) {
+      return `<div class="section-hdr" data-section="pinned">Pinned</div>`
+           + pinned.map(renderCard).join('')
+           + `<div class="section-hdr" data-section="all">All Services</div>`
+           + unpinned.map(renderCard).join('');
+    }
+    return svcs.map(renderCard).join('');
+  }
+
+  /* Parent category view — pinned at top, then direct + subcategory sections */
+  let html = '';
+  if (pinned.length) {
+    html += `<div class="section-hdr" data-section="pinned">Pinned</div>`;
+    html += pinned.map(renderCard).join('');
+  }
+  const direct = unpinned.filter(s => s.cat === filter);
+  if (direct.length) {
+    const pip = getColors(cat.color).pip;
+    html += `<div class="section-hdr" data-section="${filter}"><span class="section-pip" style="background:${pip}"></span>${cat.name}</div>`;
+    html += direct.map(renderCard).join('');
+  }
+  for (const sub of subs) {
+    const subSvcs = unpinned.filter(s => s.cat === sub.id);
+    if (!subSvcs.length) continue;
+    const pip = getColors(sub.color).pip;
+    html += `<div class="section-hdr" data-section="${sub.id}"><span class="section-pip" style="background:${pip}"></span>${sub.name}</div>`;
+    html += subSvcs.map(renderCard).join('');
+  }
+  return html;
+}
+
 function renderAll(fresh = false) {
-  const raw  = filter==='all' ? APP.services : APP.services.filter(s=>s.cat===filter);
+  let raw;
+  if (filter === 'all') {
+    raw = APP.services.filter(s => isTopLevel(s.cat));
+  } else {
+    const subs   = subCatsOf(filter);
+    const subIds = new Set(subs.map(c => c.id));
+    raw = APP.services.filter(s => s.cat === filter || subIds.has(s.cat));
+  }
   const svcs = getSortedSvcs(raw);
   const grid = document.getElementById('grid');
 
@@ -851,19 +919,7 @@ function renderAll(fresh = false) {
           <div class="empty-txt">No services in this category yet.<br>Click <b>+ Add Service</b> to get started.</div>
          </div>`;
     } else {
-      const pinned   = svcs.filter(s => s.pinnedAt);
-      const unpinned = svcs.filter(s => !s.pinnedAt);
-      const hasBoth  = pinned.length > 0 && unpinned.length > 0;
-      let html = '';
-      if (hasBoth) {
-        html += `<div class="section-hdr" data-section="pinned">Pinned</div>`;
-        html += pinned.map(renderCard).join('');
-        html += `<div class="section-hdr" data-section="all">All Services</div>`;
-        html += unpinned.map(renderCard).join('');
-      } else {
-        html += svcs.map(renderCard).join('');
-      }
-      grid.innerHTML = html;
+      grid.innerHTML = buildGridHtml(svcs);
       grid.querySelectorAll('.card').forEach((el, i) => {
         el.classList.add('card-init');
         el.style.animationDelay = `${i * 40}ms`;
@@ -961,18 +1017,27 @@ function renderAll(fresh = false) {
 }
 
 function renderNavCats() {
-  document.getElementById('nav-cats').innerHTML = APP.categories.map(c=>{
-    const pip = getColors(c.color).pip;
-    const act = filter===c.id ? ' active' : '';
-    return `<div class="nav-item${act}" onclick="setFilter('${c.id}',this)">
-      <span class="nav-pip" style="background:${pip}"></span>${c.name}
+  const topLevel = APP.categories.filter(c => !c.parentId);
+  document.getElementById('nav-cats').innerHTML = topLevel.map(cat => {
+    const pip = getColors(cat.color).pip;
+    const act = filter === cat.id ? ' active' : '';
+    let html = `<div class="nav-item${act}" onclick="setFilter('${cat.id}',this)">
+      <span class="nav-pip" style="background:${pip}"></span>${cat.name}
     </div>`;
+    for (const sub of subCatsOf(cat.id)) {
+      const subPip = getColors(sub.color).pip;
+      const subAct = filter === sub.id ? ' active' : '';
+      html += `<div class="nav-item nav-sub${subAct}" onclick="setFilter('${sub.id}',this)">
+        <span class="nav-pip" style="background:${subPip}"></span>${sub.name}
+      </div>`;
+    }
+    return html;
   }).join('');
 }
 
 function renderTabs() {
-  const tabs = document.getElementById('tabs');
-  const extra = APP.categories.map(c=>
+  const tabs  = document.getElementById('tabs');
+  const extra = APP.categories.filter(c => !c.parentId).map(c =>
     `<div class="tab${filter===c.id?' active':''}" data-filter="${c.id}"
       onclick="setFilter('${c.id}',null,this)">${c.name}</div>`).join('');
   tabs.innerHTML =
@@ -1043,9 +1108,14 @@ function openEditModal(id) {
 }
 
 function populateCatSelect(selected) {
-  document.getElementById('f-cat').innerHTML = APP.categories.map(c=>
-    `<option value="${c.id}" ${c.id===selected?'selected':''}>${c.name}</option>`
-  ).join('');
+  const top = APP.categories.filter(c => !c.parentId);
+  document.getElementById('f-cat').innerHTML = top.map(cat => {
+    let html = `<option value="${cat.id}" ${cat.id===selected?'selected':''}>${cat.name}</option>`;
+    for (const sub of subCatsOf(cat.id)) {
+      html += `<option value="${sub.id}" ${sub.id===selected?'selected':''}>\u00a0\u00a0\u21b3 ${sub.name}</option>`;
+    }
+    return html;
+  }).join('');
 }
 
 function closeSvcModal() {
@@ -1136,17 +1206,40 @@ function closeCfgModal() {
 }
 
 function renderCfgCats() {
-  document.getElementById('cfg-cat-list').innerHTML = pendingCats.map((c,i)=>{
-    const pip = getColors(c.color).pip;
-    return `<div class="cat-item">
+  const topLevel = pendingCats.filter(c => !c.parentId);
+  const rows = [];
+  topLevel.forEach(cat => {
+    const i   = pendingCats.indexOf(cat);
+    const pip = getColors(cat.color).pip;
+    rows.push(`<div class="cat-item">
       <span class="cat-pip" style="background:${pip}"></span>
-      <span class="cat-name">${c.name}</span>
-      <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${c.color}</span>
+      <span class="cat-name">${cat.name}</span>
+      <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${cat.color}</span>
       <button class="cat-move" onclick="moveCat(${i},-1)" ${i===0?'disabled':''}>↑</button>
       <button class="cat-move" onclick="moveCat(${i},1)" ${i===pendingCats.length-1?'disabled':''}>↓</button>
       <button class="cat-del" onclick="removeCat(${i})">×</button>
-    </div>`;
-  }).join('');
+    </div>`);
+    pendingCats.filter(c => c.parentId === cat.id).forEach(sub => {
+      const si     = pendingCats.indexOf(sub);
+      const subPip = getColors(sub.color).pip;
+      rows.push(`<div class="cat-item cat-sub">
+        <span class="cat-pip" style="background:${subPip}"></span>
+        <span class="cat-name" style="font-size:12px">\u21b3 ${sub.name}</span>
+        <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${sub.color}</span>
+        <button class="cat-del" onclick="removeCat(${si})" style="margin-left:auto">×</button>
+      </div>`);
+    });
+  });
+  document.getElementById('cfg-cat-list').innerHTML = rows.join('');
+  renderParentSelect();
+}
+
+function renderParentSelect() {
+  const sel = document.getElementById('new-cat-parent');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">None (top-level)</option>'
+    + pendingCats.filter(c => !c.parentId)
+        .map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 }
 
 function moveCat(i, dir) {
@@ -1157,16 +1250,24 @@ function moveCat(i, dir) {
 }
 
 function removeCat(i) {
-  pendingCats.splice(i,1);
+  const cat = pendingCats[i];
+  if (!cat.parentId) {
+    pendingCats = pendingCats.filter(c => c.id !== cat.id && c.parentId !== cat.id);
+  } else {
+    pendingCats.splice(i, 1);
+  }
   renderCfgCats();
 }
 
 function addCategory() {
-  const name = document.getElementById('new-cat-name').value.trim();
+  const name     = document.getElementById('new-cat-name').value.trim();
+  const parentId = document.getElementById('new-cat-parent').value || null;
   if (!name) return;
-  const id = name.toLowerCase().replace(/\s+/g,'-');
-  if (pendingCats.find(c=>c.id===id)) { alert('Category ID already exists.'); return; }
-  pendingCats.push({ id, name, color: selectedColor });
+  const id = name.toLowerCase().replace(/\s+/g, '-');
+  if (pendingCats.find(c => c.id === id)) { alert('Category ID already exists.'); return; }
+  const entry = { id, name, color: selectedColor };
+  if (parentId) entry.parentId = parentId;
+  pendingCats.push(entry);
   document.getElementById('new-cat-name').value = '';
   renderCfgCats();
 }
