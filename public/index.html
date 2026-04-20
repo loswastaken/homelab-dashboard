@@ -730,6 +730,17 @@ function catFor(id) {
 
 function tickCls(v) { return v===1?'ok': v===2?'warn': v===3?'maint': v===0?'bad':'unk'; }
 
+function historyLabel() {
+  const secs = 30 * (APP.settings?.checkInterval || 60);
+  if (secs < 3600)  return `${Math.round(secs / 60)}-min history`;
+  if (secs < 86400) {
+    const h = secs / 3600;
+    return `${h % 1 === 0 ? h : h.toFixed(1)}-hr history`;
+  }
+  const d = secs / 86400;
+  return `${d % 1 === 0 ? d : d.toFixed(1)}-day history`;
+}
+
 function renderCard(s) {
   const cat    = catFor(s.cat);
   const colors = getColors(cat.color);
@@ -775,7 +786,7 @@ function renderCard(s) {
       </div>
 
       <div class="uptime-bar">${ticks.length ? ticks : '<div class="tick unk" style="flex:1"></div>'}</div>
-      <div class="tick-lbl">${isMaint ? '🔧 in maintenance · history paused' : `30-day history · checked ${lastChk}`}</div>
+      <div class="tick-lbl">${isMaint ? '🔧 in maintenance · history paused' : `${historyLabel()} · checked ${lastChk}`}</div>
 
       <hr class="divider">
 
@@ -811,7 +822,7 @@ function patchCard(el, s) {
   const lbl = el.querySelector('.tick-lbl');
   if (lbl) lbl.textContent = isMaint
     ? '🔧 in maintenance · history paused'
-    : `30-day history · checked ${lastChk}`;
+    : `${historyLabel()} · checked ${lastChk}`;
 
   const up = el.querySelector('[data-field="uptime"]');
   if (up) up.textContent = s.uptime || '—';
