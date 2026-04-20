@@ -408,11 +408,11 @@
 
       <div class="modal-sec">Report API Key</div>
       <div class="form-group">
-        <label class="form-lbl">Used by external agents via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
+        <label class="form-lbl">Used by external agents (PM2, etc.) via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
         <div style="display:flex;gap:8px">
           <input class="form-inp" id="cfg-apikey" readonly
             style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
-          <button class="btn-sm" onclick="copyApiKey()" style="flex-shrink:0">Copy</button>
+          <button class="btn-sm" onclick="copyApiKey(this)" style="flex-shrink:0">Copy</button>
         </div>
       </div>
 
@@ -456,6 +456,17 @@
         <button class="btn-sm" onclick="changeAccount()">Update Account</button>
         <span id="acct-msg" style="font-size:11px;margin-left:10px;color:var(--ts)"></span>
       </div>
+
+      <div class="modal-sec">Updates</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+        <div>
+          <div style="font-size:12px;font-weight:500;color:var(--tp)">Current build</div>
+          <div id="upd-sha" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);margin-top:2px">—</div>
+        </div>
+        <button class="btn-sm" id="upd-check-btn" onclick="checkForUpdates()">Check for Updates</button>
+      </div>
+      <div id="upd-result" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:8px"></div>
+      <button id="upd-apply-btn" style="display:none"></button>
 
     </div>
     <div class="modal-foot">
@@ -1023,8 +1034,7 @@ const COLOR_CSS = {
 };
 
 function openSettings() {
-  const svcData = DATA;
-  const s = svcData.settings || {};
+  const s = DATA.settings || {};
   pendingCats = JSON.parse(JSON.stringify(DATA.categories || []));
   document.getElementById('cfg-name').value        = s.displayName   || '';
   document.getElementById('cfg-title').value       = s.siteTitle     || '';
@@ -1035,11 +1045,16 @@ function openSettings() {
   document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
   document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
   document.getElementById('cfg-weather-units').value     = s.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
-  document.getElementById('cfg-apikey').value      = svcData.apiKey || '—';
+  document.getElementById('cfg-apikey').value      = DATA.apiKey || '—';
   document.getElementById('cfg-curpw').value       = '';
   document.getElementById('cfg-newuser').value     = '';
   document.getElementById('cfg-newpw').value       = '';
   document.getElementById('acct-msg').textContent  = '';
+  document.getElementById('upd-sha').textContent          = DATA.version || 'dev';
+  document.getElementById('upd-result').style.display     = 'none';
+  document.getElementById('upd-apply-btn').style.display  = 'none';
+  const cb = document.getElementById('upd-check-btn');
+  cb.disabled = false; cb.textContent = 'Check for Updates';
   renderCfgCats();
   renderSwatches();
   document.getElementById('cfg-overlay').classList.add('show');
@@ -1053,8 +1068,8 @@ function renderCfgCats() {
   const topLevel = [...pendingCats.filter(c => !c.parentId)].sort((a,b) => a.name.localeCompare(b.name));
   const rows = [];
   topLevel.forEach(cat => {
-    const i = pendingCats.indexOf(cat);
-    const pip = getColors(cat.id).icon;
+    const i   = pendingCats.indexOf(cat);
+    const pip = getColors(cat.color).pip;
     rows.push(`<div class="cat-item">
       <span class="cat-pip" style="background:${pip}"></span>
       <span class="cat-name">${cat.name}</span>
@@ -1062,8 +1077,8 @@ function renderCfgCats() {
       <button class="cat-del" onclick="removeCat(${i})" style="margin-left:auto">×</button>
     </div>`);
     [...pendingCats.filter(c => c.parentId === cat.id)].sort((a,b) => a.name.localeCompare(b.name)).forEach(sub => {
-      const si = pendingCats.indexOf(sub);
-      const subPip = getColors(sub.id).icon;
+      const si     = pendingCats.indexOf(sub);
+      const subPip = getColors(sub.color).pip;
       rows.push(`<div class="cat-item cat-sub">
         <span class="cat-pip" style="background:${subPip}"></span>
         <span class="cat-name" style="font-size:12px">\u21b3 ${sub.name}</span>
@@ -1110,16 +1125,17 @@ function addCategory() {
 function renderSwatches() {
   document.getElementById('color-swatches').innerHTML = Object.entries(COLOR_CSS).map(([color, v]) =>
     `<div class="swatch${selectedColor === color ? ' selected' : ''}"
-      style="background:${v.pip}" onclick="selectSwatch('${color}',this)"></div>`
+      style="background:${v.pip}" onclick="selectColor('${color}')"></div>`
   ).join('');
 }
 
-function selectSwatch(c, el) {
+function selectColor(c) {
   selectedColor = c;
   document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
-  el.classList.add('selected');
+  event.target.classList.add('selected');
+  const pip = getColors(c).pip;
   const hex = document.getElementById('color-hex');
-  if (hex) hex.value = COLOR_CSS[c].pip;
+  if (hex) hex.value = pip;
 }
 
 function onHexInput(val) {
@@ -1128,13 +1144,24 @@ function onHexInput(val) {
   document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
 }
 
-function copyApiKey() {
-  const key = document.getElementById('cfg-apikey').value;
-  navigator.clipboard.writeText(key).then(() => {
-    const btn = event.target;
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy', 1500);
-  });
+function copyApiKey(btn) {
+  const key  = document.getElementById('cfg-apikey').value;
+  const done = () => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(key).then(done).catch(() => execCopy(key, done));
+  } else {
+    execCopy(key, done);
+  }
+}
+
+function execCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); cb(); } catch {}
+  document.body.removeChild(ta);
 }
 
 async function saveSettings() {
@@ -1193,6 +1220,116 @@ async function changeAccount() {
     msg.style.color = 'var(--red)';
     msg.textContent = data.error || 'Update failed.';
   }
+}
+
+// ─── Updates ──────────────────────────────────────────────────────────────────
+function updResult(msg, type) {
+  const el = document.getElementById('upd-result');
+  const colors = {
+    green: ['var(--green-bg)', 'rgba(90,158,114,.22)',  'var(--green)'],
+    amber: ['var(--amber-bg)', 'rgba(196,136,74,.22)',  'var(--amber)'],
+    red:   ['var(--red-bg)',   'rgba(184,85,85,.22)',   'var(--red)'],
+  }[type] || ['var(--amber-bg)', 'rgba(196,136,74,.22)', 'var(--amber)'];
+  el.style.cssText = `display:block;padding:10px 12px;border-radius:6px;font-size:12px;
+    line-height:1.5;margin-bottom:8px;background:${colors[0]};
+    border:1px solid ${colors[1]};color:${colors[2]}`;
+  el.textContent = msg;
+  el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+async function checkForUpdates() {
+  const btn = document.getElementById('upd-check-btn');
+  document.getElementById('upd-apply-btn').style.display = 'none';
+  document.getElementById('upd-result').style.display    = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  try {
+    const res  = await fetch('/api/update/check');
+    const data = await res.json();
+    if (!res.ok) { updResult(data.error, 'red'); return; }
+    if (data.isDev) {
+      updResult('Running a local dev build — version tracking only works in deployed containers.', 'amber');
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
+    } else if (data.hasUpdate) {
+      updResult(`Update found: ${data.latest} — "${data.commitMessage}" — applying…`, 'amber');
+      await applyUpdate();
+    } else {
+      updResult(`Up to date (${data.current})`, 'green');
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
+    }
+  } catch (e) {
+    updResult('Could not reach GitHub: ' + e.message, 'red');
+    btn.disabled = false;
+    btn.textContent = 'Check for Updates';
+  }
+}
+
+async function applyUpdate() {
+  const btn = document.getElementById('upd-apply-btn');
+  btn.disabled = true;
+  btn.textContent = 'Applying…';
+  try {
+    const res  = await fetch('/api/update/apply', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      updResult('Update triggered — restarting…', 'green');
+      btn.style.display = 'none';
+      waitForRestart();
+    } else if (data.manual) {
+      updResult(data.message, 'amber');
+      btn.disabled = false;
+      btn.textContent = 'Apply Update';
+    } else if (data.error && data.error.toLowerCase().includes('timeout')) {
+      updResult('Restarting…', 'green');
+      btn.style.display = 'none';
+      waitForRestart();
+    } else {
+      updResult(data.error || 'Update failed.', 'red');
+      btn.disabled = false;
+      btn.textContent = 'Apply Update';
+    }
+  } catch (e) {
+    updResult('Restarting…', 'green');
+    btn.style.display = 'none';
+    waitForRestart();
+  }
+}
+
+function waitForRestart() {
+  const currentSha = DATA.version || null;
+  const checkBtn   = document.getElementById('upd-check-btn');
+  updResult('Restarting — will reload automatically when the new version is live…', 'green');
+
+  let elapsed = 0;
+  const POLL_MS    = 3000;
+  const TIMEOUT_MS = 90 * 1000;
+
+  setTimeout(() => {
+    const interval = setInterval(async () => {
+      elapsed += POLL_MS;
+      try {
+        const res = await fetch('/api/services', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const newSha = data.version || null;
+        if (!currentSha || (newSha && newSha !== currentSha)) {
+          clearInterval(interval);
+          window.location.reload();
+          return;
+        }
+        if (elapsed >= TIMEOUT_MS) {
+          clearInterval(interval);
+          updResult('No restart detected. The new image may still be building (GitHub Actions takes ~2–3 min). Try again shortly.', 'amber');
+          checkBtn.disabled = false;
+          checkBtn.textContent = 'Check for Updates';
+        }
+      } catch {
+        // container is down/restarting — keep polling
+      }
+    }, POLL_MS);
+  }, 8000);
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
