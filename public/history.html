@@ -865,7 +865,7 @@ function renderDetail(svc) {
       </div>
       <div class="metric">
         <div class="metric-lbl">Best Streak</div>
-        <div class="metric-val cg">${maxStreak}d</div>
+        <div class="metric-val cg">${maxStreak}${rangeDays === 1 ? 'h' : 'd'}</div>
       </div>
     </div>
 
