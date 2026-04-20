@@ -351,10 +351,11 @@
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
       .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
-      .hdr { padding: 14px 16px 12px; align-items: center; }
+      .hdr { padding: 10px 16px; align-items: center; }
       .hdr-l { overflow: hidden; }
-      .greeting { font-size: 18px; }
-      .greet-sub { flex-wrap: nowrap; overflow: hidden; }
+      .greeting { font-size: 16px; }
+      .greet-sub { flex-wrap: nowrap; overflow: hidden; font-size: 10px; gap: 4px; }
+      .live-dot { width: 5px; height: 5px; }
       #summary-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
       .countdown { display: none; }
       .hdr-r { flex-shrink: 0; text-align: right; }
@@ -365,8 +366,10 @@
       .stats { grid-template-columns: repeat(2, 1fr); }
       .stats .stat:last-child { grid-column: 1 / -1; }
       .grid { grid-template-columns: 1fr; }
-      .filter-row { flex-wrap: wrap; }
-      .tabs { flex-wrap: wrap; }
+      .filter-row { flex-wrap: wrap; gap: 8px; }
+      .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; max-width: 100%; }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tab { flex-shrink: 0; white-space: nowrap; }
       .row-right { flex-wrap: wrap; }
       .card-actions { opacity: 1; }
     }
