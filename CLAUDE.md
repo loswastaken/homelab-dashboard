@@ -19,10 +19,10 @@ A self-hosted homelab service monitor dashboard built with Node.js/Express (serv
 
 ## Git Workflow
 
-All work is done locally at:
-```
-C:\Users\Los\Desktop\Claude Workspace\homelab-dashboard
-```
+Work is done from two machines:
+
+- **Windows (PC):** `C:\Users\Los\Desktop\Claude Workspace\homelab-dashboard`
+- **Mac:** `/Users/los/Desktop/Claude Workspace/homelab-dashboard`
 
 ### Committing and pushing
 
@@ -46,6 +46,16 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 ### GitHub Actions
 
 `.github/workflows/docker.yml` — triggers on push to `main` and `workflow_dispatch`. Uses `docker/setup-buildx-action@v3` (required for GHA cache backend). Pushes `latest` and `sha-*` tags.
+
+### Updating the compose file on the NAS
+
+Watchtower only updates the Docker image — it does NOT pull the `docker-compose.yml`. When compose file changes are pushed, manually update on the NAS:
+
+```bash
+cd /volume2/docker/homelab-dashboard
+curl -o docker-compose.yml https://raw.githubusercontent.com/loswastaken/homelab-dashboard/main/docker-compose.yml
+sudo docker compose up -d
+```
 
 ---
 
@@ -77,7 +87,8 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/services` | Returns all data + `apiKey` |
+| `GET` | `/api/services` | Returns all data + `apiKey` + `version` (7-char SHA) |
+| `GET` | `/api/history` | Returns `dailyHistory` + `events` per service for uptime page |
 | `GET` | `/api/weather` | Returns current weather for configured location |
 | `POST` | `/api/check-all` | Triggers immediate health check on all services |
 | `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate) |
@@ -88,6 +99,8 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 | `PUT` | `/api/config` | Save settings + categories |
 | `POST` | `/api/setup` | First-run account creation (locked after use) |
 | `POST` | `/api/logout` | Destroy session |
+| `GET` | `/api/update/check` | Compare running SHA against GitHub main |
+| `POST` | `/api/update/apply` | Trigger Watchtower HTTP API to pull + redeploy |
 
 ### Health Check (`ping`)
 
@@ -97,15 +110,26 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 
 ### History Ticks
 
-Values stored in `svc.history[]`:
+Values stored in `svc.history[]` (last 30 per-check ticks, used for the main dashboard bar):
 - `1` = online
 - `0` = offline
 - `2` = degraded (warn)
 - `3` = maintenance (excluded from uptime calculation)
 
+### Daily History & Event Log
+
+Added to each service object for the uptime history page:
+
+- **`svc.dailyHistory[]`** — max 30 entries, one per calendar day:
+  `{ date: 'YYYY-MM-DD', online, degraded, offline, maintenance, total, uptime }` where `uptime` is 0–100 float (excludes maintenance from denominator). Accumulated live by `accumulateDailyTick()` on every `checkAll()` and `/report` call.
+
+- **`svc.events[]`** — max 500 entries, appended by `pushEvent()` on status transitions:
+  `{ ts: ISO, type: 'offline'|'degraded'|'recovery'|'maintenance', note: string }`
+  Triggered by: `checkAll()` (offline/recovery), `/report` (offline/degraded/recovery), `/maintenance` toggle.
+
 ### Data Files
 
-- `data/services.json` — all services, categories, settings (persisted)
+- `data/services.json` — all services, categories, settings, history, dailyHistory, events (persisted)
 - `data/auth.json` — credentials, session secret, API key
 - `data/sessions/` — session files
 
@@ -122,7 +146,9 @@ Single-file vanilla JS app. No build step.
 - **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete.
 - **`prevStates` Map:** Tracks `"status|maintenance"` snapshot per service ID for change detection.
 - **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
-- **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location (`weatherLocation`, optional `weatherCountryCode`), unit selection (`weatherUnits`), and enable toggle (`weatherEnabled`). Frontend polls every 10 minutes.
+- **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location. Displays icon emoji, temperature in JetBrains Mono, city + abbreviated state (US state lookup map), condition text. Polls every 10 minutes. Hidden entirely on mobile (`≤640px`).
+- **Dynamic favicon:** `updateFavicon()` called on every poll. Swaps among `favicon.svg` (green), `favicon-degraded.svg` (amber), `favicon-offline.svg` (red), `favicon-maintenance.svg` (grey) based on service states. Maintenance-mode services excluded from offline/degraded check.
+- **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 3-minute safety timeout.
 
 ### Color System
 
@@ -131,6 +157,36 @@ Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pi
 ### Stats Row
 
 Five cards in a `repeat(5, 1fr)` grid: **Services · Online · Degraded · Offline · Maintenance**. Maintenance count = services with `maintenance: true`.
+
+---
+
+## Uptime History Page (`public/history.html`)
+
+Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). Links from the sidebar "Uptime History" nav item.
+
+### List View (Atlassian-style)
+
+- All services displayed as rows with a day-by-day bar strip (bar height = uptime %, coloured green/amber/red/grey)
+- Current status pip, avg uptime label, incident count
+- Tooltip on each bar showing date + uptime %
+- Click a row to expand the detail panel (click again to close)
+
+### Detail Panel (Downdetector-style)
+
+- Metric cards: avg uptime, incidents, best streak (consecutive 100% days)
+- Canvas area/line chart of daily uptime % for the selected time range
+- Per-service event log (offline, degraded, recovery, maintenance)
+
+### Controls
+
+- **Time range:** 30d / 7d / 24h segment buttons
+- **Service filter:** dropdown to narrow to a single service
+- Summary stats row: avg uptime across services, total incidents, tracked services count, best-uptime service
+
+### Event Log
+
+- Global log at bottom of page showing recent events across all visible services (newest first, max 50)
+- Per-service log shown in the detail panel
 
 ---
 
@@ -158,6 +214,8 @@ sudo docker compose up -d
 
 Scoped to containers with label `com.centurylinklabs.watchtower.scope=homelab`. Polls every 300s. Automatically pulls and redeploys when GHCR has a new image.
 
+**HTTP API** is enabled (`WATCHTOWER_HTTP_API_UPDATE=true`) on port 8080. The dashboard uses this for one-click updates via `POST /v1/update` with a Bearer token. Token is shared via `WATCHTOWER_HTTP_API_TOKEN` env var in both services. Because the dashboard uses `network_mode: host`, `WATCHTOWER_HTTP_API_URL=http://localhost:8080` overrides the default `http://watchtower:8080`.
+
 ### First-Run Setup
 
 On first start with no `data/auth.json`, the app redirects to `/setup` for account creation. After that, it redirects to `/login`. Setup page is locked once an account exists.
@@ -169,3 +227,4 @@ On first start with no `data/auth.json`, the app redirects to `/setup` for accou
 - **Home Assistant (10.24.3.218:8123)** shows offline on the dashboard. Root cause: the NAS (`10.24.4.x`) and HA (`10.24.3.x`) are on different subnets/VLANs — the NAS cannot reach HA for health checks even though the user's browser can. Fix: add a firewall rule allowing NAS → HA, or use the `/report` endpoint from a script on the HA host.
 - `data/services.json` and `data/auth.json` should never be committed with real data.
 - Session store (`session-file-store`) logs are suppressed with `logFn: () => {}`.
+- `dailyHistory` and `events` on existing services start accumulating from the first deploy of this version — no retroactive data from the per-check `history[]` ticks.

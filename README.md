@@ -1,6 +1,6 @@
 # los.dev · Homelab Dashboard
 
-Self-hosted service monitoring dashboard running in Docker on a Synology DS423+. Dark-themed, single-page, no framework dependencies.
+Self-hosted service monitoring dashboard running in Docker on a Synology DS423+. Dark-themed, no framework dependencies.
 
 ---
 
@@ -9,11 +9,11 @@ Self-hosted service monitoring dashboard running in Docker on a Synology DS423+.
 | Layer | Tech |
 |---|---|
 | Backend | Node.js + Express |
-| Frontend | Vanilla JS, single HTML file |
+| Frontend | Vanilla JS — `index.html` (dashboard) + `history.html` (uptime history) |
 | Persistence | `data/services.json` — mounted Docker volume |
 | Auth | Session-based (bcrypt + express-session) |
 | Images | Built by GitHub Actions, pushed to `ghcr.io` |
-| Auto-update | Watchtower (dashboard) + cron script (PM2 agent) |
+| Auto-update | Watchtower HTTP API (one-click from dashboard) |
 
 ---
 
@@ -29,113 +29,108 @@ Self-hosted service monitoring dashboard running in Docker on a Synology DS423+.
 mkdir -p /volume2/docker/homelab-dashboard/data
 ```
 
-### 2. Drop the compose file on the NAS
+### 2. Pull the compose file
 ```bash
-cat > /volume2/docker/homelab-dashboard/docker-compose.yml << 'EOF'
-version: "3.8"
-
-services:
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_POLL_INTERVAL=300
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCOPE=homelab
-
-  homelab-dashboard:
-    image: ghcr.io/loswastaken/homelab-dashboard:latest
-    container_name: homelab-dashboard
-    network_mode: host
-    environment:
-      - PORT=55964
-      - TZ=America/New_York
-    volumes:
-      - /volume2/docker/homelab-dashboard/data:/app/data
-    restart: unless-stopped
-    labels:
-      - "com.centurylinklabs.watchtower.scope=homelab"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:55964/api/services"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-EOF
+cd /volume2/docker/homelab-dashboard
+curl -O https://raw.githubusercontent.com/loswastaken/homelab-dashboard/main/docker-compose.yml
 ```
 
 ### 3. Pull and start
 ```bash
-sudo docker pull ghcr.io/loswastaken/homelab-dashboard:latest
-cd /volume2/docker/homelab-dashboard
+sudo docker compose pull
 sudo docker compose up -d
 ```
 
 ### 4. First-time setup
-Open `http://NAS_IP:55964` in a browser. You'll be redirected to `/setup` to create your admin account (username + password, min 8 characters). This page only appears once — after account creation it's gone permanently.
+Open `http://NAS_IP:55964`. You'll be redirected to `/setup` to create your admin account (username + password, min 8 characters). This page is locked permanently after first use.
 
 ---
 
 ## Deploying Updates
 
-Updates are fully automatic once Watchtower is running:
+### Automatic (Watchtower)
+Watchtower polls GHCR every 5 minutes and redeploys automatically when a new image is available:
 
 ```
 Push to main
   → GitHub Actions builds image (~1-2 min)
   → Watchtower detects new digest within 5 min
   → Container restarts with new image
-  → data/services.json volume untouched
+  → data/ volume untouched
 ```
 
-To force an immediate update on the NAS:
+### One-click (from the dashboard)
+Open **Settings → Updates** and click **Check for Updates**. If an update is available it applies immediately and the page reloads once the new version is live.
+
+### Manual (SSH)
 ```bash
-sudo docker pull ghcr.io/loswastaken/homelab-dashboard:latest
-cd /volume2/docker/homelab-dashboard && sudo docker compose up -d
+cd /volume2/docker/homelab-dashboard
+sudo docker compose pull && sudo docker compose up -d
 ```
+
+> **Note:** Watchtower only updates the Docker image — it does not pull `docker-compose.yml` changes. When the compose file itself changes, re-run the `curl` command above to fetch the latest version before `docker compose up -d`.
 
 ---
 
-## Dashboard Usage
+## Dashboard (`/`)
 
 ### Adding a Service
-Click **+ Add Service** (top right). Fill in:
+Click **+ Add Service**. Fill in:
 
 | Field | Notes |
 |---|---|
 | Name | Display name |
-| Abbreviation | 2–4 chars shown in the icon |
-| Description | Shown below the name |
-| Category | Groups services in sidebar + tabs |
+| Abbreviation | 2–4 chars shown in the icon badge |
+| Description | Shown below the name on the card |
+| Category | Groups services in sidebar + filter tabs |
 | Port | Display only — doesn't affect health checks |
-| Check URL | Full URL to ping (leave blank to skip auto-check) |
+| Check URL | Full URL to ping; leave blank to skip auto-check |
 | Has Web UI | Shows "Open ↗" link on the card |
 | Enable Auto-Check | Toggles HTTP health checking |
 
-### Editing / Deleting a Service
-Hover any card to reveal the action buttons (top right of card):
-- **✎** — open edit modal
+### Card Actions
+Hover a card to reveal action buttons:
+- **✎** — edit
 - **×** — delete (confirmation required)
-- **✓ Resolve** — appears when status is degraded or offline; clears it to online
-- **🔧** — toggle maintenance mode
+- **✓ Resolve** — clears degraded/offline → online
+- **Pin** — pins the service to the top of the grid
+- **Maintenance** — toggles maintenance mode
 
 ### Maintenance Mode
-Click the **🔧** button on hover to put a service into maintenance:
-- Auto-check is suspended
-- History bars fill with a gray maintenance tick instead of up/down
-- Status badge shows "maintenance"
-- Service is excluded from the alert bar and live status dot
-- Uptime % excludes maintenance ticks (doesn't drag the number down)
-
-Click **End Maint** to bring it back — status resets to `unknown` and the next health check picks it up.
+- Auto-check suspended; history fills with grey maintenance ticks
+- Excluded from the alert bar, live status dot, and favicon state
+- Uptime % excludes maintenance ticks
 
 ### Filtering
-Use the **tabs** above the grid or the **sidebar categories** to filter by category.
+Use the **tabs** above the grid or **sidebar categories** to filter by category.
 
-### Manual Refresh
-Click **↺ Refresh** to force an immediate health check cycle.
+---
+
+## Uptime History (`/history.html`)
+
+Accessible via **Uptime History** in the sidebar.
+
+### List View
+All services shown as rows with:
+- Day-by-day bar strip (bar height = daily uptime %, colour = green/amber/red/grey)
+- Current status pip and avg uptime label
+- Hover any bar for date + exact uptime %
+
+Click a row to expand the **detail panel**.
+
+### Detail Panel
+- Metric cards: avg uptime, incident count, best consecutive uptime streak
+- Area/line chart of daily uptime % over the selected range
+- Per-service event log
+
+### Filters
+- **Time range:** 30 days / 7 days / 24 hours
+- **Service:** dropdown to narrow to a single service
+
+### Event Log
+Tracks status transitions with timestamps: offline, degraded, recovery, maintenance on/off. Shown globally at the bottom of the page and per-service in the detail panel.
+
+> History data accumulates from the first time the container runs this version. There is no retroactive data from before deployment.
 
 ---
 
@@ -144,83 +139,70 @@ Click **↺ Refresh** to force an immediate health check cycle.
 Open **Settings** from the sidebar.
 
 ### General
-| Setting | Default | Notes |
-|---|---|---|
-| Site Title | `los.dev · Homelab` | Shown in browser tab |
-| NAS IP | `10.24.4.26` | Shown in sidebar footer |
-| Health Check Interval | `60` | Seconds between auto-check cycles (min 10) |
+| Setting | Notes |
+|---|---|
+| Display Name | Your name shown in the greeting |
+| Site Title | Browser tab title |
+| Server Label | Shown in the sidebar footer |
+| NAS IP | Shown in the sidebar footer |
+| Health Check Interval | Seconds between auto-check cycles (min 10, default 60) |
+
+### Weather
+Shows a live weather pill in the dashboard header (hidden on mobile). Uses the Open-Meteo free API — no API key required.
+
+| Setting | Notes |
+|---|---|
+| Enable Weather | Toggle the pill on/off |
+| Location | ZIP code or city name |
+| Country Code | Optional 2-letter code (e.g. `US`) to disambiguate |
+| Units | Fahrenheit or Celsius |
 
 ### Report API Key
-A static key used by external agents (PM2 agent, etc.) to push status updates without a session. Click **Copy** to copy it to clipboard. Pass it as the `X-Api-Key` header.
+Used by external agents (PM2 agent, scripts) to push status updates without a session. Pass as the `X-Api-Key` header to `POST /api/services/:id/report`.
 
 ### Categories
-- **↑ / ↓** — reorder categories (order is reflected in sidebar and filter tabs)
-- **×** — delete a category (services in it are not deleted, just uncategorized)
-- **Add** — create a new category with a name and color
+- Reorder with **↑ / ↓**
+- Delete with **×** (services are not deleted, just uncategorized)
+- Choose preset color swatches or type any `#rrggbb` hex
 
-**Colors:** Click a preset swatch or type any `#rrggbb` hex code directly in the input field.
+### Updates
+Click **Check for Updates** to compare the running build against the latest commit on `main`. If an update is available it applies automatically — no confirmation step. The page reloads once the new container is live.
 
 ---
 
 ## PM2 Agent (Bass VM)
 
-The PM2 agent runs on Bass VM and polls `pm2 jlist` every 30 seconds, pushing status updates to the dashboard for processes that don't have a check URL.
+The PM2 agent runs on Bass VM and pushes process status to the dashboard for services that don't have a check URL.
 
-### Initial Setup
+### Setup
 ```bash
-# On Bass VM
 git clone https://github.com/loswastaken/homelab-dashboard.git
 cd ~/homelab-dashboard/pm2-agent
-
-# Edit the ecosystem config — set REPORT_API_KEY to the value from Dashboard Settings
-nano ecosystem.config.js
-
-# Start the agent
+nano ecosystem.config.js   # set REPORT_API_KEY from Dashboard → Settings → Report API Key
 pm2 start ecosystem.config.js
 pm2 save
 ```
 
-### Mapping PM2 Processes to Dashboard Services
-Edit `pm2-agent/index.js` and update `PM2_MAP`:
-
+### Process Map
+Edit `pm2-agent/index.js`:
 ```js
 const PM2_MAP = {
-  'Bass':     'redbot',    // PM2 process name → dashboard service ID
-  'MyBot':    'mybot-id',
+  'Bass': 'redbot',   // PM2 process name → dashboard service ID
 };
 ```
 
-The left side must match the **Name** column in `pm2 list` exactly. The right side is the service's `id` field in `services.json`.
-
-### Updating the API Key
-```bash
-nano ~/homelab-dashboard/pm2-agent/ecosystem.config.js
-# Update REPORT_API_KEY
-
-pm2 restart pm2-agent --update-env
-```
-
 ### Auto-Update (Cron)
-The agent checks GitHub for new commits every 15 minutes and restarts only if something changed:
-
 ```bash
 crontab -e
 # Add:
 */15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh >> ~/pm2-agent-update.log 2>&1
 ```
 
-Check update history:
-```bash
-tail -f ~/pm2-agent-update.log
-```
-
 ---
 
 ## Cloudflare Tunnel
 
-The dashboard is designed to be safely exposed via a Cloudflare tunnel with the built-in login page handling auth. No additional Cloudflare Access policy is strictly required (the app handles it), but adding one as a second layer is recommended.
-
-Point the tunnel at `localhost:55964`.
+Point the tunnel at `localhost:55964`. The built-in login page handles auth. Adding a Cloudflare Access policy as a second layer is recommended but not required.
 
 ---
 
@@ -230,23 +212,25 @@ All persistent data lives in `/volume2/docker/homelab-dashboard/data/` on the NA
 
 | File | Contents |
 |---|---|
-| `services.json` | All services, categories, settings, history |
+| `services.json` | Services, categories, settings, history ticks, daily history, events |
 | `auth.json` | Hashed password, session secret, report API key |
 | `sessions/` | Active session files (7-day TTL) |
 
-These are never included in the Docker image — they live only in the volume.
+Never included in the Docker image — lives only in the mounted volume.
 
-**Backup:** Just copy the `data/` directory. Restore by dropping it back in place and restarting the container.
+**Backup:** Copy the `data/` directory. Restore by dropping it back in place and restarting the container.
 
 ---
 
 ## API Reference
 
-All endpoints require an authenticated session except `/api/services/:id/report` (accepts `X-Api-Key` header instead).
+All endpoints require an authenticated session except `/api/services/:id/report` (accepts `X-Api-Key` header).
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/services` | Full data object |
+| GET | `/api/services` | Full data object + `version` (7-char SHA) |
+| GET | `/api/history` | Daily history + events per service |
+| GET | `/api/weather` | Current weather for configured location |
 | POST | `/api/services` | Add service |
 | PUT | `/api/services/:id` | Edit service |
 | DELETE | `/api/services/:id` | Remove service |
@@ -254,7 +238,10 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | POST | `/api/services/:id/check` | Force health check now |
 | POST | `/api/services/:id/maintenance` | Toggle maintenance mode |
 | POST | `/api/services/:id/report` | External status push (API key auth) |
-| GET | `/api/config` | Get settings + categories + API key |
+| POST | `/api/check-all` | Run health checks on all services |
+| GET | `/api/config` | Settings + categories + API key |
 | PUT | `/api/config` | Update settings + categories |
+| GET | `/api/update/check` | Compare running SHA vs GitHub main |
+| POST | `/api/update/apply` | Trigger Watchtower to pull + redeploy |
 | POST | `/api/login` | Authenticate |
 | POST | `/api/logout` | End session |
