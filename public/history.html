@@ -260,7 +260,7 @@
 
   <div class="nav-sec">
     <div class="nav-lbl">System</div>
-    <div class="nav-item" onclick="logout()">Settings</div>
+    <div class="nav-item" onclick="window.location.href='/'">Settings</div>
   </div>
 
   <div class="side-foot">
@@ -684,8 +684,8 @@ function renderDetail(svc) {
   // Scroll into view
   panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-  // Render chart
-  drawChart('detail-chart', hist, colors.icon);
+  // Defer chart draw until after DOM paint so canvas has real dimensions
+  requestAnimationFrame(() => drawChart('detail-chart', hist, colors.icon));
 
   // Axis labels
   const axis = document.getElementById('detail-chart-axis');
@@ -719,11 +719,14 @@ function drawChart(canvasId, hist, accentColor) {
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
 
-  if (!hist.length) {
+  if (!hist.length || W === 0) {
     ctx.fillStyle = 'rgba(237,232,213,.15)';
     ctx.font = '12px Sora, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('No data yet — uptime will appear here after the first full day', W / 2, H / 2);
+    const msg = rangeDays === 1
+      ? 'No hourly data yet — will appear after the first check cycle'
+      : 'No data yet — uptime will appear here after the first full day';
+    ctx.fillText(msg, W / 2, H / 2);
     return;
   }
 
