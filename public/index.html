@@ -687,7 +687,7 @@
         <button class="btn-sm" id="upd-check-btn" onclick="checkForUpdates()">Check for Updates</button>
       </div>
       <div id="upd-result" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:8px"></div>
-      <button class="btn-sm primary" id="upd-apply-btn" onclick="applyUpdate()" style="display:none">Apply Update</button>
+      <button id="upd-apply-btn" style="display:none"></button>
 
     </div>
     <div class="modal-foot">
@@ -1547,15 +1547,18 @@ async function checkForUpdates() {
     if (!res.ok) { updResult(data.error, 'red'); return; }
     if (data.isDev) {
       updResult('Running a local dev build — version tracking only works in deployed containers.', 'amber');
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
     } else if (data.hasUpdate) {
-      updResult(`Update available: ${data.latest} — "${data.commitMessage}"`, 'amber');
-      document.getElementById('upd-apply-btn').style.display = 'inline-block';
+      updResult(`Update found: ${data.latest} — "${data.commitMessage}" — applying…`, 'amber');
+      await applyUpdate();
     } else {
       updResult(`Up to date (${data.current})`, 'green');
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
     }
   } catch (e) {
     updResult('Could not reach GitHub: ' + e.message, 'red');
-  } finally {
     btn.disabled = false;
     btn.textContent = 'Check for Updates';
   }
