@@ -1533,6 +1533,7 @@ function updResult(msg, type) {
     line-height:1.5;margin-bottom:8px;background:${colors[0]};
     border:1px solid ${colors[1]};color:${colors[2]}`;
   el.textContent = msg;
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function checkForUpdates() {
