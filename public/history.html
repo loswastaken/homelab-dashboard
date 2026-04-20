@@ -226,6 +226,73 @@
     .no-data-lbl { font-size: 13px; }
     .no-data-sub { font-size: 11px; margin-top: 4px; color: var(--tm); }
 
+    /* ─── Modal / overlay ─── */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 500; align-items: center; justify-content: center; padding: 20px; }
+    .overlay.show { display: flex; }
+    .modal { background: var(--bg-modal); border: 1px solid var(--b1); border-radius: 14px;
+      width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column;
+      box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+    .modal-hdr { display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 24px 16px; border-bottom: 1px solid var(--b0); flex-shrink: 0; }
+    .modal-title { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+    .modal-close { background: none; border: none; color: var(--ts); font-size: 22px;
+      cursor: pointer; line-height: 1; padding: 0 2px; transition: color .15s; }
+    .modal-close:hover { color: var(--tp); }
+    .modal-body { padding: 8px 24px 16px; overflow-y: auto; flex: 1; }
+    .modal-foot { padding: 14px 24px; border-top: 1px solid var(--b0); display: flex;
+      justify-content: flex-end; gap: 10px; flex-shrink: 0; }
+    .modal-sec { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--tm); margin: 20px 0 12px;
+      display: flex; align-items: center; gap: 8px; }
+    .modal-sec::after { content: ''; flex:1; height: 1px; background: var(--b0); }
+    .form-group { margin-bottom: 16px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .form-lbl { font-size: 11px; font-weight: 500; color: var(--ts);
+      margin-bottom: 5px; display: block; letter-spacing: .04em; }
+    .form-lbl span { color: var(--tm); font-weight: 400; }
+    .form-inp { width: 100%; background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 6px; padding: 8px 12px; color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 13px; outline: none; transition: border-color .15s; }
+    .form-inp:focus { border-color: var(--b2); }
+    .form-inp::placeholder { color: var(--tm); }
+    select.form-inp { cursor: pointer; }
+    select.form-inp option { background: var(--bg-surf); }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--b0); }
+    .toggle-info { }
+    .toggle-name { font-size: 13px; font-weight: 500; }
+    .toggle-desc { font-size: 11px; color: var(--ts); margin-top: 1px; }
+    .toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .tslider { position: absolute; cursor: pointer; inset: 0;
+      background: var(--bg-hi); border-radius: 22px; transition: .2s; border: 1px solid var(--b1); }
+    .tslider:before { content: ''; position: absolute; height: 14px; width: 14px;
+      left: 3px; top: 3px; background: var(--ts); border-radius: 50%; transition: .2s; }
+    input:checked + .tslider { background: var(--green-bg); border-color: rgba(90,158,114,.35); }
+    input:checked + .tslider:before { transform: translateX(16px); background: var(--green); }
+    .cat-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .cat-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      background: var(--bg-surf); border: 1px solid var(--b0); border-radius: 6px; }
+    .cat-pip { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .cat-name { flex: 1; font-size: 13px; }
+    .cat-del { font-size: 16px; color: var(--tm); cursor: pointer; transition: color .15s;
+      line-height: 1; background: none; border: none; padding: 0 2px; }
+    .cat-del:hover { color: var(--red); }
+    .cat-item.cat-sub { margin-left: 20px; border-left: 2px solid var(--b0); background: var(--bg-base); }
+    .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .swatch { width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+      border: 2px solid transparent; transition: border-color .15s; }
+    .swatch.selected { border-color: var(--tp); }
+    .btn-prim { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--tp); background: var(--bg-hi); border: 1px solid var(--b2);
+      border-radius: 6px; padding: 8px 20px; cursor: pointer; transition: all .15s; }
+    .btn-prim:hover { background: var(--b1); }
+    .btn-sec { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--ts); background: transparent; border: 1px solid var(--b0);
+      border-radius: 6px; padding: 8px 20px; cursor: pointer; transition: all .15s; }
+    .btn-sec:hover { color: var(--tp); border-color: var(--b1); }
+
     /* ─── Responsive ─── */
     @media (max-width: 900px) {
       .summary-row { grid-template-columns: repeat(2, 1fr); }
@@ -258,15 +325,17 @@
     <a class="nav-item active" href="/history.html">Uptime History</a>
   </div>
 
-  <div class="nav-sec">
-    <div class="nav-lbl">System</div>
-    <div class="nav-item" onclick="window.location.href='/#settings'">Settings</div>
-  </div>
-
   <div class="side-foot">
     <div class="foot-lbl" id="foot-label">Homelab Server</div>
     <div class="foot-val" id="foot-ip"></div>
-    <button onclick="logout()" style="margin-top:10px;width:100%;font-family:'Sora',sans-serif;
+    <button onclick="openSettings()" style="margin-top:10px;width:100%;font-family:'Sora',sans-serif;
+      font-size:11px;font-weight:500;color:var(--ts);background:none;border:1px solid var(--b0);
+      border-radius:5px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;"
+      onmouseover="this.style.color='var(--tp)';this.style.borderColor='var(--b1)'"
+      onmouseout="this.style.color='var(--ts)';this.style.borderColor='var(--b0)'">
+      Settings
+    </button>
+    <button onclick="logout()" style="margin-top:6px;width:100%;font-family:'Sora',sans-serif;
       font-size:11px;font-weight:500;color:var(--ts);background:none;border:1px solid var(--b0);
       border-radius:5px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;"
       onmouseover="this.style.color='var(--tp)';this.style.borderColor='var(--b1)'"
@@ -275,6 +344,126 @@
     </button>
   </div>
 </nav>
+
+<!-- ══════════════ SETTINGS MODAL ══════════════ -->
+<div class="overlay" id="cfg-overlay" onclick="if(event.target===this)closeCfgModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Settings</div>
+      <button class="modal-close" onclick="closeCfgModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="modal-sec">General</div>
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">Your Name <span>(shown in greeting)</span></label>
+          <input class="form-inp" id="cfg-name" placeholder="Alex">
+        </div>
+        <div>
+          <label class="form-lbl">Site Title <span>(browser tab)</span></label>
+          <input class="form-inp" id="cfg-title" placeholder="Homelab Dashboard">
+        </div>
+      </div>
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">Server Label <span>(sidebar footer)</span></label>
+          <input class="form-inp" id="cfg-serverlabel" placeholder="Synology DS423+">
+        </div>
+        <div>
+          <label class="form-lbl">Server IP <span>(sidebar footer)</span></label>
+          <input class="form-inp" id="cfg-ip" placeholder="10.0.0.1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-lbl">Health Check Interval <span>(seconds, min 10)</span></label>
+        <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
+      </div>
+
+      <div class="modal-sec">Weather</div>
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-name">Enable Weather</div>
+          <div class="toggle-desc">Show live weather in the dashboard header</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="cfg-weather-enabled"><span class="tslider"></span></label>
+      </div>
+      <div class="form-row" style="margin-top:12px">
+        <div>
+          <label class="form-lbl">Location <span>(ZIP or city)</span></label>
+          <input class="form-inp" id="cfg-weather-location" placeholder="10001 or New York">
+        </div>
+        <div>
+          <label class="form-lbl">Country Code <span>(optional, e.g. US)</span></label>
+          <input class="form-inp" id="cfg-weather-country" placeholder="US" maxlength="2">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-lbl">Units</label>
+        <select class="form-inp" id="cfg-weather-units">
+          <option value="fahrenheit">Fahrenheit (F, mph)</option>
+          <option value="celsius">Celsius (C, km/h)</option>
+        </select>
+      </div>
+
+      <div class="modal-sec">Report API Key</div>
+      <div class="form-group">
+        <label class="form-lbl">Used by external agents via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
+        <div style="display:flex;gap:8px">
+          <input class="form-inp" id="cfg-apikey" readonly
+            style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
+          <button class="btn-sm" onclick="copyApiKey()" style="flex-shrink:0">Copy</button>
+        </div>
+      </div>
+
+      <div class="modal-sec">Categories</div>
+      <div class="cat-list" id="cfg-cat-list"></div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <div style="flex:1;min-width:120px">
+          <label class="form-lbl">New Category Name</label>
+          <input class="form-inp" id="new-cat-name" placeholder="Storage">
+        </div>
+        <div style="min-width:130px">
+          <label class="form-lbl">Parent <span>(optional)</span></label>
+          <select class="form-inp" id="new-cat-parent"></select>
+        </div>
+        <div>
+          <label class="form-lbl">Color</label>
+          <div class="color-swatches" id="color-swatches"></div>
+          <input class="form-inp" id="color-hex" placeholder="#5285b8" maxlength="7"
+            style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px"
+            oninput="onHexInput(this.value)">
+        </div>
+        <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
+      </div>
+
+      <div class="modal-sec">Account</div>
+      <div class="form-group">
+        <label class="form-lbl">Current Password <span>(required to make changes)</span></label>
+        <input class="form-inp" id="cfg-curpw" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="form-row">
+        <div>
+          <label class="form-lbl">New Username <span>(leave blank to keep)</span></label>
+          <input class="form-inp" id="cfg-newuser" placeholder="admin" autocomplete="username">
+        </div>
+        <div>
+          <label class="form-lbl">New Password <span>(leave blank to keep)</span></label>
+          <input class="form-inp" id="cfg-newpw" type="password" placeholder="••••••••" autocomplete="new-password">
+        </div>
+      </div>
+      <div style="margin-bottom:4px">
+        <button class="btn-sm" onclick="changeAccount()">Update Account</button>
+        <span id="acct-msg" style="font-size:11px;margin-left:10px;color:var(--ts)"></span>
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sec" onclick="closeCfgModal()">Cancel</button>
+      <button class="btn-prim" onclick="saveSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════ MAIN ══════════════ -->
 <main class="main">
@@ -821,6 +1010,189 @@ function renderEvents(el, events, showSvc = false) {
       <div class="event-time">${fmtDate(e.ts)}</div>
     </div>`;
   }).join('');
+}
+
+// ─── Settings modal ───────────────────────────────────────────────────────────
+let pendingCats = [];
+let selectedColor = 'blue';
+
+const COLOR_CSS = {
+  blue:   { pip: '#5285b8' }, green:  { pip: '#5a9e72' }, amber: { pip: '#c4884a' },
+  red:    { pip: '#b85555' }, purple: { pip: '#7a60b8' }, pink:  { pip: '#b85888' },
+  slate:  { pip: '#7a8a9e' },
+};
+
+function openSettings() {
+  const svcData = DATA;
+  const s = svcData.settings || {};
+  pendingCats = JSON.parse(JSON.stringify(DATA.categories || []));
+  document.getElementById('cfg-name').value        = s.displayName   || '';
+  document.getElementById('cfg-title').value       = s.siteTitle     || '';
+  document.getElementById('cfg-serverlabel').value = s.serverLabel   || '';
+  document.getElementById('cfg-ip').value          = s.nasIp         || '';
+  document.getElementById('cfg-interval').value    = s.checkInterval || 60;
+  document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
+  document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
+  document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
+  document.getElementById('cfg-weather-units').value     = s.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
+  document.getElementById('cfg-apikey').value      = svcData.apiKey || '—';
+  document.getElementById('cfg-curpw').value       = '';
+  document.getElementById('cfg-newuser').value     = '';
+  document.getElementById('cfg-newpw').value       = '';
+  document.getElementById('acct-msg').textContent  = '';
+  renderCfgCats();
+  renderSwatches();
+  document.getElementById('cfg-overlay').classList.add('show');
+}
+
+function closeCfgModal() {
+  document.getElementById('cfg-overlay').classList.remove('show');
+}
+
+function renderCfgCats() {
+  const topLevel = [...pendingCats.filter(c => !c.parentId)].sort((a,b) => a.name.localeCompare(b.name));
+  const rows = [];
+  topLevel.forEach(cat => {
+    const i = pendingCats.indexOf(cat);
+    const pip = getColors(cat.id).icon;
+    rows.push(`<div class="cat-item">
+      <span class="cat-pip" style="background:${pip}"></span>
+      <span class="cat-name">${cat.name}</span>
+      <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${cat.color}</span>
+      <button class="cat-del" onclick="removeCat(${i})" style="margin-left:auto">×</button>
+    </div>`);
+    [...pendingCats.filter(c => c.parentId === cat.id)].sort((a,b) => a.name.localeCompare(b.name)).forEach(sub => {
+      const si = pendingCats.indexOf(sub);
+      const subPip = getColors(sub.id).icon;
+      rows.push(`<div class="cat-item cat-sub">
+        <span class="cat-pip" style="background:${subPip}"></span>
+        <span class="cat-name" style="font-size:12px">\u21b3 ${sub.name}</span>
+        <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${sub.color}</span>
+        <button class="cat-del" onclick="removeCat(${si})" style="margin-left:auto">×</button>
+      </div>`);
+    });
+  });
+  document.getElementById('cfg-cat-list').innerHTML = rows.join('');
+  renderParentSelect();
+}
+
+function renderParentSelect() {
+  const sel = document.getElementById('new-cat-parent');
+  if (!sel) return;
+  const sorted = [...pendingCats.filter(c => !c.parentId)].sort((a,b) => a.name.localeCompare(b.name));
+  sel.innerHTML = '<option value="">None (top-level)</option>'
+    + sorted.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+function removeCat(i) {
+  const cat = pendingCats[i];
+  if (!cat.parentId) {
+    pendingCats = pendingCats.filter(c => c.id !== cat.id && c.parentId !== cat.id);
+  } else {
+    pendingCats.splice(i, 1);
+  }
+  renderCfgCats();
+}
+
+function addCategory() {
+  const name = document.getElementById('new-cat-name').value.trim();
+  const parentId = document.getElementById('new-cat-parent').value || null;
+  if (!name) return;
+  const id = name.toLowerCase().replace(/\s+/g, '-');
+  if (pendingCats.find(c => c.id === id)) { alert('Category ID already exists.'); return; }
+  const entry = { id, name, color: selectedColor };
+  if (parentId) entry.parentId = parentId;
+  pendingCats.push(entry);
+  document.getElementById('new-cat-name').value = '';
+  renderCfgCats();
+}
+
+function renderSwatches() {
+  document.getElementById('color-swatches').innerHTML = Object.entries(COLOR_CSS).map(([color, v]) =>
+    `<div class="swatch${selectedColor === color ? ' selected' : ''}"
+      style="background:${v.pip}" onclick="selectSwatch('${color}',this)"></div>`
+  ).join('');
+}
+
+function selectSwatch(c, el) {
+  selectedColor = c;
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  const hex = document.getElementById('color-hex');
+  if (hex) hex.value = COLOR_CSS[c].pip;
+}
+
+function onHexInput(val) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+  selectedColor = val;
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+}
+
+function copyApiKey() {
+  const key = document.getElementById('cfg-apikey').value;
+  navigator.clipboard.writeText(key).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+async function saveSettings() {
+  const interval = parseInt(document.getElementById('cfg-interval').value, 10);
+  const res = await fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      settings: {
+        displayName:        document.getElementById('cfg-name').value.trim(),
+        siteTitle:          document.getElementById('cfg-title').value.trim(),
+        serverLabel:        document.getElementById('cfg-serverlabel').value.trim(),
+        nasIp:              document.getElementById('cfg-ip').value.trim(),
+        checkInterval:      Math.max(10, isNaN(interval) ? 60 : interval),
+        weatherEnabled:     document.getElementById('cfg-weather-enabled').checked,
+        weatherLocation:    document.getElementById('cfg-weather-location').value.trim(),
+        weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),
+        weatherUnits:       document.getElementById('cfg-weather-units').value === 'celsius' ? 'celsius' : 'fahrenheit',
+      },
+      categories: pendingCats
+    })
+  });
+  if (res.ok) {
+    const updated = await res.json();
+    DATA.categories = updated.categories || pendingCats;
+    if (updated.settings) {
+      DATA.settings = updated.settings;
+      const s = updated.settings;
+      if (s.serverLabel) document.getElementById('foot-label').textContent = s.serverLabel;
+      if (s.nasIp)       document.getElementById('foot-ip').textContent    = s.nasIp;
+    }
+  }
+  closeCfgModal();
+}
+
+async function changeAccount() {
+  const msg         = document.getElementById('acct-msg');
+  const curpw       = document.getElementById('cfg-curpw').value;
+  const newUsername = document.getElementById('cfg-newuser').value.trim();
+  const newPassword = document.getElementById('cfg-newpw').value;
+  if (!curpw) { msg.style.color = 'var(--red)'; msg.textContent = 'Current password required.'; return; }
+  if (!newUsername && !newPassword) { msg.style.color = 'var(--amber)'; msg.textContent = 'Enter a new username or password.'; return; }
+  const res = await fetch('/api/auth', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword: curpw, newUsername, newPassword })
+  });
+  const data = await res.json();
+  if (res.ok) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = 'Account updated.';
+    document.getElementById('cfg-curpw').value  = '';
+    document.getElementById('cfg-newuser').value = '';
+    document.getElementById('cfg-newpw').value  = '';
+  } else {
+    msg.style.color = 'var(--red)';
+    msg.textContent = data.error || 'Update failed.';
+  }
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

@@ -1649,10 +1649,6 @@ setInterval(tick, 30000);
 fetchData().then(() => {
   startPoll();
   startWeatherPoll();
-  if (window.location.hash === '#settings') {
-    history.replaceState(null, '', '/');
-    openSettings();
-  }
 });
 </script>
 </body>
