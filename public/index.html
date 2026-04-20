@@ -756,6 +756,7 @@ async function fetchData(fresh = false) {
     APP = await res.json();
     renderAll(fresh);
     renderWeatherFromState();
+    updateFavicon(APP.services || []);
     tick();
   } catch(e) {
     console.error('Fetch failed', e);
@@ -824,6 +825,22 @@ function renderWeatherFromState() {
     `<span class="w-loc">${loc}</span>` +
     `<span class="w-sep">·</span>` +
     `<span class="w-cond">${d.weatherText}</span>`;
+}
+
+function updateFavicon(services) {
+  const visible = services.filter(s => !s.maintenance);
+  const anyOffline    = visible.some(s => s.status === 'offline');
+  const anyDegraded   = visible.some(s => s.status === 'degraded');
+  const anyMaintenance = services.some(s => s.maintenance);
+
+  let href = '/favicon.svg';
+  if (anyOffline)                          href = '/favicon-offline.svg';
+  else if (anyDegraded)                    href = '/favicon-degraded.svg';
+  else if (anyMaintenance)                 href = '/favicon-maintenance.svg';
+
+  let link = document.querySelector("link[rel='icon']");
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; link.type = 'image/svg+xml'; document.head.appendChild(link); }
+  link.href = href;
 }
 
 async function fetchWeather(force = false) {
