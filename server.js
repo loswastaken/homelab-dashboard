@@ -685,6 +685,10 @@ app.post('/api/update/apply', async (req, res) => {
     });
     res.json({ ok: true, message: 'Watchtower triggered — the container will restart momentarily.' });
   } catch (e) {
+    // A timeout means Watchtower received the request and is restarting the container
+    if (e.message && e.message.includes('Timeout')) {
+      return res.json({ ok: true, message: 'Watchtower triggered — the container will restart momentarily.' });
+    }
     res.status(500).json({ ok: false, error: e.message });
   }
 });

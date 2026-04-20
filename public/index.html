@@ -1579,6 +1579,11 @@ async function applyUpdate() {
       updResult(data.message, 'amber');
       btn.disabled = false;
       btn.textContent = 'Apply Update';
+    } else if (data.error && data.error.toLowerCase().includes('timeout')) {
+      // Watchtower timeout means the container is already restarting
+      updResult('Restarting…', 'green');
+      btn.style.display = 'none';
+      waitForRestart();
     } else {
       updResult(data.error || 'Update failed.', 'red');
       btn.disabled = false;
