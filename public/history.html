@@ -546,7 +546,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────────────────────────────
-let DATA      = { services: [], categories: [] };
+let DATA      = { services: [], categories: [], settings: {}, apiKey: '' };
 let rangeDays = 30;
 let filterSvcId = '';
 let selectedSvcId = '';
@@ -571,7 +571,9 @@ async function loadData() {
     });
 
     // Populate settings
-    const s = sData.settings || {};
+    DATA.settings = sData.settings || {};
+    DATA.apiKey   = sData.apiKey   || '';
+    const s = DATA.settings;
     if (s.siteTitle)   document.querySelector('.brand-name').textContent = s.siteTitle.split('·')[0].trim() || 'los.dev';
     if (s.serverLabel) document.getElementById('foot-label').textContent = s.serverLabel;
     if (s.nasIp)       document.getElementById('foot-ip').textContent    = s.nasIp;
