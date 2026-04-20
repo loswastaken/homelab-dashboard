@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>los.dev · Homelab</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -279,6 +280,12 @@
       border: 2px solid transparent; transition: border-color .15s; }
     .swatch.selected { border-color: var(--tp); }
 
+    /* category sort buttons */
+    .cat-move { font-size: 13px; color: var(--tm); cursor: pointer; transition: color .15s;
+      line-height: 1; background: none; border: none; padding: 0 2px; }
+    .cat-move:hover { color: var(--tp); }
+    .cat-move:disabled { opacity: .2; cursor: default; }
+
     /* btn variants */
     .btn-prim { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
       color: var(--tp); background: var(--bg-hi); border: 1px solid var(--b2);
@@ -491,6 +498,9 @@
         <div>
           <label class="form-lbl">Color</label>
           <div class="color-swatches" id="color-swatches"></div>
+          <input class="form-inp" id="color-hex" placeholder="#5285b8" maxlength="7"
+            style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px"
+            oninput="onHexInput(this.value)">
         </div>
         <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
       </div>
@@ -520,6 +530,13 @@ const COLOR_CSS = {
   red:    { card: 'var(--red)',    icon: 'var(--red-bg)',    pip: '#b85555' },
   pink:   { card: 'var(--pink)',   icon: 'var(--pink-bg)',   pip: '#b85888' }
 };
+
+function getColors(colorKey) {
+  if (COLOR_CSS[colorKey]) return COLOR_CSS[colorKey];
+  if (colorKey && /^#[0-9a-fA-F]{3,6}$/.test(colorKey))
+    return { card: colorKey, icon: colorKey + '22', pip: colorKey };
+  return COLOR_CSS.blue;
+}
 
 /* ═══════════════════════════════════════════════════
    FETCH / POLL
@@ -577,7 +594,7 @@ function tickCls(v) { return v===1?'ok': v===2?'warn': v===3?'maint': v===0?'bad
 
 function renderCard(s) {
   const cat    = catFor(s.cat);
-  const colors = COLOR_CSS[cat.color] || COLOR_CSS.blue;
+  const colors = getColors(cat.color);
   const hist   = (s.history || []).slice(-30);
   const ticks  = hist.map(v=>`<div class="tick ${tickCls(v)}"></div>`).join('');
   const hasUrl = s.url && s.hasUI;
@@ -695,7 +712,7 @@ function renderAll() {
 
 function renderNavCats() {
   document.getElementById('nav-cats').innerHTML = APP.categories.map(c=>{
-    const pip = COLOR_CSS[c.color]?.pip || '#888';
+    const pip = getColors(c.color).pip;
     const act = filter===c.id ? ' active' : '';
     return `<div class="nav-item${act}" onclick="setFilter('${c.id}',this)">
       <span class="nav-pip" style="background:${pip}"></span>${c.name}
@@ -842,14 +859,23 @@ function closeCfgModal() {
 
 function renderCfgCats() {
   document.getElementById('cfg-cat-list').innerHTML = pendingCats.map((c,i)=>{
-    const pip = COLOR_CSS[c.color]?.pip || '#888';
+    const pip = getColors(c.color).pip;
     return `<div class="cat-item">
       <span class="cat-pip" style="background:${pip}"></span>
       <span class="cat-name">${c.name}</span>
-      <span style="font-size:10px;color:var(--tm)">${c.color}</span>
+      <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${c.color}</span>
+      <button class="cat-move" onclick="moveCat(${i},-1)" ${i===0?'disabled':''}>↑</button>
+      <button class="cat-move" onclick="moveCat(${i},1)" ${i===pendingCats.length-1?'disabled':''}>↓</button>
       <button class="cat-del" onclick="removeCat(${i})">×</button>
     </div>`;
   }).join('');
+}
+
+function moveCat(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= pendingCats.length) return;
+  const tmp = pendingCats[i]; pendingCats[i] = pendingCats[j]; pendingCats[j] = tmp;
+  renderCfgCats();
 }
 
 function removeCat(i) {
@@ -879,6 +905,15 @@ function selectColor(c) {
   selectedColor = c;
   document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
   event.target.classList.add('selected');
+  const pip = getColors(c).pip;
+  const hex = document.getElementById('color-hex');
+  if (hex) hex.value = pip;
+}
+
+function onHexInput(val) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+  selectedColor = val;
+  document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
 }
 
 async function saveSettings() {
