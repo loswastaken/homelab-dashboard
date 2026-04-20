@@ -37,13 +37,13 @@ function fmtUptime(ms) {
 function put(serviceId, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const url     = new URL(`${DASHBOARD_URL}/api/services/${serviceId}`);
+    const url     = new URL(`${DASHBOARD_URL}/api/services/${serviceId}/report`);
 
     const req = http.request({
       hostname: url.hostname,
       port:     url.port || 80,
       path:     url.pathname,
-      method:   'PUT',
+      method:   'POST',
       headers: {
         'Content-Type':   'application/json',
         'Content-Length': Buffer.byteLength(payload),

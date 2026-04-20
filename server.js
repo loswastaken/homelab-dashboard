@@ -186,6 +186,25 @@ app.post('/api/services/:id/resolve', (req, res) => {
   res.json(svc);
 });
 
+// External status report (e.g. PM2 agent) — updates status, desc, and appends a history tick
+app.post('/api/services/:id/report', (req, res) => {
+  const d   = load();
+  const svc = d.services.find(s => s.id === req.params.id);
+  if (!svc) return res.status(404).json({ error: 'Not found' });
+
+  const { status, desc } = req.body;
+  const tick = status === 'online' ? 1 : status === 'degraded' ? 2 : 0;
+
+  if (status)          svc.status = status;
+  if (desc !== undefined) svc.desc = desc;
+  svc.history     = pushHistory(svc.history, tick);
+  svc.uptime      = calcUptime(svc.history);
+  svc.lastChecked = new Date().toISOString();
+
+  save(d);
+  res.json(svc);
+});
+
 // Toggle maintenance mode — disables auto-check and records maint ticks in history
 app.post('/api/services/:id/maintenance', (req, res) => {
   const d   = load();
