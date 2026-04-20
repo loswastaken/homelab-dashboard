@@ -846,7 +846,14 @@ function patchCard(el, s) {
 
 /* ─── Category helpers ─── */
 function subCatsOf(parentId) {
-  return APP.categories.filter(c => c.parentId === parentId);
+  return APP.categories
+    .filter(c => c.parentId === parentId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+function topLevelCats() {
+  return APP.categories
+    .filter(c => !c.parentId)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 function isTopLevel(catId) {
   const cat = APP.categories.find(c => c.id === catId);
@@ -854,8 +861,9 @@ function isTopLevel(catId) {
 }
 
 function getSortedSvcs(svcs) {
-  const pinned   = svcs.filter(s => s.pinnedAt).sort((a, b) => b.pinnedAt - a.pinnedAt);
-  const unpinned = svcs.filter(s => !s.pinnedAt);
+  const alpha    = (a, b) => a.name.localeCompare(b.name);
+  const pinned   = svcs.filter(s => s.pinnedAt).sort(alpha);
+  const unpinned = svcs.filter(s => !s.pinnedAt).sort(alpha);
   return [...pinned, ...unpinned];
 }
 
@@ -1017,7 +1025,7 @@ function renderAll(fresh = false) {
 }
 
 function renderNavCats() {
-  const topLevel = APP.categories.filter(c => !c.parentId);
+  const topLevel = topLevelCats();
   document.getElementById('nav-cats').innerHTML = topLevel.map(cat => {
     const pip = getColors(cat.color).pip;
     const act = filter === cat.id ? ' active' : '';
@@ -1037,7 +1045,7 @@ function renderNavCats() {
 
 function renderTabs() {
   const tabs  = document.getElementById('tabs');
-  const extra = APP.categories.filter(c => !c.parentId).map(c =>
+  const extra = topLevelCats().map(c =>
     `<div class="tab${filter===c.id?' active':''}" data-filter="${c.id}"
       onclick="setFilter('${c.id}',null,this)">${c.name}</div>`).join('');
   tabs.innerHTML =
@@ -1108,7 +1116,7 @@ function openEditModal(id) {
 }
 
 function populateCatSelect(selected) {
-  const top = APP.categories.filter(c => !c.parentId);
+  const top = topLevelCats();
   document.getElementById('f-cat').innerHTML = top.map(cat => {
     let html = `<option value="${cat.id}" ${cat.id===selected?'selected':''}>${cat.name}</option>`;
     for (const sub of subCatsOf(cat.id)) {
@@ -1206,7 +1214,7 @@ function closeCfgModal() {
 }
 
 function renderCfgCats() {
-  const topLevel = pendingCats.filter(c => !c.parentId);
+  const topLevel = [...pendingCats.filter(c => !c.parentId)].sort((a, b) => a.name.localeCompare(b.name));
   const rows = [];
   topLevel.forEach(cat => {
     const i   = pendingCats.indexOf(cat);
@@ -1215,11 +1223,9 @@ function renderCfgCats() {
       <span class="cat-pip" style="background:${pip}"></span>
       <span class="cat-name">${cat.name}</span>
       <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${cat.color}</span>
-      <button class="cat-move" onclick="moveCat(${i},-1)" ${i===0?'disabled':''}>↑</button>
-      <button class="cat-move" onclick="moveCat(${i},1)" ${i===pendingCats.length-1?'disabled':''}>↓</button>
-      <button class="cat-del" onclick="removeCat(${i})">×</button>
+      <button class="cat-del" onclick="removeCat(${i})" style="margin-left:auto">×</button>
     </div>`);
-    pendingCats.filter(c => c.parentId === cat.id).forEach(sub => {
+    [...pendingCats.filter(c => c.parentId === cat.id)].sort((a, b) => a.name.localeCompare(b.name)).forEach(sub => {
       const si     = pendingCats.indexOf(sub);
       const subPip = getColors(sub.color).pip;
       rows.push(`<div class="cat-item cat-sub">
@@ -1237,16 +1243,9 @@ function renderCfgCats() {
 function renderParentSelect() {
   const sel = document.getElementById('new-cat-parent');
   if (!sel) return;
+  const sorted = [...pendingCats.filter(c => !c.parentId)].sort((a, b) => a.name.localeCompare(b.name));
   sel.innerHTML = '<option value="">None (top-level)</option>'
-    + pendingCats.filter(c => !c.parentId)
-        .map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-}
-
-function moveCat(i, dir) {
-  const j = i + dir;
-  if (j < 0 || j >= pendingCats.length) return;
-  const tmp = pendingCats[i]; pendingCats[i] = pendingCats[j]; pendingCats[j] = tmp;
-  renderCfgCats();
+    + sorted.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 }
 
 function removeCat(i) {
