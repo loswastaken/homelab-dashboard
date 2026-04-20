@@ -1590,21 +1590,32 @@ async function applyUpdate() {
 }
 
 function waitForRestart() {
-  updResult('Restarting — will reload automatically…', 'green');
-  // Give the container a moment to go down before we start polling
+  const currentSha = APP.version || null;
+  updResult('Restarting — will reload automatically when the new version is live…', 'green');
+  // Wait for the container to actually go down first, then poll for a new SHA
   setTimeout(() => {
     const interval = setInterval(async () => {
       try {
         const res = await fetch('/api/services', { cache: 'no-store' });
-        if (res.ok) {
+        if (!res.ok) return; // still coming up
+        const data = await res.json();
+        const newSha = data.version || null;
+        // Reload only once the running SHA has actually changed
+        if (newSha && currentSha && newSha !== currentSha) {
+          clearInterval(interval);
+          window.location.reload();
+        } else if (!currentSha) {
+          // No SHA to compare (dev build) — just reload once it responds
           clearInterval(interval);
           window.location.reload();
         }
       } catch {
-        // still down — keep polling
+        // container is down/restarting — keep polling
       }
-    }, 2000);
-  }, 4000);
+    }, 3000);
+    // Safety timeout: reload after 3 minutes regardless
+    setTimeout(() => { clearInterval(interval); window.location.reload(); }, 3 * 60 * 1000);
+  }, 8000); // give Watchtower time to pull + stop the old container
 }
 
 /* ═══════════════════════════════════════════════════
