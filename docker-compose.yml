@@ -14,6 +14,8 @@ services:
       - WATCHTOWER_SCOPE=homelab           # only watch containers with this label
       - WATCHTOWER_HTTP_API_UPDATE=true
       - WATCHTOWER_HTTP_API_TOKEN=605a27e361f06ea4abbad1a0bc37601d093b8f6ee612a93ef60c16747dcb557f
+    ports:
+      - "8080:8080"
     # Remove the SCOPE lines above to watch ALL containers on the NAS (broader)
 
   homelab-dashboard:
@@ -40,6 +42,7 @@ services:
       - PORT=55964
       - TZ=America/New_York
       - WATCHTOWER_HTTP_API_TOKEN=605a27e361f06ea4abbad1a0bc37601d093b8f6ee612a93ef60c16747dcb557f
+      - WATCHTOWER_HTTP_API_URL=http://localhost:8080
 
     volumes:
       # Persist services.json — edit this path to match your NAS volume layout.
