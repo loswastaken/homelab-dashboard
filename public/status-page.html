@@ -308,7 +308,7 @@
     const bn = bannerConfig(DATA.overall);
     const showBanner = DATA.page.showOverallBanner !== false;
     const showLog    = DATA.page.showEventLog !== false;
-    const updated    = DATA.page.updatedAt ? fmtRelative(DATA.page.updatedAt) : '';
+    const updated    = lastRefreshed ? fmtRelative(lastRefreshed) : '';
 
     const title = DATA.page.name || 'Status';
     document.title = `${title} · Status`;
@@ -319,7 +319,7 @@
       html += `<section class="banner ${bn.cls}">
         <div class="banner-dot"></div>
         <div class="banner-title">${escapeHtml(bn.title)}</div>
-        ${updated ? `<div class="banner-meta">Updated ${escapeHtml(updated)}</div>` : ''}
+        <div class="banner-meta" id="banner-meta">${updated ? 'Updated ' + escapeHtml(updated) : ''}</div>
       </section>`;
     }
 
@@ -579,10 +579,14 @@
     }
   }
 
-  // Periodically refresh the "Updated Xs ago" label between fetches.
+  // Periodically refresh the "Updated Xs ago" labels between fetches.
   setInterval(() => {
+    if (!lastRefreshed) return;
+    const label = 'Updated ' + fmtRelative(lastRefreshed);
     const el = document.getElementById('refreshed');
-    if (el && lastRefreshed) el.textContent = 'Updated ' + fmtRelative(lastRefreshed);
+    if (el) el.textContent = label;
+    const bm = document.getElementById('banner-meta');
+    if (bm) bm.textContent = label;
   }, 10000);
 
   load();
