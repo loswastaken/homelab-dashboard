@@ -1469,8 +1469,10 @@ async function hydrateAgentSelectors(preselect) {
   }
   populateAgentSelect('pm2',    preselect.pm2AgentId);
   populateAgentSelect('docker', preselect.dockerAgentId);
-  await loadAgentItems('pm2',    preselect.pm2AgentId,    preselect.pm2ProcessName);
-  await loadAgentItems('docker', preselect.dockerAgentId, preselect.dockerContainerName);
+  const effectivePm2    = document.getElementById('f-pm2-agent').value    || '';
+  const effectiveDocker = document.getElementById('f-docker-agent').value || '';
+  await loadAgentItems('pm2',    effectivePm2,    preselect.pm2ProcessName);
+  await loadAgentItems('docker', effectiveDocker, preselect.dockerContainerName);
 }
 
 function populateAgentSelect(kind, selectedId) {
