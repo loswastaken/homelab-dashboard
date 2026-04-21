@@ -330,11 +330,19 @@ Boot-loop tracking is in-memory (`Map<containerId, number[]>` of timestamps capt
 
 - **Image:** `ghcr.io/loswastaken/homelab-dashboard-docker-agent:latest` — built by `.github/workflows/docker-agent.yml` on any change under `docker-agent/`.
 - **Dockerfile:** Alpine + Node 20 + `docker-cli`. Image is ~80 MB.
-- **Config:** env vars on the container — `DASHBOARD_URL`, `REPORT_API_KEY`, optional `AGENT_NAME`, `POLL_INTERVAL_MS`.
+- **Config:** env vars on the container — `DASHBOARD_URL`, `REPORT_API_KEY`, optional `AGENT_NAME`, `POLL_INTERVAL_MS`, `DOCKER_API_VERSION`.
 - **Required mounts:** `/var/run/docker.sock:/var/run/docker.sock:ro` (socket access) and `./data:/app/data` (persists agent ID across restarts).
 - **Networking:** `network_mode: host` so the agent can reach the dashboard at its LAN IP without extra network setup.
 - **Auto-update:** label the container with `com.centurylinklabs.watchtower.scope: homelab` and Watchtower will pull updates on the same 5-min cycle as the dashboard.
 - The `docker-agent/docker-compose.yml` in the repo is a reference/dev-build template. Production deploys should use the GHCR image directly (see the install snippet in Settings → API Key).
+
+### Synology / old-daemon compatibility
+
+DSM ships an older Docker daemon with two quirks the agent works around. If a future bug report mentions "Synology" and "docker ps", check these first:
+
+- **API version pin:** the Dockerfile sets `DOCKER_API_VERSION=1.43` so the newer Alpine `docker-cli` doesn't negotiate a version the DSM daemon can't satisfy (symptom: *"client version 1.52 is too new. Maximum supported API version is 1.43"*). Overrideable via env var for newer hosts.
+- **JSON template hang:** `docker ps --format '{{json .}}'` hangs indefinitely against DSM's daemon even though plain `docker ps` works. `dockerList()` in [docker-agent/index.js](docker-agent/index.js) uses a pipe-delimited custom template (`{{.ID}}|{{.Names}}|{{.State}}|{{.Status}}`) and splits it in Node — matches the four fields the rest of the code uses.
+- **Shell spawn:** `spawnSync('docker', [...])` directly; do NOT `execSync("docker ps …")` (goes through `/bin/sh -c`, which also occasionally hangs on DSM + Alpine BusyBox).
 
 ---
 

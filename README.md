@@ -75,7 +75,15 @@ sudo docker compose pull && sudo docker compose up -d
 ## Dashboard (`/`)
 
 ### Adding a Service
-Click **+ Add Service**. Fill in:
+Click **+ Add Service**. Pick a **Check Type** at the top of the modal — the rest of the form adapts to what you choose.
+
+| Check Type | Required fields | Notes |
+|---|---|---|
+| **URL** | Check URL | Standard HTTP(S) health check. The dashboard pings the URL on every cycle. |
+| **PM2** | PM2 Host + Process | Status is pushed by the [PM2 agent](#pm2-agent) running on the host. Dropdowns populate from registered agents. |
+| **Docker** | Docker Host + Container | Status is pushed by the [Docker agent](#docker-agent) running on the host. Dropdowns populate from registered agents. |
+
+Other fields apply to all check types:
 
 | Field | Notes |
 |---|---|
@@ -84,9 +92,8 @@ Click **+ Add Service**. Fill in:
 | Description | Shown below the name on the card |
 | Category | Groups services in sidebar + filter tabs |
 | Port | Display only — doesn't affect health checks |
-| Check URL | Full URL to ping; leave blank to skip auto-check |
 | Has Web UI | Shows "Open ↗" link on the card |
-| Enable Auto-Check | Toggles HTTP health checking |
+| Enable Auto-Check | Toggles HTTP health checking (URL type only) |
 
 ### Card Actions
 Hover a card to reveal action buttons:
@@ -185,8 +192,11 @@ Shows a live weather pill in the dashboard header (hidden on mobile). Uses the O
 
 Push notifications fire on `offline`, `degraded`, and `recovery` transitions. Subscriptions are managed per-browser and stored server-side. Requires HTTPS (or localhost) for the browser permission prompt to work.
 
-### Report API Key
-Used by external agents (PM2 agent, scripts) to push status updates without a session. Pass as the `X-Api-Key` header to `POST /api/services/:id/report`.
+### API Key
+Used by external agents (PM2 agent, Docker agent, scripts) to push status updates and register themselves. Pass as the `X-Api-Key` header. The tab also embeds ready-to-run install snippets for both agents with your dashboard URL + key pre-filled.
+
+### Connected Agents
+Under the General tab, any registered PM2 or Docker agent appears here. Each row shows the agent type, hostname, item count, and last seen time. Use **Rename** to give an agent a friendly label (stable across re-registrations) or **Delete** to remove one. A `stale` marker appears next to any agent that hasn't checked in for 10+ minutes.
 
 ### Categories
 - Reorder with **↑ / ↓**
@@ -200,34 +210,86 @@ Click **Check for Updates** to compare the running build against the latest comm
 
 ## PM2 Agent
 
-The PM2 agent runs on any host where PM2 manages processes and pushes process status to the dashboard for services that don't have a check URL.
+The PM2 agent runs on any host where PM2 manages processes. The dashboard is the source of truth — the agent registers itself, pushes its full process list, and pulls back which services to report on. No hardcoded mapping.
 
 ### Setup
 ```bash
 git clone https://github.com/loswastaken/homelab-dashboard.git
 cd ~/homelab-dashboard/pm2-agent
-nano ecosystem.config.js   # set REPORT_API_KEY from Dashboard → Settings → Report API Key
+# Edit ecosystem.config.js: set DASHBOARD_URL and REPORT_API_KEY
+# (REPORT_API_KEY is visible in Dashboard → Settings → API Key)
 pm2 start ecosystem.config.js
 pm2 save
 ```
 
-### Process Map
-Edit `pm2-agent/index.js` to map your PM2 process names to dashboard service IDs:
-```js
-const PM2_MAP = {
-  'my-app':     'service-id-from-dashboard',   // PM2 process name → dashboard service ID
-  'another-app': 'another-service-id',
-};
-```
-
-Service IDs are visible in the dashboard URL when editing a service, or in `data/services.json`.
+### Mapping services
+Once the agent is running it appears in **Dashboard → Settings → General → Connected Agents**. When adding or editing a service, pick **PM2** as the check type, then select the host + process from the dropdowns — the process list is populated from the agent's live discovery.
 
 ### Auto-Update (Cron)
 ```bash
-crontab -e
-# Add:
-*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh >> ~/pm2-agent-update.log 2>&1
+(crontab -l 2>/dev/null; echo "*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh >> ~/pm2-agent-update.log 2>&1") | crontab -
 ```
+
+### Status mapping
+- PM2 `online` → **online**
+- `stopped` / `stopping` → **offline**
+- Anything else (`errored`, `launching`, etc.) → **degraded**
+
+---
+
+## Docker Agent
+
+Runs as its own Docker container on any host with Docker. Mounts `/var/run/docker.sock` read-only so it can enumerate containers via the Docker CLI. Like the PM2 agent, it registers with the dashboard, pushes a discovery list, and pulls back which containers to report on.
+
+### Setup
+Copy this into a new directory on the host (the **Dashboard → Settings → API Key** tab embeds a version with your URL + key pre-filled):
+
+```bash
+mkdir -p ~/homelab-docker-agent/data && cd ~/homelab-docker-agent
+
+cat > docker-compose.yml <<YAML
+services:
+  docker-agent:
+    image: ghcr.io/loswastaken/homelab-dashboard-docker-agent:latest
+    container_name: homelab-docker-agent
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DASHBOARD_URL:  http://DASHBOARD_HOST:55964
+      REPORT_API_KEY: PASTE_KEY_FROM_DASHBOARD_SETTINGS
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/app/data
+    labels:
+      com.centurylinklabs.watchtower.scope: homelab
+YAML
+
+sudo docker compose up -d
+```
+
+Edit the `DASHBOARD_URL` and `REPORT_API_KEY` values before starting.
+
+### Mapping containers
+Once running it appears in **Connected Agents**. On a service's modal, pick **Docker** as the check type, then select the host + container from the dropdowns.
+
+### Auto-update
+The `com.centurylinklabs.watchtower.scope: homelab` label makes Watchtower pull agent updates on the same 5-minute cycle as the dashboard itself — nothing else to configure.
+
+### Status mapping
+- `running` + `healthy` (or no healthcheck) → **online**
+- `running` + `starting` (normal) → **online**, `desc: 'starting · ...'`
+- `running` + `starting` (≥3 rising-edge transitions in 10 min) → **degraded**, `desc: 'boot-loop: N restarts in 10m'`
+- `running` + `unhealthy` → **degraded**
+- `restarting` / `paused` → **degraded**
+- `exited` / `dead` / `created` / `removing` → **offline**
+
+### Synology compatibility notes
+DSM ships an older Docker daemon with some quirks — all handled in the image, but worth knowing:
+
+- The daemon maxes out at API version **1.43**. The image pins `DOCKER_API_VERSION=1.43` so the newer Alpine `docker-cli` doesn't fail with *"client version is too new"*.
+- `docker ps --format '{{json .}}'` hangs against this older daemon. The agent uses a plain pipe-delimited template instead.
+
+If you need to override the daemon API version on another host (e.g. bleeding-edge Docker), set `DOCKER_API_VERSION` in the container's `environment` block.
 
 ---
 
@@ -289,3 +351,8 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | DELETE | `/api/status-pages/:id` | Delete a status page |
 | GET | `/status/:slug` | Public status page HTML (no auth) |
 | GET | `/api/public/status/:slug` | Sanitized public status data (no auth) |
+| POST | `/api/pm2/agents/register` | PM2 agent self-register (API key) |
+| POST | `/api/pm2/agents/:id/discovery` | PM2 agent pushes process list (API key) |
+| GET | `/api/pm2/agents/:id/monitored` | PM2 agent pulls `[{ serviceId, name }]` (API key) |
+| GET / PUT / DELETE | `/api/pm2/agents` & `/:id` & `/:id/items` | UI list / rename / delete / item dropdown |
+| POST / GET / PUT / DELETE | `/api/docker/agents/...` | Same shape as PM2 routes above, for Docker agents |
