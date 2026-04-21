@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Status</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:   #131110;
+      --bg-side:   #0f0e0c;
+      --bg-surf:   #1a1815;
+      --bg-card:   #1e1c18;
+      --bg-cardh:  #232019;
+      --bg-hi:     #2c2922;
+
+      --tp:  #ede8d5;
+      --ts:  #7a7165;
+      --tm:  #46423b;
+
+      --b0: rgba(237,232,213,.05);
+      --b1: rgba(237,232,213,.09);
+      --b2: rgba(237,232,213,.18);
+
+      --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
+      --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
+      --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
+      --blue:    #5285b8; --blue-bg:   rgba(82,133,184,.13);
+      --slate:   #7a8a9e; --slate-bg:  rgba(122,138,158,.13);
+    }
+
+    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased; }
+
+    body::before { content: ''; position: fixed; inset: 0;
+      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
+      background-size: 28px 28px; pointer-events: none; z-index: 0; }
+
+    main { position: relative; z-index: 1; max-width: 960px; margin: 0 auto;
+      padding: 56px 28px 96px; }
+
+    /* ─── Banner ─── */
+    .banner { display: flex; align-items: center; gap: 18px; padding: 22px 28px;
+      border-radius: 14px; border: 1px solid var(--b1); background: var(--bg-card);
+      margin-bottom: 28px; }
+    .banner-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+      box-shadow: 0 0 0 6px transparent; }
+    .banner.operational  .banner-dot { background: var(--green); box-shadow: 0 0 0 6px var(--green-bg); }
+    .banner.degraded     .banner-dot { background: var(--amber); box-shadow: 0 0 0 6px var(--amber-bg); }
+    .banner.outage       .banner-dot { background: var(--red);   box-shadow: 0 0 0 6px var(--red-bg); }
+    .banner.maintenance  .banner-dot { background: var(--slate); box-shadow: 0 0 0 6px var(--slate-bg); }
+    .banner.operational  { border-color: rgba(90,158,114,.35); }
+    .banner.degraded     { border-color: rgba(196,136,74,.35); }
+    .banner.outage       { border-color: rgba(184,85,85,.35); }
+    .banner.maintenance  { border-color: rgba(122,138,158,.35); }
+    .banner-title { font-size: 22px; font-weight: 500; letter-spacing: -.02em; flex: 1; }
+    .banner-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+
+    /* ─── Page intro ─── */
+    .page-hdr { text-align: center; margin-bottom: 34px; }
+    .page-hdr h1 { font-size: 28px; font-weight: 300; letter-spacing: -.03em; }
+    .page-hdr h1 b { font-weight: 600; }
+    .page-hdr p { color: var(--ts); font-size: 13px; margin-top: 6px; max-width: 540px;
+      margin-left: auto; margin-right: auto; }
+
+    /* ─── Controls ─── */
+    .controls { display: flex; align-items: center; justify-content: flex-end;
+      margin-bottom: 18px; }
+    .seg { display: flex; background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 8px; overflow: hidden; }
+    .seg-btn { padding: 6px 14px; font-size: 12px; font-family: 'Sora', sans-serif;
+      color: var(--ts); background: none; border: none; cursor: pointer;
+      transition: all .15s; white-space: nowrap; }
+    .seg-btn:hover { color: var(--tp); background: var(--b0); }
+    .seg-btn.active { color: var(--tp); background: var(--bg-hi); }
+
+    /* ─── Service rows ─── */
+    .svc-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 40px; }
+    .svc-row { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
+      transition: all .15s; overflow: hidden; }
+    .svc-row:hover { background: var(--bg-cardh); border-color: var(--b1); }
+    .svc-row.open { border-color: var(--b2); background: var(--bg-cardh); }
+    .svc-head { padding: 14px 18px; display: flex; align-items: center; gap: 16px;
+      cursor: pointer; }
+    .svc-abbr { width: 36px; height: 36px; border-radius: 8px; display: flex;
+      align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
+      letter-spacing: .04em; flex-shrink: 0; background: var(--bg-hi); color: var(--ts); }
+    .svc-info { flex: 1; min-width: 0; }
+    .svc-name { font-size: 13px; font-weight: 500; color: var(--tp);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-cat { font-size: 11px; color: var(--ts); margin-top: 1px; }
+    .svc-uptime-label { font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      font-weight: 500; flex-shrink: 0; width: 56px; text-align: right; }
+    .svc-uptime-label.cg { color: var(--green); }
+    .svc-uptime-label.ca { color: var(--amber); }
+    .svc-uptime-label.cr { color: var(--red); }
+    .svc-uptime-label.cm { color: var(--slate); }
+
+    .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 28px;
+      flex: 1 1 320px; min-width: 120px; }
+    .bar { flex: 1; min-width: 3px; max-width: 10px; border-radius: 3px 3px 0 0;
+      transition: opacity .15s; cursor: default; position: relative; }
+    .bar.ok    { background: var(--green); opacity: .75; }
+    .bar.warn  { background: var(--amber); opacity: .75; }
+    .bar.bad   { background: var(--red);   opacity: .75; }
+    .bar.maint { background: var(--slate); opacity: .4; }
+    .bar.empty { background: var(--b1);    opacity: 1; height: 4px !important; align-self: center; border-radius: 3px; }
+    .bar:hover { opacity: 1; }
+    .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 6px; padding: 5px 9px; white-space: nowrap; font-size: 11px;
+      color: var(--tp); pointer-events: none; z-index: 100; }
+    .bar:hover .bar-tooltip { display: block; }
+
+    .status-pip { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-pip.ok    { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
+    .status-pip.warn  { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
+    .status-pip.bad   { background: var(--red);   box-shadow: 0 0 0 3px var(--red-bg); }
+    .status-pip.maint { background: var(--slate); box-shadow: 0 0 0 3px var(--slate-bg); }
+
+    .chev { color: var(--tm); font-size: 13px; flex-shrink: 0; transition: transform .15s; }
+    .svc-row.open .chev { transform: rotate(90deg); color: var(--ts); }
+
+    /* ─── Expanded detail ─── */
+    .svc-detail { display: none; padding: 0 18px 22px; border-top: 1px solid var(--b0); }
+    .svc-row.open .svc-detail { display: block; }
+    .chart-wrap { margin: 18px 0 20px; }
+    .chart-title { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); margin-bottom: 10px; }
+    .chart-canvas-wrap { position: relative; height: 120px; }
+    canvas.uptime-chart { width: 100%; height: 100%; display: block; }
+    .chart-axis { display: flex; justify-content: space-between;
+      font-size: 10px; color: var(--tm); margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
+
+    .det-events { display: flex; flex-direction: column; }
+    .det-ev-title { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); margin-bottom: 8px; }
+    .det-ev-item { display: flex; align-items: center; gap: 10px; padding: 7px 0;
+      border-bottom: 1px solid var(--b0); font-size: 12px; }
+    .det-ev-item:last-child { border-bottom: none; }
+    .det-ev-item:empty { display: none; }
+    .ev-icon { width: 22px; height: 22px; border-radius: 50%; display: flex;
+      align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+    .ev-icon.offline    { background: var(--red-bg);   color: var(--red); }
+    .ev-icon.degraded   { background: var(--amber-bg); color: var(--amber); }
+    .ev-icon.recovery   { background: var(--green-bg); color: var(--green); }
+    .ev-icon.maintenance{ background: var(--slate-bg); color: var(--slate); }
+    .ev-body { flex: 1; color: var(--tp); }
+    .ev-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--tm); }
+    .ev-empty { font-size: 12px; color: var(--ts); padding: 8px 0; }
+
+    /* ─── Global incident log ─── */
+    .sec-head { margin-bottom: 14px; }
+    .sec-title { font-size: 11px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--ts); }
+
+    .global-log { background: var(--bg-card); border: 1px solid var(--b0);
+      border-radius: 12px; padding: 6px 18px; }
+    .global-log .det-ev-item { padding: 12px 0; }
+
+    /* ─── Footer ─── */
+    footer { text-align: center; margin-top: 48px; font-size: 11px; color: var(--tm); }
+    footer a { color: var(--ts); text-decoration: none; border-bottom: 1px solid var(--b0); }
+    footer a:hover { color: var(--tp); }
+
+    /* ─── Error / loading ─── */
+    .loading, .error { text-align: center; padding: 80px 0; color: var(--ts); }
+    .error-title { font-size: 20px; font-weight: 500; color: var(--tp); margin-bottom: 6px; }
+
+    /* ─── Mobile ─── */
+    @media (max-width: 640px) {
+      main { padding: 32px 16px 72px; }
+      .banner { flex-wrap: wrap; padding: 18px 20px; gap: 12px; }
+      .banner-title { font-size: 18px; flex-basis: 100%; order: 2; }
+      .banner-meta { flex-basis: 100%; order: 3; }
+      .svc-head { flex-wrap: wrap; }
+      .bar-strip { flex-basis: 100%; order: 4; height: 22px; }
+      .svc-uptime-label { width: auto; }
+      .page-hdr h1 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+
+<main id="root">
+  <div class="loading">Loading status…</div>
+</main>
+
+<script>
+  // ─── State ───────────────────────────────────────────────────────────────────
+  const SLUG  = location.pathname.split('/')[2] || '';
+  let DATA    = null;
+  let rangeDays = 90;
+  let expanded = new Set();
+
+  // ─── Helpers (copied from history.html) ─────────────────────────────────────
+  function statusClass(s) {
+    if (s === 'online')      return 'ok';
+    if (s === 'degraded')    return 'warn';
+    if (s === 'maintenance') return 'maint';
+    return 'bad';
+  }
+  function uptimeClass(pct) {
+    if (pct === null || pct === undefined) return 'cm';
+    if (pct >= 99) return 'cg';
+    if (pct >= 95) return 'ca';
+    return 'cr';
+  }
+  function fmtUptime(pct) {
+    if (pct === null || pct === undefined) return '—';
+    return pct.toFixed(2) + '%';
+  }
+  function fmtDateShort(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  function fmtRelative(iso) {
+    const d = new Date(iso);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60)        return 'just now';
+    if (diff < 3600)      return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400)     return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 86400 * 7) return Math.floor(diff / 86400) + 'd ago';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  function barHeight(pct) {
+    if (pct === null || pct === undefined) return 8;
+    return Math.max(8, Math.round(pct / 100 * 28));
+  }
+  function calcAvgUptime(hist) {
+    const valid = hist.filter(e => e.uptime !== null && e.uptime !== undefined);
+    if (!valid.length) return null;
+    return valid.reduce((a, e) => a + e.uptime, 0) / valid.length;
+  }
+  function sliceHistory(svc) {
+    return (svc.dailyHistory || []).slice(-rangeDays);
+  }
+  function filterEventsForService(svc) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - rangeDays);
+    return (svc.events || []).filter(e => new Date(e.ts) >= cutoff).reverse().slice(0, 20);
+  }
+  function eventLabel(type) {
+    if (type === 'offline')     return 'Went offline';
+    if (type === 'degraded')    return 'Degraded performance';
+    if (type === 'recovery')    return 'Recovered';
+    if (type === 'maintenance') return 'Maintenance';
+    return type;
+  }
+  function eventSymbol(type) {
+    if (type === 'offline')     return '●';
+    if (type === 'degraded')    return '◐';
+    if (type === 'recovery')    return '✓';
+    if (type === 'maintenance') return '⚒';
+    return '•';
+  }
+
+  // ─── Banner ─────────────────────────────────────────────────────────────────
+  function bannerConfig(overall) {
+    if (overall === 'operational')  return { cls: 'operational', title: 'All systems operational' };
+    if (overall === 'degraded')     return { cls: 'degraded',    title: 'Some services are degraded' };
+    if (overall === 'outage')       return { cls: 'outage',      title: 'Major outage in progress' };
+    if (overall === 'maintenance')  return { cls: 'maintenance', title: 'Scheduled maintenance in progress' };
+    return { cls: 'operational', title: 'All systems operational' };
+  }
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
+  function render() {
+    if (!DATA) return;
+    const root = document.getElementById('root');
+    const bn = bannerConfig(DATA.overall);
+    const showBanner = DATA.page.showOverallBanner !== false;
+    const showLog    = DATA.page.showEventLog !== false;
+    const updated    = DATA.page.updatedAt ? fmtRelative(DATA.page.updatedAt) : '';
+
+    const title = DATA.page.name || 'Status';
+    document.title = `${title} · Status`;
+
+    let html = '';
+
+    if (showBanner) {
+      html += `<section class="banner ${bn.cls}">
+        <div class="banner-dot"></div>
+        <div class="banner-title">${escapeHtml(bn.title)}</div>
+        ${updated ? `<div class="banner-meta">Updated ${escapeHtml(updated)}</div>` : ''}
+      </section>`;
+    }
+
+    html += `<div class="page-hdr">
+      <h1>${escapeHtml(title)}</h1>
+      ${DATA.page.description ? `<p>${escapeHtml(DATA.page.description)}</p>` : ''}
+    </div>`;
+
+    html += `<div class="controls">
+      <div class="seg">
+        <button class="seg-btn${rangeDays === 7 ? ' active' : ''}" data-range="7">7d</button>
+        <button class="seg-btn${rangeDays === 30 ? ' active' : ''}" data-range="30">30d</button>
+        <button class="seg-btn${rangeDays === 90 ? ' active' : ''}" data-range="90">90d</button>
+      </div>
+    </div>`;
+
+    if (!DATA.services.length) {
+      html += `<div class="loading">No services on this page yet.</div>`;
+    } else {
+      html += `<div class="svc-list">${DATA.services.map(renderRow).join('')}</div>`;
+    }
+
+    if (showLog) html += renderGlobalLog();
+
+    html += `<footer>Powered by <a href="https://github.com/loswastaken/homelab-dashboard" target="_blank" rel="noopener">Homelab Dashboard</a></footer>`;
+
+    root.innerHTML = html;
+
+    // Wire up controls
+    root.querySelectorAll('.seg-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        rangeDays = parseInt(b.dataset.range, 10);
+        render();
+      });
+    });
+    root.querySelectorAll('.svc-head').forEach(h => {
+      h.addEventListener('click', () => {
+        const row = h.parentElement;
+        const id = row.dataset.id;
+        if (expanded.has(id)) { expanded.delete(id); row.classList.remove('open'); }
+        else { expanded.add(id); row.classList.add('open'); drawRowChart(id); }
+      });
+    });
+
+    // Redraw expanded charts
+    expanded.forEach(id => drawRowChart(id));
+  }
+
+  function renderRow(svc) {
+    const hist = sliceHistory(svc);
+    const avg  = calcAvgUptime(hist);
+    const sc   = statusClass(svc.maintenance ? 'maintenance' : svc.status);
+    const uc   = uptimeClass(avg);
+    const isOpen = expanded.has(svc.id);
+
+    const slots = rangeDays;
+    const bars = [];
+    for (let i = 0; i < slots; i++) {
+      const histIdx = hist.length - slots + i;
+      if (histIdx < 0) {
+        bars.push('<div class="bar empty"></div>');
+      } else {
+        const e = hist[histIdx];
+        const pct = e.uptime;
+        const h = barHeight(pct);
+        const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
+        const tip = `${escapeHtml(fmtDateShort(e.date))}: ${fmtUptime(pct)}`;
+        bars.push(`<div class="bar ${cls}" style="height:${h}px"><span class="bar-tooltip">${tip}</span></div>`);
+      }
+    }
+
+    const catPart = svc.category
+      ? `<div class="svc-cat">${escapeHtml(svc.category.name)}</div>`
+      : '';
+
+    return `<div class="svc-row${isOpen ? ' open' : ''}" data-id="${escapeHtml(svc.id)}">
+      <div class="svc-head">
+        <div class="svc-abbr">${escapeHtml(svc.abbr || '?')}</div>
+        <div class="svc-info">
+          <div class="svc-name">${escapeHtml(svc.name || '')}</div>
+          ${catPart}
+        </div>
+        <div class="bar-strip">${bars.join('')}</div>
+        <div class="status-pip ${sc}"></div>
+        <div class="svc-uptime-label ${uc}">${avg !== null ? avg.toFixed(1) + '%' : '—'}</div>
+        <div class="chev">›</div>
+      </div>
+      <div class="svc-detail">
+        <div class="chart-wrap">
+          <div class="chart-title">Daily Uptime % · Last ${rangeDays} Days</div>
+          <div class="chart-canvas-wrap">
+            <canvas id="chart-${escapeHtml(svc.id)}" class="uptime-chart"></canvas>
+          </div>
+          <div class="chart-axis">
+            <span>${hist.length ? escapeHtml(fmtDateShort(hist[0].date)) : ''}</span>
+            <span>Today</span>
+          </div>
+        </div>
+        <div class="det-events">
+          <div class="det-ev-title">Recent events</div>
+          ${renderSvcEvents(svc)}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderSvcEvents(svc) {
+    const evs = filterEventsForService(svc);
+    if (!evs.length) return `<div class="ev-empty">No events in the last ${rangeDays} days.</div>`;
+    return evs.map(e => `<div class="det-ev-item">
+      <div class="ev-icon ${escapeHtml(e.type)}">${eventSymbol(e.type)}</div>
+      <div class="ev-body">${escapeHtml(eventLabel(e.type))}</div>
+      <div class="ev-time">${escapeHtml(fmtRelative(e.ts))}</div>
+    </div>`).join('');
+  }
+
+  function renderGlobalLog() {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - rangeDays);
+    const all = [];
+    DATA.services.forEach(svc => {
+      (svc.events || []).forEach(e => {
+        if (new Date(e.ts) >= cutoff) all.push({ ...e, svcName: svc.name });
+      });
+    });
+    all.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+    const recent = all.slice(0, 50);
+
+    let html = `<div class="sec-head"><div class="sec-title">Recent incidents</div></div>`;
+    if (!recent.length) {
+      html += `<div class="global-log"><div class="ev-empty">No incidents in the last ${rangeDays} days.</div></div>`;
+      return html;
+    }
+    html += `<div class="global-log">${recent.map(e => `
+      <div class="det-ev-item">
+        <div class="ev-icon ${escapeHtml(e.type)}">${eventSymbol(e.type)}</div>
+        <div class="ev-body"><strong>${escapeHtml(e.svcName || '')}</strong> · ${escapeHtml(eventLabel(e.type))}</div>
+        <div class="ev-time">${escapeHtml(fmtRelative(e.ts))}</div>
+      </div>
+    `).join('')}</div>`;
+    return html;
+  }
+
+  // ─── Canvas chart (copied from history.html, simplified) ────────────────────
+  function drawRowChart(svcId) {
+    const svc = DATA.services.find(s => s.id === svcId);
+    if (!svc) return;
+    const canvas = document.getElementById('chart-' + svcId);
+    if (!canvas) return;
+    const hist = sliceHistory(svc);
+    const accent = '#5a9e72';
+
+    const dpr  = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width  = rect.width  * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const W = rect.width, H = rect.height;
+
+    if (!hist.length || W === 0) {
+      ctx.fillStyle = 'rgba(237,232,213,.2)';
+      ctx.font = '12px Sora, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('No data yet', W / 2, H / 2);
+      return;
+    }
+
+    const pts = hist.map(e => e.uptime !== null ? e.uptime : 0);
+    const padT = 10, padB = 4;
+    const plotH = H - padT - padB;
+    const xStep = pts.length > 1 ? W / (pts.length - 1) : W;
+    const toX = i => i * xStep;
+    const toY = v => padT + plotH - (v / 100 * plotH);
+
+    ctx.strokeStyle = 'rgba(237,232,213,.05)';
+    ctx.lineWidth = 1;
+    [0, 50, 100].forEach(v => {
+      const y = toY(v);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    });
+
+    const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
+    grad.addColorStop(0, accent + '55');
+    grad.addColorStop(1, accent + '00');
+    ctx.beginPath();
+    pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+    ctx.lineTo(toX(pts.length - 1), padT + plotH);
+    ctx.lineTo(0, padT + plotH);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+    ctx.stroke();
+  }
+
+  // ─── Utilities ──────────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function showError(title, msg) {
+    document.getElementById('root').innerHTML =
+      `<div class="error"><div class="error-title">${escapeHtml(title)}</div><div>${escapeHtml(msg)}</div></div>`;
+  }
+
+  // ─── Load ───────────────────────────────────────────────────────────────────
+  async function load() {
+    if (!SLUG) return showError('Status page not found', 'Missing slug in URL.');
+    try {
+      const res = await fetch('/api/public/status/' + encodeURIComponent(SLUG), { cache: 'no-store' });
+      if (res.status === 404) return showError('Status page not found', 'The URL you requested does not match any published status page.');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      DATA = await res.json();
+      render();
+    } catch (err) {
+      showError('Could not load status', err.message || 'Network error');
+    }
+  }
+
+  load();
+  setInterval(load, 60000);
+</script>
+</body>
+</html>

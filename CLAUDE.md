@@ -118,6 +118,12 @@ sudo docker compose up -d
 | `POST` | `/api/push/subscribe` | Register a browser push subscription |
 | `POST` | `/api/push/unsubscribe` | Remove a push subscription |
 | `POST` | `/api/push/test` | Send a test push notification to all subscribers |
+| `GET` | `/api/status-pages` | List all configured public status pages (auth) |
+| `POST` | `/api/status-pages` | Create a new status page (auth) |
+| `PUT` | `/api/status-pages/:id` | Update a status page (auth) |
+| `DELETE` | `/api/status-pages/:id` | Delete a status page (auth) |
+| `GET` | `/status/:slug` | Serves the public status page HTML (**no auth**) |
+| `GET` | `/api/public/status/:slug` | Sanitized public status data — no service URLs, no event notes, categories only if explicitly revealed (**no auth**) |
 
 ### Health Check (`ping`)
 
@@ -138,7 +144,7 @@ Values stored in `svc.history[]` (last 30 per-check ticks, used for the main das
 
 Added to each service object for the uptime history page:
 
-- **`svc.dailyHistory[]`** — max 30 entries, one per calendar day:
+- **`svc.dailyHistory[]`** — max 90 entries, one per calendar day:
   `{ date: 'YYYY-MM-DD', online, degraded, offline, maintenance, total, uptime }` where `uptime` is 0–100 float (excludes maintenance from denominator). Accumulated live by `accumulateDailyTick()` on every `checkAll()` and `/report` call.
 
 - **`svc.events[]`** — max 500 entries, appended by `pushEvent()` on status transitions:
@@ -160,9 +166,23 @@ Added to each service object for the uptime history page:
 - **Frontend:** `public/push-client.js` (window.Push API — register, unregister, test, state) + `public/sw.js` (service worker — handles `push` events and `notificationclick`).
 - **Settings toggle:** `pushEnabled` (default `false`). Notifications are silently skipped when disabled, even if subscriptions exist.
 
+### Public Status Pages
+
+Public-facing, unauthenticated uptime pages (Uptime Kuma style) served at `/status/<slug>`.
+
+- **Data model:** top-level `statusPages: []` in `data/services.json`. Each page:
+  `{ id, slug, name, description, serviceIds, includedCategoryIds, showEventLog, showOverallBanner, createdAt, updatedAt }`.
+- **Slug rules:** `[a-z0-9]+(-[a-z0-9]+)*`, 2–40 chars, unique, must not collide with reserved words (`api`, `login`, `logout`, `setup`, `static`, `public`, `status`, `status-pages`, `admin`, `history`, `new`, `edit`, `index`). Enforced by `validateSlug()` in `server.js`.
+- **Routing:** `/status/:slug` and `/api/public/status/:slug` are registered **before** the auth gate (`server.js` ~line 233) so no session is required. The auth gate itself does NOT special-case these paths — route order is what lets them through.
+- **Privacy / sanitization:** `sanitizeServiceForPublic()` in `server.js` strips `url`, `port`, `response`, `lastChecked`, raw `history`, `hourlyHistory`, and `pinnedAt`. Event `note` bodies are always dropped; only `{ ts, type }` is emitted. Category names are only included when the category id is in the page's `includedCategoryIds`.
+- **Overall status:** `computeOverallStatus()` — `outage` if any included service is offline, `degraded` if any degraded, `maintenance` if all are in maintenance, else `operational`.
+- **Management UI:** `public/status-pages.html` — auth-gated page listing all status pages as cards with an editor modal (name, slug, description, per-category grouped service picker, reveal-category-name toggles, banner/log toggles). Linked from the "Overview" nav section in both `index.html` and `history.html`.
+- **Public view:** `public/status-page.html` — single standalone file. Reads slug from `location.pathname`, fetches `/api/public/status/:slug`, auto-refreshes every 60s. 7d/30d/90d bar-strip toggle (default 90d), expandable per-service detail with canvas chart + sanitized event log, optional global incident log. Uses the same CSS tokens as the rest of the app, inlined.
+- **Uptime Kuma aesthetic:** centered ~960px container, big banner at top (green/amber/red/blue-grey), stacked service rows with thin day bars that left-pad with empty grey slots when history is shorter than the selected window, rounded 10-12px corners throughout.
+
 ### Data Files
 
-- `data/services.json` — all services, categories, settings, history, dailyHistory, hourlyHistory, events (persisted)
+- `data/services.json` — all services, categories, settings, history, dailyHistory, hourlyHistory, events, **statusPages** (persisted)
 - `data/auth.json` — credentials, session secret, API key
 - `data/vapid.json` — VAPID public/private keys for Web Push (auto-generated on first start)
 - `data/push-subscriptions.json` — active push subscription endpoints

@@ -51,8 +51,9 @@ function defaults() {
       weatherUnits: 'fahrenheit',
       pushEnabled: false,
     },
-    categories: [],
-    services:   []
+    categories:  [],
+    services:    [],
+    statusPages: []
   };
 }
 
@@ -230,6 +231,107 @@ app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
+// ─── Status pages helpers (public-facing) ───────────────────────────────────
+
+const RESERVED_SLUGS = new Set([
+  'api', 'login', 'logout', 'setup', 'static', 'public', 'status',
+  'status-pages', 'admin', 'history', 'new', 'edit', 'index'
+]);
+
+function validateSlug(slug, pages, selfId) {
+  if (typeof slug !== 'string') return { ok: false, error: 'Slug is required' };
+  const s = slug.trim();
+  if (s.length < 2 || s.length > 40) return { ok: false, error: 'Slug must be 2–40 characters' };
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s)) return { ok: false, error: 'Use lowercase letters, numbers, and single dashes (e.g. my-page)' };
+  if (RESERVED_SLUGS.has(s)) return { ok: false, error: `Slug "${s}" is reserved` };
+  const clash = (pages || []).find(p => p.slug === s && p.id !== selfId);
+  if (clash) return { ok: false, error: 'Slug is already in use' };
+  return { ok: true, value: s };
+}
+
+function findStatusPageBySlug(d, slug) {
+  if (!d.statusPages || !Array.isArray(d.statusPages)) return null;
+  return d.statusPages.find(p => p.slug === slug) || null;
+}
+
+function sanitizeServiceForPublic(svc, page, categoriesById) {
+  const includeCategory = page.includedCategoryIds && page.includedCategoryIds.includes(svc.cat);
+  const cat = includeCategory && categoriesById[svc.cat] ? {
+    id:    categoriesById[svc.cat].id,
+    name:  categoriesById[svc.cat].name,
+    color: categoriesById[svc.cat].color
+  } : null;
+  return {
+    id:           svc.id,
+    name:         svc.name,
+    abbr:         svc.abbr || '',
+    status:       svc.status || 'unknown',
+    disabled:     !!svc.disabled,
+    maintenance:  !!svc.maintenance,
+    uptime:       svc.uptime || '—',
+    category:     cat,
+    dailyHistory: (svc.dailyHistory || []).slice(-90),
+    events:       (svc.events || []).slice(-200).map(e => ({ ts: e.ts, type: e.type }))
+  };
+}
+
+function computeOverallStatus(services) {
+  const active = services.filter(s => !s.disabled);
+  if (active.length === 0) return 'operational';
+  if (active.some(s => s.status === 'offline')) return 'outage';
+  if (active.some(s => s.status === 'degraded')) return 'degraded';
+  if (active.every(s => s.maintenance || s.status === 'maintenance')) return 'maintenance';
+  return 'operational';
+}
+
+// ─── Public routes (no auth) ────────────────────────────────────────────────
+
+app.get('/status/:slug', (req, res) => {
+  const slug = (req.params.slug || '').toLowerCase();
+  const d = load();
+  const page = findStatusPageBySlug(d, slug);
+  if (!page) {
+    return res.status(404).send(
+      '<!doctype html><meta charset="utf-8"><title>Status page not found</title>' +
+      '<body style="background:#0f0f10;color:#d9d4c1;font-family:system-ui;display:flex;' +
+      'align-items:center;justify-content:center;height:100vh;margin:0">' +
+      '<div style="text-align:center"><h1 style="font-weight:500">Status page not found</h1>' +
+      '<p style="color:#7a7566">The URL you requested does not match any published status page.</p></div>'
+    );
+  }
+  res.sendFile(path.join(__dirname, 'public', 'status-page.html'));
+});
+
+app.get('/api/public/status/:slug', (req, res) => {
+  const slug = (req.params.slug || '').toLowerCase();
+  const d = load();
+  const page = findStatusPageBySlug(d, slug);
+  if (!page) return res.status(404).json({ error: 'Status page not found' });
+
+  const catsById = {};
+  for (const c of (d.categories || [])) catsById[c.id] = c;
+
+  const svcById = {};
+  for (const s of (d.services || [])) svcById[s.id] = s;
+
+  const services = (page.serviceIds || [])
+    .map(id => svcById[id])
+    .filter(Boolean)
+    .map(svc => sanitizeServiceForPublic(svc, page, catsById));
+
+  res.json({
+    page: {
+      name:              page.name,
+      description:       page.description || '',
+      showEventLog:      page.showEventLog !== false,
+      showOverallBanner: page.showOverallBanner !== false,
+      updatedAt:         page.updatedAt || page.createdAt || null
+    },
+    services,
+    overall: computeOverallStatus(services)
+  });
+});
+
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
 app.use((req, res, next) => {
@@ -348,8 +450,8 @@ function accumulateDailyTick(svc, tick) {
   if (!entry) {
     entry = { date: today, online: 0, degraded: 0, offline: 0, maintenance: 0, total: 0 };
     svc.dailyHistory.push(entry);
-    // keep max 30 days
-    if (svc.dailyHistory.length > 30) svc.dailyHistory = svc.dailyHistory.slice(-30);
+    // keep max 90 days
+    if (svc.dailyHistory.length > 90) svc.dailyHistory = svc.dailyHistory.slice(-90);
   }
   entry.total++;
   if      (tick === 1) entry.online++;
@@ -872,11 +974,103 @@ app.get('/api/history', (req, res) => {
     disabled:     !!s.disabled,
     maintenance:  !!s.maintenance,
     uptime:       s.uptime,
-    dailyHistory:  (s.dailyHistory  || []).slice(-30),
+    dailyHistory:  (s.dailyHistory  || []).slice(-90),
     hourlyHistory: (s.hourlyHistory || []).slice(-168),
     events:        (s.events        || []).slice(-500),
   }));
   res.json({ services: out, categories: d.categories });
+});
+
+// ─── API: Status Pages (auth-gated CRUD) ────────────────────────────────────
+
+function normalizeStatusPageInput(body, existingPages, selfId) {
+  const errors = [];
+  const out = {};
+
+  if (body.name !== undefined) {
+    const name = String(body.name || '').trim();
+    if (!name) errors.push('Name is required');
+    if (name.length > 60) errors.push('Name must be 60 characters or fewer');
+    out.name = name;
+  }
+  if (body.slug !== undefined) {
+    const v = validateSlug(body.slug, existingPages, selfId);
+    if (!v.ok) errors.push(v.error);
+    else out.slug = v.value;
+  }
+  if (body.description !== undefined) {
+    const desc = String(body.description || '');
+    if (desc.length > 280) errors.push('Description must be 280 characters or fewer');
+    out.description = desc;
+  }
+  if (body.serviceIds !== undefined) {
+    if (!Array.isArray(body.serviceIds)) errors.push('serviceIds must be an array');
+    else out.serviceIds = body.serviceIds.filter(id => typeof id === 'string');
+  }
+  if (body.includedCategoryIds !== undefined) {
+    if (!Array.isArray(body.includedCategoryIds)) errors.push('includedCategoryIds must be an array');
+    else out.includedCategoryIds = body.includedCategoryIds.filter(id => typeof id === 'string');
+  }
+  if (body.showEventLog !== undefined) out.showEventLog = !!body.showEventLog;
+  if (body.showOverallBanner !== undefined) out.showOverallBanner = !!body.showOverallBanner;
+
+  return { errors, data: out };
+}
+
+app.get('/api/status-pages', (_, res) => {
+  const d = load();
+  res.json({ pages: d.statusPages || [] });
+});
+
+app.post('/api/status-pages', (req, res) => {
+  const d = load();
+  if (!Array.isArray(d.statusPages)) d.statusPages = [];
+  const { errors, data } = normalizeStatusPageInput(req.body || {}, d.statusPages, null);
+  if (req.body?.name === undefined)  errors.push('Name is required');
+  if (req.body?.slug === undefined)  errors.push('Slug is required');
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  const now = new Date().toISOString();
+  const page = {
+    id:                  crypto.randomUUID(),
+    slug:                data.slug,
+    name:                data.name,
+    description:         data.description || '',
+    serviceIds:          data.serviceIds || [],
+    includedCategoryIds: data.includedCategoryIds || [],
+    showEventLog:        data.showEventLog !== false,
+    showOverallBanner:   data.showOverallBanner !== false,
+    createdAt:           now,
+    updatedAt:           now
+  };
+  d.statusPages.push(page);
+  save(d);
+  res.status(201).json({ page });
+});
+
+app.put('/api/status-pages/:id', (req, res) => {
+  const d = load();
+  if (!Array.isArray(d.statusPages)) d.statusPages = [];
+  const target = d.statusPages.find(p => p.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Status page not found' });
+
+  const { errors, data } = normalizeStatusPageInput(req.body || {}, d.statusPages, target.id);
+  if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+  Object.assign(target, data);
+  target.updatedAt = new Date().toISOString();
+  save(d);
+  res.json({ page: target });
+});
+
+app.delete('/api/status-pages/:id', (req, res) => {
+  const d = load();
+  if (!Array.isArray(d.statusPages)) d.statusPages = [];
+  const before = d.statusPages.length;
+  d.statusPages = d.statusPages.filter(p => p.id !== req.params.id);
+  if (d.statusPages.length === before) return res.status(404).json({ error: 'Status page not found' });
+  save(d);
+  res.json({ ok: true });
 });
 
 // ─── Midnight daily-history rollover ─────────────────────────────────────────

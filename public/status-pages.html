@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>los.dev · Status Pages</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="/push-client.js" defer></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:   #131110;
+      --bg-side:   #0f0e0c;
+      --bg-surf:   #1a1815;
+      --bg-card:   #1e1c18;
+      --bg-cardh:  #232019;
+      --bg-hi:     #2c2922;
+      --bg-modal:  #1a1815;
+
+      --tp:  #ede8d5;
+      --ts:  #7a7165;
+      --tm:  #46423b;
+
+      --b0: rgba(237,232,213,.05);
+      --b1: rgba(237,232,213,.09);
+      --b2: rgba(237,232,213,.18);
+
+      --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
+      --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
+      --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
+      --blue:    #5285b8;
+      --slate:   #7a8a9e;
+
+      --sw: 200px;
+    }
+
+    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased; }
+
+    body::before { content: ''; position: fixed; inset: 0;
+      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
+      background-size: 28px 28px; pointer-events: none; z-index: 0; }
+
+    /* ─── Sidebar ─── */
+    .sidebar { position: fixed; top:0; left:0; bottom:0; width: var(--sw);
+      background: var(--bg-side); border-right: 1px solid var(--b0);
+      display: flex; flex-direction: column; padding: 22px 0 20px; z-index: 200; }
+    .brand { padding: 0 20px 22px; border-bottom: 1px solid var(--b0); margin-bottom: 6px; }
+    .brand-lbl { font-size: 10px; font-weight: 500; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--tm); }
+    .brand-name { font-size: 22px; font-weight: 600; letter-spacing: -.03em; color: var(--tp); margin-top: 2px; }
+    .nav-sec { padding: 10px 0 4px; }
+    .nav-lbl { font-size: 10px; font-weight: 500; letter-spacing: .13em;
+      text-transform: uppercase; color: var(--tm); padding: 0 20px; margin-bottom: 2px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 20px;
+      font-size: 13px; color: var(--ts); cursor: pointer;
+      border-left: 2px solid transparent; transition: all .15s; user-select: none;
+      text-decoration: none; }
+    .nav-item:hover { color: var(--tp); background: var(--b0); }
+    .nav-item.active { color: var(--tp); border-left-color: rgba(237,232,213,.35); background: var(--bg-surf); }
+    .side-foot { margin-top: auto; padding: 16px 20px 0; border-top: 1px solid var(--b0); }
+    .foot-lbl { font-size: 10px; color: var(--tm); margin-bottom: 3px; }
+    .foot-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+    .foot-btn { margin-top: 10px; width: 100%; font-family: 'Sora', sans-serif;
+      font-size: 11px; font-weight: 500; color: var(--ts); background: none;
+      border: 1px solid var(--b0); border-radius: 5px; padding: 5px 10px; cursor: pointer;
+      transition: all .15s; text-align: left; }
+    .foot-btn:hover { color: var(--tp); border-color: var(--b1); }
+
+    /* ─── Main ─── */
+    .main { margin-left: var(--sw); min-height: 100vh; display: flex;
+      flex-direction: column; position: relative; z-index: 1; }
+    .hdr { padding: 30px 40px 22px; border-bottom: 1px solid var(--b0);
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .hdr-l h1 { font-size: 30px; font-weight: 300; letter-spacing: -.03em; }
+    .hdr-l h1 b { font-weight: 600; }
+    .hdr-sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); margin-top: 5px; }
+
+    .content { padding: 28px 40px 60px; }
+
+    .btn-prim { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--tp); background: var(--bg-hi); border: 1px solid var(--b2);
+      border-radius: 6px; padding: 8px 18px; cursor: pointer; transition: all .15s; }
+    .btn-prim:hover { background: var(--b1); }
+    .btn-sec { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--ts); background: transparent; border: 1px solid var(--b0);
+      border-radius: 6px; padding: 8px 18px; cursor: pointer; transition: all .15s; }
+    .btn-sec:hover { color: var(--tp); border-color: var(--b1); }
+    .btn-sm { background: var(--bg-surf); border: 1px solid var(--b1); border-radius: 6px;
+      padding: 5px 12px; font-size: 12px; font-family: 'Sora', sans-serif;
+      color: var(--ts); cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .btn-sm:hover { color: var(--tp); border-color: var(--b2); }
+
+    /* ─── Page cards ─── */
+    .page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 14px; }
+    .page-card { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 12px;
+      padding: 18px 20px; display: flex; flex-direction: column; gap: 10px;
+      transition: all .15s; }
+    .page-card:hover { border-color: var(--b1); }
+    .page-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .page-card-name { font-size: 16px; font-weight: 600; color: var(--tp);
+      letter-spacing: -.01em; }
+    .page-card-slug { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--ts); margin-top: 3px; }
+    .page-card-desc { font-size: 12px; color: var(--ts); line-height: 1.45;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; }
+    .page-card-meta { font-size: 11px; color: var(--tm); }
+    .page-card-url { display: flex; align-items: center; gap: 6px;
+      background: var(--bg-surf); border: 1px solid var(--b0); border-radius: 6px;
+      padding: 6px 10px; }
+    .page-card-url-txt { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--ts); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .page-card-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+    .page-card-actions .btn-sm { flex: 1; text-align: center; }
+    .icon-btn { background: none; border: 1px solid transparent; border-radius: 6px;
+      color: var(--tm); cursor: pointer; padding: 4px 8px; font-size: 13px;
+      font-family: inherit; transition: all .15s; }
+    .icon-btn:hover { color: var(--tp); border-color: var(--b1); }
+    .icon-btn.danger:hover { color: var(--red); border-color: rgba(184,85,85,.3); }
+
+    /* ─── Empty state ─── */
+    .empty { text-align: center; padding: 64px 20px; color: var(--ts); }
+    .empty-icon { font-size: 36px; opacity: .35; margin-bottom: 12px; }
+    .empty-title { font-size: 15px; font-weight: 500; color: var(--tp); margin-bottom: 4px; }
+    .empty-sub { font-size: 12px; color: var(--ts); }
+
+    /* ─── Modal ─── */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      z-index: 500; align-items: center; justify-content: center; padding: 20px; }
+    .overlay.show { display: flex; }
+    .modal { background: var(--bg-modal); border: 1px solid var(--b1); border-radius: 14px;
+      width: 100%; max-width: 620px; max-height: 90vh; display: flex; flex-direction: column;
+      box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+    .modal-hdr { display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 24px 16px; border-bottom: 1px solid var(--b0); flex-shrink: 0; }
+    .modal-title { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+    .modal-close { background: none; border: none; color: var(--ts); font-size: 22px;
+      cursor: pointer; line-height: 1; padding: 0 2px; transition: color .15s; }
+    .modal-close:hover { color: var(--tp); }
+    .modal-body { padding: 18px 24px 12px; overflow-y: auto; flex: 1; }
+    .modal-foot { padding: 14px 24px; border-top: 1px solid var(--b0); display: flex;
+      justify-content: flex-end; gap: 10px; flex-shrink: 0; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-lbl { font-size: 11px; font-weight: 500; color: var(--ts);
+      margin-bottom: 5px; display: block; letter-spacing: .04em; }
+    .form-lbl span { color: var(--tm); font-weight: 400; }
+    .form-inp { width: 100%; background: var(--bg-surf); border: 1px solid var(--b1);
+      border-radius: 6px; padding: 8px 12px; color: var(--tp);
+      font-family: 'Sora', sans-serif; font-size: 13px; outline: none; transition: border-color .15s; }
+    .form-inp:focus { border-color: var(--b2); }
+    .form-inp::placeholder { color: var(--tm); }
+    textarea.form-inp { resize: vertical; min-height: 64px; font-family: 'Sora', sans-serif; }
+    .slug-preview { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--ts); margin-top: 5px; }
+    .slug-preview.err { color: var(--red); }
+    .warn-line { font-size: 11px; color: var(--amber); margin-top: 5px;
+      display: none; }
+
+    .sec-lbl { font-size: 10px; font-weight: 500; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--tm); margin: 18px 0 10px;
+      display: flex; align-items: center; gap: 8px; }
+    .sec-lbl::after { content: ''; flex: 1; height: 1px; background: var(--b0); }
+
+    .cat-group { margin-bottom: 10px; border: 1px solid var(--b0); border-radius: 8px;
+      overflow: hidden; background: var(--bg-surf); }
+    .cat-group-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      background: var(--bg-card); cursor: pointer; }
+    .cat-group-pip { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--slate); }
+    .cat-group-name { flex: 1; font-size: 12px; font-weight: 500; color: var(--tp); }
+    .cat-group-count { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+    .cat-reveal { display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+      border-top: 1px solid var(--b0); font-size: 11px; color: var(--ts); }
+    .cat-reveal input { accent-color: var(--green); }
+    .svc-check-list { display: flex; flex-direction: column; }
+    .svc-check { display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+      border-top: 1px solid var(--b0); cursor: pointer; transition: background .15s; }
+    .svc-check:hover { background: var(--bg-cardh); }
+    .svc-check input { accent-color: var(--green); cursor: pointer; }
+    .svc-check-name { font-size: 12px; color: var(--tp); flex: 1; }
+    .svc-check-abbr { font-family: 'JetBrains Mono', monospace; font-size: 10px;
+      color: var(--ts); background: var(--bg-hi); padding: 2px 6px; border-radius: 4px; }
+
+    .toggle-row { display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--b0); }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-name { font-size: 13px; font-weight: 500; }
+    .toggle-desc { font-size: 11px; color: var(--ts); margin-top: 1px; }
+    .toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .tslider { position: absolute; cursor: pointer; inset: 0;
+      background: var(--bg-hi); border-radius: 22px; transition: .2s; border: 1px solid var(--b1); }
+    .tslider:before { content: ''; position: absolute; height: 14px; width: 14px;
+      left: 3px; top: 3px; background: var(--ts); border-radius: 50%; transition: .2s; }
+    input:checked + .tslider { background: var(--green-bg); border-color: rgba(90,158,114,.35); }
+    input:checked + .tslider:before { transform: translateX(16px); background: var(--green); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 640px) {
+      .sidebar { transform: translateX(-100%); transition: transform .25s; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .hdr, .content { padding-left: 18px; padding-right: 18px; }
+      .page-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<nav class="sidebar" id="sidebar">
+  <div class="brand">
+    <div class="brand-lbl">Homelab</div>
+    <div class="brand-name" id="brand-name">los.dev</div>
+  </div>
+
+  <div class="nav-sec">
+    <div class="nav-lbl">Overview</div>
+    <a class="nav-item" href="/">Dashboard</a>
+    <a class="nav-item" href="/history.html">Uptime History</a>
+    <a class="nav-item active" href="/status-pages.html">Status Pages</a>
+  </div>
+
+  <div class="side-foot">
+    <div class="foot-lbl" id="foot-label">Homelab Server</div>
+    <div class="foot-val" id="foot-ip"></div>
+    <button class="foot-btn" onclick="location.href='/'">← Back to Dashboard</button>
+    <button class="foot-btn" onclick="logout()">Sign out →</button>
+  </div>
+</nav>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="main">
+
+  <div class="hdr">
+    <div class="hdr-l">
+      <h1>Status <b>Pages</b></h1>
+      <div class="hdr-sub" id="hdr-sub">Public uptime pages, shareable via URL.</div>
+    </div>
+    <button class="btn-prim" onclick="openEditor()">+ New Status Page</button>
+  </div>
+
+  <div class="content">
+    <div id="page-list"></div>
+  </div>
+</main>
+
+<!-- ══════════════ EDITOR MODAL ══════════════ -->
+<div class="overlay" id="editor-overlay" onclick="if(event.target===this)closeEditor()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="editor-title">New Status Page</div>
+      <button class="modal-close" onclick="closeEditor()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-group">
+        <label class="form-lbl">Name <span>(public)</span></label>
+        <input class="form-inp" id="edit-name" placeholder="Los.dev Status" maxlength="60" oninput="onNameInput()">
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Slug <span>(URL path)</span></label>
+        <input class="form-inp" id="edit-slug" placeholder="los-dev" maxlength="40" oninput="onSlugInput()"
+          style="font-family:'JetBrains Mono',monospace;font-size:12px">
+        <div class="slug-preview" id="slug-preview">Public URL: —</div>
+        <div class="warn-line" id="slug-warn">Changing the slug will break existing shared links.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Description <span>(optional, max 280 chars)</span></label>
+        <textarea class="form-inp" id="edit-desc" maxlength="280" placeholder="Short summary shown below the banner."></textarea>
+      </div>
+
+      <div class="sec-lbl">Services</div>
+      <div id="svc-picker"></div>
+      <div id="svc-empty" class="empty-sub" style="display:none;padding:10px 0">
+        No services configured yet. <a href="/" style="color:var(--ts)">Add some on the dashboard</a>, then come back.
+      </div>
+
+      <div class="sec-lbl">Options</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-name">Show overall status banner</div>
+          <div class="toggle-desc">Big "All systems operational" banner at the top.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="edit-banner" checked><span class="tslider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-name">Show recent incidents</div>
+          <div class="toggle-desc">Combined incident log at the bottom of the page.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="edit-log" checked><span class="tslider"></span></label>
+      </div>
+
+    </div>
+    <div class="modal-foot">
+      <button class="btn-sec" onclick="closeEditor()">Cancel</button>
+      <button class="btn-prim" id="editor-save" onclick="saveEditor()">Create Page</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ─── State ──────────────────────────────────────────────────────────────────
+  let PAGES    = [];
+  let SERVICES = [];
+  let CATS     = [];
+  let editingId  = null;   // null when creating
+  let slugTouched = false; // once user types into slug field, stop auto-deriving
+  let selectedSvcIds = new Set();
+  let revealCatIds   = new Set();
+
+  const RESERVED = new Set([
+    'api','login','logout','setup','static','public','status',
+    'status-pages','admin','history','new','edit','index'
+  ]);
+
+  // ─── Boot ───────────────────────────────────────────────────────────────────
+  async function boot() {
+    try {
+      const [pRes, sRes] = await Promise.all([
+        fetch('/api/status-pages'),
+        fetch('/api/services')
+      ]);
+      if (pRes.status === 401 || sRes.status === 401) { location.href = '/login'; return; }
+      const pData = await pRes.json();
+      const sData = await sRes.json();
+      PAGES    = pData.pages || [];
+      SERVICES = sData.services || [];
+      CATS     = sData.categories || [];
+
+      const s = sData.settings || {};
+      if (s.siteTitle)   document.querySelector('.brand-name').textContent = s.siteTitle.split('·')[0].trim() || 'los.dev';
+      if (s.serverLabel) document.getElementById('foot-label').textContent = s.serverLabel;
+      if (s.nasIp)       document.getElementById('foot-ip').textContent    = s.nasIp;
+
+      renderPageList();
+    } catch (e) {
+      document.getElementById('hdr-sub').textContent = 'Failed to load: ' + (e.message || e);
+    }
+  }
+
+  async function logout() {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch {}
+    location.href = '/login';
+  }
+
+  // ─── Page list ──────────────────────────────────────────────────────────────
+  function renderPageList() {
+    const el = document.getElementById('page-list');
+    document.getElementById('hdr-sub').textContent =
+      PAGES.length === 0
+        ? 'No status pages yet — create your first one to share uptime publicly.'
+        : `${PAGES.length} page${PAGES.length !== 1 ? 's' : ''} configured`;
+
+    if (!PAGES.length) {
+      el.innerHTML = `<div class="empty">
+        <div class="empty-icon">📡</div>
+        <div class="empty-title">No status pages yet</div>
+        <div class="empty-sub">Create your first status page to share uptime publicly.</div>
+      </div>`;
+      return;
+    }
+
+    el.innerHTML = `<div class="page-grid">${PAGES.map(renderCard).join('')}</div>`;
+  }
+
+  function renderCard(p) {
+    const url = `${location.origin}/status/${p.slug}`;
+    const svcCount = (p.serviceIds || []).length;
+    return `<div class="page-card">
+      <div class="page-card-top">
+        <div style="min-width:0;flex:1">
+          <div class="page-card-name">${escapeHtml(p.name)}</div>
+          <div class="page-card-slug">/status/${escapeHtml(p.slug)}</div>
+        </div>
+        <div style="display:flex;gap:2px;flex-shrink:0">
+          <button class="icon-btn" title="Edit" onclick="openEditor('${escapeHtml(p.id)}')">✎</button>
+          <button class="icon-btn danger" title="Delete" onclick="deletePage('${escapeHtml(p.id)}')">🗑</button>
+        </div>
+      </div>
+      ${p.description ? `<div class="page-card-desc">${escapeHtml(p.description)}</div>` : ''}
+      <div class="page-card-meta">${svcCount} service${svcCount !== 1 ? 's' : ''}</div>
+      <div class="page-card-url">
+        <div class="page-card-url-txt">${escapeHtml(url)}</div>
+        <button class="btn-sm" onclick="copyUrl(this, ${JSON.stringify(url)})" style="padding:3px 8px">Copy</button>
+      </div>
+      <div class="page-card-actions">
+        <button class="btn-sm" onclick="window.open(${JSON.stringify(url)}, '_blank')">View public page →</button>
+      </div>
+    </div>`;
+  }
+
+  async function copyUrl(btn, url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      const prev = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = prev, 1500);
+    } catch {
+      alert('Copy failed — you can select the URL and copy manually.');
+    }
+  }
+
+  async function deletePage(id) {
+    const p = PAGES.find(x => x.id === id);
+    if (!p) return;
+    if (!confirm(`Delete status page "${p.name}"? The URL /status/${p.slug} will stop working.`)) return;
+    try {
+      const res = await fetch('/api/status-pages/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Delete failed');
+      PAGES = PAGES.filter(x => x.id !== id);
+      renderPageList();
+    } catch (e) {
+      alert(e.message || 'Delete failed');
+    }
+  }
+
+  // ─── Editor ─────────────────────────────────────────────────────────────────
+  function openEditor(id) {
+    editingId = id || null;
+    slugTouched = false;
+    selectedSvcIds = new Set();
+    revealCatIds = new Set();
+
+    const isEdit = !!editingId;
+    document.getElementById('editor-title').textContent = isEdit ? 'Edit Status Page' : 'New Status Page';
+    document.getElementById('editor-save').textContent  = isEdit ? 'Save Changes' : 'Create Page';
+    document.getElementById('slug-warn').style.display  = isEdit ? 'block' : 'none';
+
+    let page = null;
+    if (isEdit) {
+      page = PAGES.find(p => p.id === editingId);
+      if (!page) { alert('Page not found'); return; }
+      slugTouched = true;
+      (page.serviceIds || []).forEach(sid => selectedSvcIds.add(sid));
+      (page.includedCategoryIds || []).forEach(cid => revealCatIds.add(cid));
+    }
+
+    document.getElementById('edit-name').value   = page?.name || '';
+    document.getElementById('edit-slug').value   = page?.slug || '';
+    document.getElementById('edit-desc').value   = page?.description || '';
+    document.getElementById('edit-banner').checked = page ? page.showOverallBanner !== false : true;
+    document.getElementById('edit-log').checked    = page ? page.showEventLog !== false : true;
+
+    renderSvcPicker();
+    updateSlugPreview();
+    document.getElementById('editor-overlay').classList.add('show');
+    document.getElementById('edit-name').focus();
+  }
+
+  function closeEditor() {
+    document.getElementById('editor-overlay').classList.remove('show');
+    editingId = null;
+  }
+
+  function onNameInput() {
+    if (slugTouched) { updateSlugPreview(); return; }
+    const name = document.getElementById('edit-name').value;
+    const derived = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    document.getElementById('edit-slug').value = derived;
+    updateSlugPreview();
+  }
+  function onSlugInput() {
+    slugTouched = true;
+    updateSlugPreview();
+  }
+
+  function validateSlugClient(slug) {
+    if (!slug) return { ok: false, error: 'Slug is required' };
+    if (slug.length < 2 || slug.length > 40) return { ok: false, error: 'Slug must be 2–40 characters' };
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return { ok: false, error: 'Use lowercase letters, numbers, and single dashes' };
+    if (RESERVED.has(slug)) return { ok: false, error: `"${slug}" is reserved` };
+    const clash = PAGES.find(p => p.slug === slug && p.id !== editingId);
+    if (clash) return { ok: false, error: 'Slug already in use' };
+    return { ok: true };
+  }
+
+  function updateSlugPreview() {
+    const slug = document.getElementById('edit-slug').value.trim().toLowerCase();
+    const v = validateSlugClient(slug);
+    const el = document.getElementById('slug-preview');
+    if (v.ok) {
+      el.classList.remove('err');
+      el.textContent = `Public URL: ${location.origin}/status/${slug}`;
+    } else {
+      el.classList.add('err');
+      el.textContent = v.error;
+    }
+  }
+
+  // ─── Service picker ────────────────────────────────────────────────────────
+  function renderSvcPicker() {
+    const picker = document.getElementById('svc-picker');
+    const emptyLbl = document.getElementById('svc-empty');
+    if (!SERVICES.length) {
+      picker.innerHTML = '';
+      emptyLbl.style.display = 'block';
+      return;
+    }
+    emptyLbl.style.display = 'none';
+
+    // Group by category
+    const byCat = new Map();
+    for (const s of SERVICES) {
+      const key = s.cat || '__uncat__';
+      if (!byCat.has(key)) byCat.set(key, []);
+      byCat.get(key).push(s);
+    }
+
+    const catName = (id) => {
+      if (id === '__uncat__') return 'Uncategorized';
+      const c = CATS.find(c => c.id === id);
+      return c ? c.name : id;
+    };
+
+    const groups = [...byCat.keys()].sort((a, b) => catName(a).localeCompare(catName(b)));
+
+    picker.innerHTML = groups.map(catId => {
+      const svcs = byCat.get(catId);
+      const selectedInGroup = svcs.filter(s => selectedSvcIds.has(s.id)).length;
+      const isRealCat = catId !== '__uncat__';
+      const reveal = revealCatIds.has(catId);
+      return `<div class="cat-group" data-cat="${escapeHtml(catId)}">
+        <div class="cat-group-head">
+          <div class="cat-group-pip"></div>
+          <div class="cat-group-name">${escapeHtml(catName(catId))}</div>
+          <div class="cat-group-count">${selectedInGroup}/${svcs.length}</div>
+        </div>
+        <div class="svc-check-list">
+          ${svcs.map(s => `
+            <label class="svc-check">
+              <input type="checkbox" data-svc="${escapeHtml(s.id)}" ${selectedSvcIds.has(s.id) ? 'checked' : ''}
+                onchange="toggleSvc('${escapeHtml(s.id)}', this.checked)">
+              <span class="svc-check-name">${escapeHtml(s.name || s.id)}</span>
+              ${s.abbr ? `<span class="svc-check-abbr">${escapeHtml(s.abbr)}</span>` : ''}
+            </label>
+          `).join('')}
+        </div>
+        ${isRealCat ? `<label class="cat-reveal">
+          <input type="checkbox" ${reveal ? 'checked' : ''}
+            onchange="toggleReveal('${escapeHtml(catId)}', this.checked)">
+          Reveal category name "${escapeHtml(catName(catId))}" publicly
+        </label>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function toggleSvc(id, checked) {
+    if (checked) selectedSvcIds.add(id); else selectedSvcIds.delete(id);
+    // Update the count without a full re-render
+    const svc = SERVICES.find(s => s.id === id);
+    if (!svc) return;
+    const catId = svc.cat || '__uncat__';
+    const group = document.querySelector(`.cat-group[data-cat="${cssEscape(catId)}"]`);
+    if (!group) return;
+    const total = SERVICES.filter(s => (s.cat || '__uncat__') === catId).length;
+    const sel   = SERVICES.filter(s => (s.cat || '__uncat__') === catId && selectedSvcIds.has(s.id)).length;
+    group.querySelector('.cat-group-count').textContent = `${sel}/${total}`;
+  }
+
+  function toggleReveal(catId, checked) {
+    if (checked) revealCatIds.add(catId); else revealCatIds.delete(catId);
+  }
+
+  function cssEscape(s) {
+    // Minimal CSS attribute-selector escape for attribute values
+    return String(s).replace(/"/g, '\\"');
+  }
+
+  // ─── Save ───────────────────────────────────────────────────────────────────
+  async function saveEditor() {
+    const name = document.getElementById('edit-name').value.trim();
+    const slug = document.getElementById('edit-slug').value.trim().toLowerCase();
+    const desc = document.getElementById('edit-desc').value;
+    const banner = document.getElementById('edit-banner').checked;
+    const log    = document.getElementById('edit-log').checked;
+
+    if (!name) return alert('Name is required');
+    const v = validateSlugClient(slug);
+    if (!v.ok) return alert(v.error);
+
+    // Ordered array preserves SERVICES-order
+    const serviceIds = SERVICES.filter(s => selectedSvcIds.has(s.id)).map(s => s.id);
+    const includedCategoryIds = [...revealCatIds];
+
+    const body = {
+      name, slug, description: desc,
+      serviceIds, includedCategoryIds,
+      showOverallBanner: banner, showEventLog: log
+    };
+
+    try {
+      let res;
+      if (editingId) {
+        res = await fetch('/api/status-pages/' + encodeURIComponent(editingId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      } else {
+        res = await fetch('/api/status-pages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+
+      // Update local list
+      const saved = data.page;
+      if (editingId) {
+        PAGES = PAGES.map(p => p.id === editingId ? saved : p);
+      } else {
+        PAGES.push(saved);
+      }
+      closeEditor();
+      renderPageList();
+    } catch (e) {
+      alert(e.message || 'Save failed');
+    }
+  }
+
+  // ─── Utilities ──────────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  boot();
+</script>
+</body>
+</html>
