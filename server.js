@@ -269,9 +269,10 @@ function sanitizeServiceForPublic(svc, page, categoriesById) {
     disabled:     !!svc.disabled,
     maintenance:  !!svc.maintenance,
     uptime:       svc.uptime || '—',
-    category:     cat,
-    dailyHistory: (svc.dailyHistory || []).slice(-90),
-    events:       (svc.events || []).slice(-200).map(e => ({ ts: e.ts, type: e.type }))
+    category:      cat,
+    dailyHistory:  (svc.dailyHistory  || []).slice(-90),
+    hourlyHistory: (svc.hourlyHistory || []).slice(-24),
+    events:        (svc.events        || []).slice(-200).map(e => ({ ts: e.ts, type: e.type }))
   };
 }
 
@@ -317,7 +318,8 @@ app.get('/api/public/status/:slug', (req, res) => {
   const services = (page.serviceIds || [])
     .map(id => svcById[id])
     .filter(Boolean)
-    .map(svc => sanitizeServiceForPublic(svc, page, catsById));
+    .map(svc => sanitizeServiceForPublic(svc, page, catsById))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
   res.json({
     page: {

@@ -87,14 +87,15 @@
     .svc-row:hover { background: var(--bg-cardh); border-color: var(--b1); }
     .svc-row.open { border-color: var(--b2); background: var(--bg-cardh); }
     .svc-head { padding: 14px 18px; display: flex; align-items: center; gap: 16px;
-      cursor: pointer; }
+      cursor: pointer; flex-wrap: wrap; }
     .svc-abbr { width: 36px; height: 36px; border-radius: 8px; display: flex;
       align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
       letter-spacing: .04em; flex-shrink: 0; background: var(--bg-hi); color: var(--ts); }
-    .svc-info { flex: 1; min-width: 0; }
+    .svc-info { flex: 1 1 180px; min-width: 140px; }
     .svc-name { font-size: 13px; font-weight: 500; color: var(--tp);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .svc-cat { font-size: 11px; color: var(--ts); margin-top: 1px; }
+      word-break: break-word; overflow-wrap: anywhere; line-height: 1.35; }
+    .svc-cat { font-size: 11px; color: var(--ts); margin-top: 1px;
+      word-break: break-word; overflow-wrap: anywhere; }
     .svc-uptime-label { font-family: 'JetBrains Mono', monospace; font-size: 12px;
       font-weight: 500; flex-shrink: 0; width: 56px; text-align: right; }
     .svc-uptime-label.cg { color: var(--green); }
@@ -103,7 +104,7 @@
     .svc-uptime-label.cm { color: var(--slate); }
 
     .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 28px;
-      flex: 1 1 320px; min-width: 120px; }
+      flex: 1 1 260px; min-width: 120px; }
     .bar { flex: 1; min-width: 3px; max-width: 10px; border-radius: 3px 3px 0 0;
       transition: opacity .15s; cursor: default; position: relative; }
     .bar.ok    { background: var(--green); opacity: .75; }
@@ -196,7 +197,14 @@
   // ─── State ───────────────────────────────────────────────────────────────────
   const SLUG  = location.pathname.split('/')[2] || '';
   let DATA    = null;
-  let rangeDays = 90;
+  // range: { key, slots, label, unit } — unit 'hour' uses hourlyHistory, 'day' uses dailyHistory
+  const RANGES = {
+    '24h': { key: '24h', slots: 24, label: '24h', unit: 'hour' },
+    '7d':  { key: '7d',  slots: 7,  label: '7d',  unit: 'day'  },
+    '30d': { key: '30d', slots: 30, label: '30d', unit: 'day'  },
+    '90d': { key: '90d', slots: 90, label: '90d', unit: 'day'  }
+  };
+  let rangeKey = '90d';
   let expanded = new Set();
 
   // ─── Helpers (copied from history.html) ─────────────────────────────────────
@@ -220,6 +228,11 @@
     const d = new Date(iso);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
+  function fmtHourShort(ts) {
+    // ts shape: 'YYYY-MM-DDTHH' — render as "MMM D, h a"
+    const d = new Date(ts + ':00:00');
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+  }
   function fmtRelative(iso) {
     const d = new Date(iso);
     const diff = (Date.now() - d.getTime()) / 1000;
@@ -238,12 +251,21 @@
     if (!valid.length) return null;
     return valid.reduce((a, e) => a + e.uptime, 0) / valid.length;
   }
+  function currentRange() { return RANGES[rangeKey]; }
   function sliceHistory(svc) {
-    return (svc.dailyHistory || []).slice(-rangeDays);
+    const r = currentRange();
+    if (r.unit === 'hour') return (svc.hourlyHistory || []).slice(-r.slots);
+    return (svc.dailyHistory || []).slice(-r.slots);
+  }
+  function rangeCutoff() {
+    const r = currentRange();
+    const d = new Date();
+    if (r.unit === 'hour') d.setHours(d.getHours() - r.slots);
+    else d.setDate(d.getDate() - r.slots);
+    return d;
   }
   function filterEventsForService(svc) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - rangeDays);
+    const cutoff = rangeCutoff();
     return (svc.events || []).filter(e => new Date(e.ts) >= cutoff).reverse().slice(0, 20);
   }
   function eventLabel(type) {
@@ -299,9 +321,9 @@
 
     html += `<div class="controls">
       <div class="seg">
-        <button class="seg-btn${rangeDays === 7 ? ' active' : ''}" data-range="7">7d</button>
-        <button class="seg-btn${rangeDays === 30 ? ' active' : ''}" data-range="30">30d</button>
-        <button class="seg-btn${rangeDays === 90 ? ' active' : ''}" data-range="90">90d</button>
+        ${['24h','7d','30d','90d'].map(k =>
+          `<button class="seg-btn${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`
+        ).join('')}
       </div>
     </div>`;
 
@@ -320,7 +342,7 @@
     // Wire up controls
     root.querySelectorAll('.seg-btn').forEach(b => {
       b.addEventListener('click', () => {
-        rangeDays = parseInt(b.dataset.range, 10);
+        rangeKey = b.dataset.range;
         render();
       });
     });
@@ -338,13 +360,14 @@
   }
 
   function renderRow(svc) {
+    const r    = currentRange();
     const hist = sliceHistory(svc);
     const avg  = calcAvgUptime(hist);
     const sc   = statusClass(svc.maintenance ? 'maintenance' : svc.status);
     const uc   = uptimeClass(avg);
     const isOpen = expanded.has(svc.id);
 
-    const slots = rangeDays;
+    const slots = r.slots;
     const bars = [];
     for (let i = 0; i < slots; i++) {
       const histIdx = hist.length - slots + i;
@@ -355,7 +378,8 @@
         const pct = e.uptime;
         const h = barHeight(pct);
         const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
-        const tip = `${escapeHtml(fmtDateShort(e.date))}: ${fmtUptime(pct)}`;
+        const tipLabel = r.unit === 'hour' ? fmtHourShort(e.ts) : fmtDateShort(e.date);
+        const tip = `${escapeHtml(tipLabel)}: ${fmtUptime(pct)}`;
         bars.push(`<div class="bar ${cls}" style="height:${h}px"><span class="bar-tooltip">${tip}</span></div>`);
       }
     }
@@ -378,13 +402,13 @@
       </div>
       <div class="svc-detail">
         <div class="chart-wrap">
-          <div class="chart-title">Daily Uptime % · Last ${rangeDays} Days</div>
+          <div class="chart-title">${r.unit === 'hour' ? 'Hourly' : 'Daily'} Uptime % · Last ${escapeHtml(r.label)}</div>
           <div class="chart-canvas-wrap">
             <canvas id="chart-${escapeHtml(svc.id)}" class="uptime-chart"></canvas>
           </div>
           <div class="chart-axis">
-            <span>${hist.length ? escapeHtml(fmtDateShort(hist[0].date)) : ''}</span>
-            <span>Today</span>
+            <span>${hist.length ? escapeHtml(r.unit === 'hour' ? fmtHourShort(hist[0].ts) : fmtDateShort(hist[0].date)) : ''}</span>
+            <span>${r.unit === 'hour' ? 'Now' : 'Today'}</span>
           </div>
         </div>
         <div class="det-events">
@@ -397,7 +421,8 @@
 
   function renderSvcEvents(svc) {
     const evs = filterEventsForService(svc);
-    if (!evs.length) return `<div class="ev-empty">No events in the last ${rangeDays} days.</div>`;
+    const lbl = currentRange().label;
+    if (!evs.length) return `<div class="ev-empty">No events in the last ${escapeHtml(lbl)}.</div>`;
     return evs.map(e => `<div class="det-ev-item">
       <div class="ev-icon ${escapeHtml(e.type)}">${eventSymbol(e.type)}</div>
       <div class="ev-body">${escapeHtml(eventLabel(e.type))}</div>
@@ -406,8 +431,8 @@
   }
 
   function renderGlobalLog() {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - rangeDays);
+    const cutoff = rangeCutoff();
+    const lbl = currentRange().label;
     const all = [];
     DATA.services.forEach(svc => {
       (svc.events || []).forEach(e => {
@@ -419,7 +444,7 @@
 
     let html = `<div class="sec-head"><div class="sec-title">Recent incidents</div></div>`;
     if (!recent.length) {
-      html += `<div class="global-log"><div class="ev-empty">No incidents in the last ${rangeDays} days.</div></div>`;
+      html += `<div class="global-log"><div class="ev-empty">No incidents in the last ${escapeHtml(lbl)}.</div></div>`;
       return html;
     }
     html += `<div class="global-log">${recent.map(e => `

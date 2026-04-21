@@ -372,42 +372,75 @@
     }
 
     el.innerHTML = `<div class="page-grid">${PAGES.map(renderCard).join('')}</div>`;
+    wireCardActions();
   }
 
   function renderCard(p) {
     const url = `${location.origin}/status/${p.slug}`;
     const svcCount = (p.serviceIds || []).length;
-    return `<div class="page-card">
+    return `<div class="page-card" data-id="${escapeHtml(p.id)}" data-url="${escapeHtml(url)}">
       <div class="page-card-top">
         <div style="min-width:0;flex:1">
           <div class="page-card-name">${escapeHtml(p.name)}</div>
           <div class="page-card-slug">/status/${escapeHtml(p.slug)}</div>
         </div>
         <div style="display:flex;gap:2px;flex-shrink:0">
-          <button class="icon-btn" title="Edit" onclick="openEditor('${escapeHtml(p.id)}')">✎</button>
-          <button class="icon-btn danger" title="Delete" onclick="deletePage('${escapeHtml(p.id)}')">🗑</button>
+          <button class="icon-btn" title="Edit" data-action="edit">✎</button>
+          <button class="icon-btn danger" title="Delete" data-action="delete">🗑</button>
         </div>
       </div>
       ${p.description ? `<div class="page-card-desc">${escapeHtml(p.description)}</div>` : ''}
       <div class="page-card-meta">${svcCount} service${svcCount !== 1 ? 's' : ''}</div>
       <div class="page-card-url">
         <div class="page-card-url-txt">${escapeHtml(url)}</div>
-        <button class="btn-sm" onclick="copyUrl(this, ${JSON.stringify(url)})" style="padding:3px 8px">Copy</button>
+        <button class="btn-sm" data-action="copy" style="padding:3px 8px">Copy</button>
       </div>
       <div class="page-card-actions">
-        <button class="btn-sm" onclick="window.open(${JSON.stringify(url)}, '_blank')">View public page →</button>
+        <button class="btn-sm" data-action="view">View public page →</button>
       </div>
     </div>`;
   }
 
+  function wireCardActions() {
+    document.querySelectorAll('.page-card').forEach(card => {
+      const id  = card.dataset.id;
+      const url = card.dataset.url;
+      card.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const action = btn.dataset.action;
+          if (action === 'edit')   openEditor(id);
+          if (action === 'delete') deletePage(id);
+          if (action === 'copy')   copyUrl(btn, url);
+          if (action === 'view')   window.open(url, '_blank', 'noopener');
+        });
+      });
+    });
+  }
+
   async function copyUrl(btn, url) {
+    const prev = btn.textContent;
+    const ok = () => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = prev, 1500); };
     try {
-      await navigator.clipboard.writeText(url);
-      const prev = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => btn.textContent = prev, 1500);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url);
+        ok();
+        return;
+      }
+      // Fallback for http:// contexts (navigator.clipboard requires HTTPS)
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity  = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (success) ok();
+      else alert('Copy failed — select the URL and copy manually.');
     } catch {
-      alert('Copy failed — you can select the URL and copy manually.');
+      alert('Copy failed — select the URL and copy manually.');
     }
   }
 
