@@ -24,6 +24,13 @@ Work is done from two machines:
 - **Windows (PC):** `C:\Users\Los\Desktop\Claude Workspace\homelab-dashboard`
 - **Mac:** `/Users/los/Desktop/Claude Workspace/homelab-dashboard`
 
+### Keeping the local branch in sync
+
+To avoid merge conflicts and stale work, ensure the local branch is always up to date before starting:
+
+- **Always pull before starting:** `git pull --rebase`
+- **Always push before switching machines:** `git push`
+
 ### Committing and pushing
 
 Always stage specific files (never `git add -A`), write a descriptive multi-line commit message, and push to `main`:
