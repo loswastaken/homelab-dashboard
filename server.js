@@ -85,6 +85,7 @@ function initSecrets() {
 }
 
 const secrets = initSecrets();
+const SESSION_SECRET = process.env.SESSION_SECRET || secrets.sessionSecret;
 
 // ─── Push notifications (VAPID + subscriptions) ──────────────────────────────
 
@@ -155,6 +156,7 @@ function maybeNotify(svc, type, note) {
 // ─── Rate limiting ────────────────────────────────────────────────────────────
 
 const loginAttempts = new Map();
+const reportAttempts = new Map();
 
 function checkRateLimit(ip) {
   const now  = Date.now();
@@ -166,15 +168,30 @@ function checkRateLimit(ip) {
   return entry;
 }
 
+function checkReportLimit(ip) {
+  const now = Date.now();
+  let entry = reportAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 15 * 60 * 1000 };
+    reportAttempts.set(ip, entry);
+  }
+  return entry;
+}
+
 // ─── Session ─────────────────────────────────────────────────────────────────
 
 app.use(session({
   store: new FileStore({ path: SESS_DIR, ttl: 7 * 24 * 3600, retries: 0, logFn: () => {} }),
-  secret: secrets.sessionSecret,
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   name: 'hld.sid',
-  cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
 }));
 
 // ─── Auth routes (public — before the auth gate) ──────────────────────────────
@@ -338,14 +355,26 @@ app.get('/api/public/status/:slug', (req, res) => {
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
 app.use((req, res, next) => {
-  // Report endpoint: accept valid API key in lieu of a session
+  // Report endpoint: accept valid API key in lieu of a session, with per-IP rate limiting
   if (req.path.match(/^\/api\/services\/[^/]+\/report$/) && req.method === 'POST') {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const limit = checkReportLimit(ip);
+    if (limit.count >= 50) {
+      const mins = Math.ceil((limit.resetAt - Date.now()) / 60000);
+      return res.status(429).json({ error: `Too many report attempts — try again in ${mins} min` });
+    }
     const auth = loadAuth();
-    if (auth && req.headers['x-api-key'] === auth.apiKey) return next();
+    if (auth && req.headers['x-api-key'] === auth.apiKey) {
+      limit.count = 0;
+      return next();
+    }
+    limit.count++;
+    return res.status(401).json({ error: 'Invalid API key' });
   }
 
-  // Allow static assets (images, fonts, etc.) so login/setup pages render correctly
-  if (/\.(svg|ico|png|jpg|webp|css|js|woff2?)$/.test(req.path)) return next();
+  // Allow a narrow set of pre-auth static assets needed by the login/setup pages
+  // and the public status page (favicons + optional self-hosted fonts).
+  if (/^\/(favicon(-[a-z]+)?\.(svg|ico)|[\w-]+\.woff2?)$/.test(req.path)) return next();
 
   if (!isSetupDone()) {
     return req.path.startsWith('/api/')
@@ -691,8 +720,7 @@ function scheduleChecks() {
 // ─── API: Services ───────────────────────────────────────────────────────────
 
 app.get('/api/services', (_, res) => {
-  const auth = loadAuth() || {};
-  res.json({ ...load(), apiKey: auth.apiKey, version: BUILD_SHA.slice(0, 7) });
+  res.json({ ...load(), version: BUILD_SHA.slice(0, 7) });
 });
 
 app.get('/api/weather', async (req, res) => {
@@ -852,6 +880,11 @@ app.post('/api/services/:id/check', async (req, res) => {
 
 // ─── API: Account ────────────────────────────────────────────────────────────
 
+app.get('/api/auth/api-key', (_, res) => {
+  const auth = loadAuth() || {};
+  res.json({ apiKey: auth.apiKey || '' });
+});
+
 app.put('/api/auth', async (req, res) => {
   const { currentPassword, newUsername, newPassword } = req.body;
   const auth = loadAuth();
@@ -876,9 +909,8 @@ app.put('/api/auth', async (req, res) => {
 // ─── API: Config ─────────────────────────────────────────────────────────────
 
 app.get('/api/config', (_, res) => {
-  const d    = load();
-  const auth = loadAuth() || {};
-  res.json({ settings: d.settings, categories: d.categories, apiKey: auth.apiKey });
+  const d = load();
+  res.json({ settings: d.settings, categories: d.categories });
 });
 
 app.put('/api/config', (req, res) => {

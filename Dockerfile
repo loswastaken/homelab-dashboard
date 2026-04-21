@@ -2,6 +2,7 @@ FROM node:20-alpine
 
 ARG BUILD_SHA=dev
 ENV BUILD_SHA=$BUILD_SHA
+ENV NODE_ENV=production
 
 WORKDIR /app
 

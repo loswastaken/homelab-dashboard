@@ -84,20 +84,21 @@ sudo docker compose up -d
 
 - Express app, plain Node `http`/`https` for health checks
 - **Auth:** bcryptjs (cost 12), express-session + session-file-store (7-day TTL), persisted in `data/sessions/`
-- **Secrets:** `data/auth.json` holds `sessionSecret`, `apiKey`, `username`, `passwordHash` — generated on first start
-- **Rate limiting:** 5 failed login attempts per IP → 15-minute lockout (in-memory Map, resets on restart)
+- **Secrets:** `data/auth.json` holds `sessionSecret`, `apiKey`, `username`, `passwordHash` — generated on first start. The session secret can be overridden by setting the `SESSION_SECRET` env var (preferred in production so rotating the secret doesn't require touching `data/auth.json`).
+- **Rate limiting:** 5 failed login attempts per IP → 15-minute lockout (in-memory Map, resets on restart). Same shape applied to `/api/services/:id/report`: 50 bad API-key attempts per IP per 15 min → 429.
 - `app.set('trust proxy', 1)` — required for Cloudflare Tunnel / reverse proxy
-- `sameSite: 'lax'` on session cookie — `'strict'` breaks login via Cloudflare Tunnel
-- Static assets (`.svg`, `.ico`, `.png`, `.jpg`, `.webp`, `.css`, `.js`, `.woff2?`) bypass the auth gate so login/setup pages render correctly
+- `sameSite: 'lax'` on session cookie — `'strict'` breaks login via Cloudflare Tunnel. `secure: true` is set when `NODE_ENV=production` (Dockerfile sets this), so the cookie only rides HTTPS in prod.
+- Pre-auth static assets are a narrow allowlist: `/favicon*.{svg,ico}` and `*.woff2`. `.js`/`.css`/`.html` all require a session. Login and setup pages are self-contained (inline `<style>`, no external scripts), which is what makes this work. Any new login-page asset needs either inlining or an explicit whitelist entry in the gate.
 
 ### Key API Endpoints
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/services` | Returns all data + `apiKey` + `version` (7-char SHA) |
+| `GET` | `/api/services` | Returns all data + `version` (7-char SHA). Does **not** include `apiKey` — fetch that via `/api/auth/api-key` on demand. |
 | `GET` | `/api/history` | Returns `dailyHistory` + `hourlyHistory` + `events` per service for uptime page |
 | `GET` | `/api/weather` | Returns current weather for configured location |
-| `GET` | `/api/config` | Returns settings + categories + API key |
+| `GET` | `/api/config` | Returns settings + categories (no API key) |
+| `GET` | `/api/auth/api-key` | Returns the report API key. Called only when the Settings → API Key tab is opened — do **not** cache it in frontend state. |
 | `POST` | `/api/check-all` | Triggers immediate health check on all services |
 | `POST` | `/api/services` | Add a new service |
 | `PUT` | `/api/services/:id` | Edit a service |

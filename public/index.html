@@ -1444,6 +1444,26 @@ function switchSettingsTab(tabId) {
   if (foot && activePanel) {
     foot.classList.toggle('hidden', activePanel.dataset.footer === 'hide');
   }
+  if (tabId === 'apikey') loadApiKeyIntoField();
+}
+
+async function loadApiKeyIntoField() {
+  const field = document.getElementById('cfg-apikey');
+  if (!field) return;
+  field.value = 'Loading…';
+  try {
+    const res = await fetch('/api/auth/api-key');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { apiKey } = await res.json();
+    field.value = apiKey || '—';
+  } catch {
+    field.value = '—';
+  }
+}
+
+function clearApiKeyField() {
+  const field = document.getElementById('cfg-apikey');
+  if (field) field.value = '';
 }
 
 function openSettings() {
@@ -1469,7 +1489,7 @@ function openSettings() {
   document.getElementById('push-message').textContent    = '';
   document.getElementById('push-message').style.color    = 'var(--ts)';
   syncPushToggleWithBrowser();
-  document.getElementById('cfg-apikey').value      = APP.apiKey      || '—';
+  document.getElementById('cfg-apikey').value      = '';
   document.getElementById('cfg-curpw').value       = '';
   document.getElementById('cfg-newuser').value     = '';
   document.getElementById('cfg-newpw').value       = '';
@@ -1493,6 +1513,7 @@ function copyApiKey() {
 function closeCfgModal() {
   document.getElementById('cfg-overlay').classList.remove('show');
   document.body.classList.remove('modal-open');
+  clearApiKeyField();
 }
 
 function renderCfgCats() {
