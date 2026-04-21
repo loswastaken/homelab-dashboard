@@ -95,24 +95,35 @@ sudo docker compose up -d
 | Method | Path | Notes |
 |--------|------|-------|
 | `GET` | `/api/services` | Returns all data + `apiKey` + `version` (7-char SHA) |
-| `GET` | `/api/history` | Returns `dailyHistory` + `events` per service for uptime page |
+| `GET` | `/api/history` | Returns `dailyHistory` + `hourlyHistory` + `events` per service for uptime page |
 | `GET` | `/api/weather` | Returns current weather for configured location |
+| `GET` | `/api/config` | Returns settings + categories + API key |
 | `POST` | `/api/check-all` | Triggers immediate health check on all services |
+| `POST` | `/api/services` | Add a new service |
+| `PUT` | `/api/services/:id` | Edit a service |
+| `DELETE` | `/api/services/:id` | Remove a service |
 | `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate) |
 | `POST` | `/api/services/:id/check` | Re-check a single service |
 | `POST` | `/api/services/:id/maintenance` | Toggle maintenance mode |
 | `POST` | `/api/services/:id/resolve` | Force status to online |
+| `POST` | `/api/services/:id/pin` | Toggle pin to top of grid (`pinnedAt` = timestamp or null) |
 | `PUT` | `/api/auth` | Change username/password (requires current password) |
 | `PUT` | `/api/config` | Save settings + categories |
 | `POST` | `/api/setup` | First-run account creation (locked after use) |
+| `POST` | `/api/login` | Authenticate |
 | `POST` | `/api/logout` | Destroy session |
 | `GET` | `/api/update/check` | Compare running SHA against GitHub main |
 | `POST` | `/api/update/apply` | Trigger Watchtower HTTP API to pull + redeploy |
+| `GET` | `/api/push/vapid-public-key` | Returns VAPID public key for push subscription registration |
+| `POST` | `/api/push/subscribe` | Register a browser push subscription |
+| `POST` | `/api/push/unsubscribe` | Remove a push subscription |
+| `POST` | `/api/push/test` | Send a test push notification to all subscribers |
 
 ### Health Check (`ping`)
 
 - Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`
-- `statusCode < 500` = online; `statusCode >= 500` = degraded (server error); timeout or connection error = offline
+- HTTP 5xx response = degraded; connection error/timeout = offline; anything else = online
+- If a service is already `degraded` and a new connection error arrives, it stays `degraded` rather than flipping to `offline`
 - **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
 ### History Ticks
@@ -134,10 +145,27 @@ Added to each service object for the uptime history page:
   `{ ts: ISO, type: 'offline'|'degraded'|'recovery'|'maintenance', note: string }`
   Triggered by: `checkAll()` (offline/recovery), `/report` (offline/degraded/recovery), `/maintenance` toggle.
 
+### Hourly History
+
+- **`svc.hourlyHistory[]`** — max 168 entries (7 days), one per clock hour:
+  Same shape as `dailyHistory`: `{ ts: 'YYYY-MM-DDTHH', online, degraded, offline, maintenance, total, uptime }`. Built by `accumulateHourlyTick()`, keyed by `HOUR_KEY()`. Used exclusively by `history.html` when the 24h time range is selected; 7d and 30d ranges use `dailyHistory`.
+
+### Push Notifications
+
+- **Dependency:** `web-push` npm package
+- **VAPID keys:** auto-generated on first start, stored in `data/vapid.json`. `ensureVapid()` generates and persists them if absent.
+- **Subscriptions:** stored in `data/push-subscriptions.json` as an array of Web Push subscription objects. Stale endpoints (HTTP 404/410) are pruned automatically after a failed send.
+- **`notifyPush(svc, type, note)`** — sends to all subscribers via `webpush.sendNotification`. Payload: `{ title, body, tag, url }`.
+- **`maybeNotify(svc, type, note)`** — gate function; only fires for `offline`, `degraded`, `recovery` types and only when `settings.pushEnabled` is true. Called by `checkAll()` and `/api/services/:id/report` on status transitions.
+- **Frontend:** `public/push-client.js` (window.Push API — register, unregister, test, state) + `public/sw.js` (service worker — handles `push` events and `notificationclick`).
+- **Settings toggle:** `pushEnabled` (default `false`). Notifications are silently skipped when disabled, even if subscriptions exist.
+
 ### Data Files
 
-- `data/services.json` — all services, categories, settings, history, dailyHistory, events (persisted)
+- `data/services.json` — all services, categories, settings, history, dailyHistory, hourlyHistory, events (persisted)
 - `data/auth.json` — credentials, session secret, API key
+- `data/vapid.json` — VAPID public/private keys for Web Push (auto-generated on first start)
+- `data/push-subscriptions.json` — active push subscription endpoints
 - `data/sessions/` — session files
 
 ---

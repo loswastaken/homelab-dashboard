@@ -157,6 +157,14 @@ Shows a live weather pill in the dashboard header (hidden on mobile). Uses the O
 | Country Code | Optional 2-letter code (e.g. `US`) to disambiguate |
 | Units | Fahrenheit or Celsius |
 
+### Notifications
+| Setting | Notes |
+|---|---|
+| Enable Notifications | Toggle browser push notifications on/off (requires browser permission grant) |
+| Test Notification | Sends a test push to all registered subscribers |
+
+Push notifications fire on `offline`, `degraded`, and `recovery` transitions. Subscriptions are managed per-browser and stored server-side. Requires HTTPS (or localhost) for the browser permission prompt to work.
+
 ### Report API Key
 Used by external agents (PM2 agent, scripts) to push status updates without a session. Pass as the `X-Api-Key` header to `POST /api/services/:id/report`.
 
@@ -215,8 +223,10 @@ All persistent data lives in the `data/` directory mounted via the Docker volume
 
 | File | Contents |
 |---|---|
-| `services.json` | Services, categories, settings, history ticks, daily history, events |
+| `services.json` | Services, categories, settings, history ticks, daily history, hourly history, events |
 | `auth.json` | Hashed password, session secret, report API key |
+| `vapid.json` | VAPID keys for browser push notifications (auto-generated) |
+| `push-subscriptions.json` | Active push subscriber endpoints |
 | `sessions/` | Active session files (7-day TTL) |
 
 Never included in the Docker image — lives only in the mounted volume.
@@ -232,7 +242,7 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/services` | Full data object + `version` (7-char SHA) |
-| GET | `/api/history` | Daily history + events per service |
+| GET | `/api/history` | Daily history + hourly history + events per service |
 | GET | `/api/weather` | Current weather for configured location |
 | POST | `/api/services` | Add service |
 | PUT | `/api/services/:id` | Edit service |
@@ -240,8 +250,13 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | POST | `/api/services/:id/resolve` | Clear degraded/offline → online |
 | POST | `/api/services/:id/check` | Force health check now |
 | POST | `/api/services/:id/maintenance` | Toggle maintenance mode |
+| POST | `/api/services/:id/pin` | Toggle pin to top of grid |
 | POST | `/api/services/:id/report` | External status push (API key auth) |
 | POST | `/api/check-all` | Run health checks on all services |
+| GET | `/api/push/vapid-public-key` | VAPID public key for push subscription |
+| POST | `/api/push/subscribe` | Register a push subscription |
+| POST | `/api/push/unsubscribe` | Remove a push subscription |
+| POST | `/api/push/test` | Send a test push notification |
 | GET | `/api/config` | Settings + categories + API key |
 | PUT | `/api/config` | Update settings + categories |
 | GET | `/api/update/check` | Compare running SHA vs GitHub main |
