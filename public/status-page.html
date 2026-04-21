@@ -103,17 +103,17 @@
     .svc-uptime-label.cr { color: var(--red); }
     .svc-uptime-label.cm { color: var(--slate); }
 
-    .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 30px;
-      padding-top: 2px; overflow: visible;
+    .bar-strip { display: flex; gap: 3px; align-items: stretch; height: 34px;
       flex: 1 1 260px; min-width: 120px; }
-    .bar { flex: 1; min-width: 3px; max-width: 10px; border-radius: 3px 3px 0 0;
-      transition: opacity .15s; cursor: default; position: relative; }
-    .bar.ok    { background: var(--green); opacity: .75; }
-    .bar.warn  { background: var(--amber); opacity: .75; }
-    .bar.bad   { background: var(--red);   opacity: .75; }
-    .bar.maint { background: var(--slate); opacity: .4; }
-    .bar.empty { background: var(--b1);    opacity: .35; height: 8px; border-radius: 3px 3px 0 0; }
-    .bar:hover { opacity: 1; }
+    .bar { flex: 1 1 0; min-width: 4px; max-width: 12px; border-radius: 3px;
+      transition: filter .15s, transform .15s; cursor: default; position: relative;
+      background: var(--bg-hi); }
+    .bar.ok    { background: var(--green); }
+    .bar.warn  { background: var(--amber); }
+    .bar.bad   { background: var(--red);   }
+    .bar.maint { background: var(--slate); opacity: .55; }
+    .bar.empty { background: var(--b1); }
+    .bar:not(.empty):hover { filter: brightness(1.15); transform: scaleY(1.06); }
     .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
       transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
       border-radius: 6px; padding: 5px 9px; white-space: nowrap; font-size: 11px;
@@ -182,7 +182,7 @@
       .banner-title { font-size: 18px; flex-basis: 100%; order: 2; }
       .banner-meta { flex-basis: 100%; order: 3; }
       .svc-head { flex-wrap: wrap; }
-      .bar-strip { flex-basis: 100%; order: 4; height: 26px; }
+      .bar-strip { flex-basis: 100%; order: 4; height: 30px; }
       .svc-uptime-label { width: auto; }
       .page-hdr h1 { font-size: 22px; }
     }
@@ -242,12 +242,6 @@
     if (diff < 86400)     return Math.floor(diff / 3600) + 'h ago';
     if (diff < 86400 * 7) return Math.floor(diff / 86400) + 'd ago';
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
-  function barHeight(pct) {
-    // Container is 28px tall; cap at 24px so the rounded top of the bar
-    // stays visible and doesn't read as clipped against the row edge.
-    if (pct === null || pct === undefined) return 8;
-    return Math.max(8, Math.round(pct / 100 * 24));
   }
   function calcAvgUptime(hist) {
     const valid = hist.filter(e => e.uptime !== null && e.uptime !== undefined);
@@ -377,11 +371,10 @@
       } else {
         const e = hist[histIdx];
         const pct = e.uptime;
-        const h = barHeight(pct);
         const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
         const tipLabel = r.unit === 'hour' ? fmtHourShort(e.ts) : fmtDateShort(e.date);
         const tip = `${escapeHtml(tipLabel)}: ${fmtUptime(pct)}`;
-        bars.push(`<div class="bar ${cls}" style="height:${h}px"><span class="bar-tooltip">${tip}</span></div>`);
+        bars.push(`<div class="bar ${cls}"><span class="bar-tooltip">${tip}</span></div>`);
       }
     }
 
