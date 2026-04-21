@@ -103,7 +103,8 @@
     .svc-uptime-label.cr { color: var(--red); }
     .svc-uptime-label.cm { color: var(--slate); }
 
-    .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 28px;
+    .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 30px;
+      padding-top: 2px; overflow: visible;
       flex: 1 1 260px; min-width: 120px; }
     .bar { flex: 1; min-width: 3px; max-width: 10px; border-radius: 3px 3px 0 0;
       transition: opacity .15s; cursor: default; position: relative; }
@@ -111,7 +112,7 @@
     .bar.warn  { background: var(--amber); opacity: .75; }
     .bar.bad   { background: var(--red);   opacity: .75; }
     .bar.maint { background: var(--slate); opacity: .4; }
-    .bar.empty { background: var(--b1);    opacity: 1; height: 4px !important; align-self: center; border-radius: 3px; }
+    .bar.empty { background: var(--b1);    opacity: .35; height: 8px; border-radius: 3px 3px 0 0; }
     .bar:hover { opacity: 1; }
     .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
       transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
@@ -181,7 +182,7 @@
       .banner-title { font-size: 18px; flex-basis: 100%; order: 2; }
       .banner-meta { flex-basis: 100%; order: 3; }
       .svc-head { flex-wrap: wrap; }
-      .bar-strip { flex-basis: 100%; order: 4; height: 22px; }
+      .bar-strip { flex-basis: 100%; order: 4; height: 26px; }
       .svc-uptime-label { width: auto; }
       .page-hdr h1 { font-size: 22px; }
     }
