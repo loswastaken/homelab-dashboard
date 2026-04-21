@@ -28,11 +28,16 @@ const BOOT_LOOP_THRESHOLD = 3;
 
 // ─── Docker ───────────────────────────────────────────────────────────────────
 
-// `docker ps -a --format '{{json .}}'` writes one JSON object per line.
-// The `Status` column contains human text like "Up 2 hours (healthy)" or
+// We use a pipe-delimited custom template rather than `--format '{{json .}}'`
+// because the JSON formatter hangs against older Docker daemons
+// (observed on Synology DSM running API 1.43). The fields we emit are the
+// same shape the rest of this file reads off the parsed object.
+// `Status` contains human text like "Up 2 hours (healthy)" or
 // "Up 30 seconds (health: starting)" or "Exited (137) 5 minutes ago".
+const PS_FMT = '{{.ID}}|{{.Names}}|{{.State}}|{{.Status}}';
+
 function dockerList() {
-  const r = spawnSync('docker', ['ps', '-a', '--format', '{{json .}}'], {
+  const r = spawnSync('docker', ['ps', '-a', '--format', PS_FMT], {
     encoding: 'utf8',
     timeout:  30000
   });
@@ -44,8 +49,10 @@ function dockerList() {
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
-    .map(l => { try { return JSON.parse(l); } catch { return null; } })
-    .filter(Boolean);
+    .map(l => {
+      const [ID, Names, State, Status] = l.split('|');
+      return { ID, Names, State, Status };
+    });
 }
 
 function parseHealth(statusText) {
