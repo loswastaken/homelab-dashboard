@@ -280,6 +280,23 @@
       display: flex; align-items: center; gap: 8px; }
     .modal-sec::after { content: ''; flex:1; height: 1px; background: var(--b0); }
 
+    /* settings tabs */
+    .settings-tabs { display: flex; gap: 2px; background: var(--bg-surf);
+      border: 1px solid var(--b1); border-radius: 8px; padding: 3px;
+      margin-bottom: 18px; overflow-x: auto; scrollbar-width: none;
+      -webkit-overflow-scrolling: touch; }
+    .settings-tabs::-webkit-scrollbar { display: none; }
+    .settings-tab { padding: 6px 12px; font-family: 'Sora', sans-serif;
+      font-size: 11px; font-weight: 500; line-height: 1; letter-spacing: .04em;
+      color: var(--ts); background: none; border: none; border-radius: 6px;
+      cursor: pointer; white-space: nowrap; transition: all .15s; }
+    .settings-tab:hover  { color: var(--tp); background: var(--b0); }
+    .settings-tab.active { color: var(--tp); background: var(--bg-hi); }
+    .settings-panel { display: none; }
+    .settings-panel.active { display: block; }
+    .settings-panel > .modal-sec:first-child { margin-top: 4px; }
+    .modal-foot.hidden { display: none; }
+
     /* settings: category list */
     .cat-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
     .cat-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -585,136 +602,160 @@
     </div>
     <div class="modal-body">
 
-      <div class="modal-sec">General</div>
-
-      <div class="form-row">
-        <div>
-          <label class="form-lbl">Your Name <span>(shown in greeting)</span></label>
-          <input class="form-inp" id="cfg-name" placeholder="Alex">
-        </div>
-        <div>
-          <label class="form-lbl">Site Title <span>(browser tab)</span></label>
-          <input class="form-inp" id="cfg-title" placeholder="Homelab Dashboard">
-        </div>
+      <div class="settings-tabs" role="tablist">
+        <button class="settings-tab active" data-tab="general"       role="tab" onclick="switchSettingsTab('general')">General</button>
+        <button class="settings-tab"        data-tab="account"       role="tab" onclick="switchSettingsTab('account')">Account</button>
+        <button class="settings-tab"        data-tab="weather"       role="tab" onclick="switchSettingsTab('weather')">Weather</button>
+        <button class="settings-tab"        data-tab="notifications" role="tab" onclick="switchSettingsTab('notifications')">Notifications</button>
+        <button class="settings-tab"        data-tab="categories"    role="tab" onclick="switchSettingsTab('categories')">Categories</button>
+        <button class="settings-tab"        data-tab="apikey"        role="tab" onclick="switchSettingsTab('apikey')">API Key</button>
+        <button class="settings-tab"        data-tab="updates"       role="tab" onclick="switchSettingsTab('updates')">Updates</button>
       </div>
 
-      <div class="form-row">
-        <div>
-          <label class="form-lbl">Server Label <span>(sidebar footer)</span></label>
-          <input class="form-inp" id="cfg-serverlabel" placeholder="Synology DS423+">
-        </div>
-        <div>
-          <label class="form-lbl">Server IP <span>(sidebar footer)</span></label>
-          <input class="form-inp" id="cfg-ip" placeholder="10.0.0.1">
-        </div>
-      </div>
+      <div class="settings-panel active" data-panel="general" data-footer="show">
+        <div class="modal-sec">General</div>
 
-      <div class="form-group">
-        <label class="form-lbl">Health Check Interval <span>(seconds, min 10)</span></label>
-        <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
-      </div>
+        <div class="form-row">
+          <div>
+            <label class="form-lbl">Your Name <span>(shown in greeting)</span></label>
+            <input class="form-inp" id="cfg-name" placeholder="Alex">
+          </div>
+          <div>
+            <label class="form-lbl">Site Title <span>(browser tab)</span></label>
+            <input class="form-inp" id="cfg-title" placeholder="Homelab Dashboard">
+          </div>
+        </div>
 
-      <div class="modal-sec">Weather</div>
-      <div class="toggle-row">
-        <div class="toggle-info">
-          <div class="toggle-name">Enable Weather</div>
-          <div class="toggle-desc">Show live weather in the dashboard header</div>
+        <div class="form-row">
+          <div>
+            <label class="form-lbl">Server Label <span>(sidebar footer)</span></label>
+            <input class="form-inp" id="cfg-serverlabel" placeholder="Synology DS423+">
+          </div>
+          <div>
+            <label class="form-lbl">Server IP <span>(sidebar footer)</span></label>
+            <input class="form-inp" id="cfg-ip" placeholder="10.0.0.1">
+          </div>
         </div>
-        <label class="toggle"><input type="checkbox" id="cfg-weather-enabled"><span class="tslider"></span></label>
-      </div>
-      <div class="form-row" style="margin-top:12px">
-        <div>
-          <label class="form-lbl">Location <span>(ZIP or city)</span></label>
-          <input class="form-inp" id="cfg-weather-location" placeholder="10001 or New York">
-        </div>
-        <div>
-          <label class="form-lbl">Country Code <span>(optional, e.g. US)</span></label>
-          <input class="form-inp" id="cfg-weather-country" placeholder="US" maxlength="2">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-lbl">Units</label>
-        <select class="form-inp" id="cfg-weather-units">
-          <option value="fahrenheit">Fahrenheit (F, mph)</option>
-          <option value="celsius">Celsius (C, km/h)</option>
-        </select>
-      </div>
 
-      <div class="modal-sec">Notifications</div>
-      <div class="toggle-row">
-        <div class="toggle-info">
-          <div class="toggle-name">Enable browser notifications</div>
-          <div class="toggle-desc">Get a push alert when a service goes offline, degraded, or recovers</div>
-        </div>
-        <label class="toggle"><input type="checkbox" id="cfg-push-enabled" onchange="onPushToggle(this)"><span class="tslider"></span></label>
-      </div>
-      <div style="display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;">
-        <button class="btn-sm" type="button" onclick="sendTestPush(this)">Send test notification</button>
-        <span id="push-message" style="font-size:12px;color:var(--ts)"></span>
-      </div>
-
-      <div class="modal-sec">Report API Key</div>
-      <div class="form-group">
-        <label class="form-lbl">Used by external agents (PM2, etc.) via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
-        <div style="display:flex;gap:8px">
-          <input class="form-inp" id="cfg-apikey" readonly
-            style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
-          <button class="btn-sm" onclick="copyApiKey(this)" style="flex-shrink:0">Copy</button>
+        <div class="form-group">
+          <label class="form-lbl">Health Check Interval <span>(seconds, min 10)</span></label>
+          <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
         </div>
       </div>
 
-      <div class="modal-sec">Categories</div>
-      <div class="cat-list" id="cfg-cat-list"></div>
-
-      <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
-        <div style="flex:1; min-width:120px">
-          <label class="form-lbl">New Category Name</label>
-          <input class="form-inp" id="new-cat-name" placeholder="Storage">
+      <div class="settings-panel" data-panel="account" data-footer="hide">
+        <div class="modal-sec">Account</div>
+        <div class="form-group">
+          <label class="form-lbl">Current Password <span>(required to make changes)</span></label>
+          <input class="form-inp" id="cfg-curpw" type="password" placeholder="••••••••" autocomplete="current-password">
         </div>
-        <div style="min-width:130px">
-          <label class="form-lbl">Parent <span>(optional)</span></label>
-          <select class="form-inp" id="new-cat-parent"></select>
+        <div class="form-row">
+          <div>
+            <label class="form-lbl">New Username <span>(leave blank to keep)</span></label>
+            <input class="form-inp" id="cfg-newuser" placeholder="admin" autocomplete="username">
+          </div>
+          <div>
+            <label class="form-lbl">New Password <span>(leave blank to keep)</span></label>
+            <input class="form-inp" id="cfg-newpw" type="password" placeholder="••••••••" autocomplete="new-password">
+          </div>
         </div>
-        <div>
-          <label class="form-lbl">Color</label>
-          <div class="color-swatches" id="color-swatches"></div>
-          <input class="form-inp" id="color-hex" placeholder="#5285b8" maxlength="7"
-            style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px"
-            oninput="onHexInput(this.value)">
+        <div style="margin-bottom:4px">
+          <button class="btn-sm" onclick="changeAccount()">Update Account</button>
+          <span id="acct-msg" style="font-size:11px;margin-left:10px;color:var(--ts)"></span>
         </div>
-        <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
-      </div>
-
-      <div class="modal-sec">Account</div>
-      <div class="form-group">
-        <label class="form-lbl">Current Password <span>(required to make changes)</span></label>
-        <input class="form-inp" id="cfg-curpw" type="password" placeholder="••••••••" autocomplete="current-password">
-      </div>
-      <div class="form-row">
-        <div>
-          <label class="form-lbl">New Username <span>(leave blank to keep)</span></label>
-          <input class="form-inp" id="cfg-newuser" placeholder="admin" autocomplete="username">
-        </div>
-        <div>
-          <label class="form-lbl">New Password <span>(leave blank to keep)</span></label>
-          <input class="form-inp" id="cfg-newpw" type="password" placeholder="••••••••" autocomplete="new-password">
-        </div>
-      </div>
-      <div style="margin-bottom:4px">
-        <button class="btn-sm" onclick="changeAccount()">Update Account</button>
-        <span id="acct-msg" style="font-size:11px;margin-left:10px;color:var(--ts)"></span>
       </div>
 
-      <div class="modal-sec">Updates</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
-        <div>
-          <div style="font-size:12px;font-weight:500;color:var(--tp)">Current build</div>
-          <div id="upd-sha" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);margin-top:2px">—</div>
+      <div class="settings-panel" data-panel="weather" data-footer="show">
+        <div class="modal-sec">Weather</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">Enable Weather</div>
+            <div class="toggle-desc">Show live weather in the dashboard header</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="cfg-weather-enabled"><span class="tslider"></span></label>
         </div>
-        <button class="btn-sm" id="upd-check-btn" onclick="checkForUpdates()">Check for Updates</button>
+        <div class="form-row" style="margin-top:12px">
+          <div>
+            <label class="form-lbl">Location <span>(ZIP or city)</span></label>
+            <input class="form-inp" id="cfg-weather-location" placeholder="10001 or New York">
+          </div>
+          <div>
+            <label class="form-lbl">Country Code <span>(optional, e.g. US)</span></label>
+            <input class="form-inp" id="cfg-weather-country" placeholder="US" maxlength="2">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-lbl">Units</label>
+          <select class="form-inp" id="cfg-weather-units">
+            <option value="fahrenheit">Fahrenheit (F, mph)</option>
+            <option value="celsius">Celsius (C, km/h)</option>
+          </select>
+        </div>
       </div>
-      <div id="upd-result" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:8px"></div>
-      <button id="upd-apply-btn" style="display:none"></button>
+
+      <div class="settings-panel" data-panel="notifications" data-footer="show">
+        <div class="modal-sec">Notifications</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">Enable browser notifications</div>
+            <div class="toggle-desc">Get a push alert when a service goes offline, degraded, or recovers</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="cfg-push-enabled" onchange="onPushToggle(this)"><span class="tslider"></span></label>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+          <button class="btn-sm" type="button" onclick="sendTestPush(this)">Send test notification</button>
+          <span id="push-message" style="font-size:12px;color:var(--ts)"></span>
+        </div>
+      </div>
+
+      <div class="settings-panel" data-panel="categories" data-footer="show">
+        <div class="modal-sec">Categories</div>
+        <div class="cat-list" id="cfg-cat-list"></div>
+
+        <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+          <div style="flex:1; min-width:120px">
+            <label class="form-lbl">New Category Name</label>
+            <input class="form-inp" id="new-cat-name" placeholder="Storage">
+          </div>
+          <div style="min-width:130px">
+            <label class="form-lbl">Parent <span>(optional)</span></label>
+            <select class="form-inp" id="new-cat-parent"></select>
+          </div>
+          <div>
+            <label class="form-lbl">Color</label>
+            <div class="color-swatches" id="color-swatches"></div>
+            <input class="form-inp" id="color-hex" placeholder="#5285b8" maxlength="7"
+              style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px"
+              oninput="onHexInput(this.value)">
+          </div>
+          <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
+        </div>
+      </div>
+
+      <div class="settings-panel" data-panel="apikey" data-footer="hide">
+        <div class="modal-sec">Report API Key</div>
+        <div class="form-group">
+          <label class="form-lbl">Used by external agents (PM2, etc.) via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
+          <div style="display:flex;gap:8px">
+            <input class="form-inp" id="cfg-apikey" readonly
+              style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
+            <button class="btn-sm" onclick="copyApiKey(this)" style="flex-shrink:0">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-panel" data-panel="updates" data-footer="hide">
+        <div class="modal-sec">Updates</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+          <div>
+            <div style="font-size:12px;font-weight:500;color:var(--tp)">Current build</div>
+            <div id="upd-sha" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);margin-top:2px">—</div>
+          </div>
+          <button class="btn-sm" id="upd-check-btn" onclick="checkForUpdates()">Check for Updates</button>
+        </div>
+        <div id="upd-result" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:8px"></div>
+        <button id="upd-apply-btn" style="display:none"></button>
+      </div>
 
     </div>
     <div class="modal-foot">
@@ -1373,6 +1414,21 @@ async function togglePin(id) {
 /* ═══════════════════════════════════════════════════
    SETTINGS MODAL
 ═══════════════════════════════════════════════════ */
+function switchSettingsTab(tabId) {
+  document.querySelectorAll('#cfg-overlay .settings-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tabId));
+  let activePanel = null;
+  document.querySelectorAll('#cfg-overlay .settings-panel').forEach(p => {
+    const on = p.dataset.panel === tabId;
+    p.classList.toggle('active', on);
+    if (on) activePanel = p;
+  });
+  const foot = document.querySelector('#cfg-overlay .modal-foot');
+  if (foot && activePanel) {
+    foot.classList.toggle('hidden', activePanel.dataset.footer === 'hide');
+  }
+}
+
 function openSettings() {
   if (window.innerWidth <= 640) closeSidebar();
   document.getElementById('upd-sha').textContent        = APP.version || 'dev';
@@ -1402,6 +1458,7 @@ function openSettings() {
   document.getElementById('acct-msg').textContent  = '';
   renderCfgCats();
   renderSwatches();
+  switchSettingsTab('general');
   document.getElementById('cfg-overlay').classList.add('show');
 }
 
