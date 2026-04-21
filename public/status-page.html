@@ -71,7 +71,18 @@
 
     /* ─── Controls ─── */
     .controls { display: flex; align-items: center; justify-content: flex-end;
-      margin-bottom: 18px; }
+      gap: 10px; margin-bottom: 18px; }
+    .refreshed { font-size: 11px; color: var(--tm); font-family: 'JetBrains Mono', monospace;
+      margin-right: auto; }
+    .refresh-btn { display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; border-radius: 8px; background: var(--bg-surf);
+      border: 1px solid var(--b1); color: var(--ts); cursor: pointer;
+      transition: all .15s; padding: 0; }
+    .refresh-btn:hover:not(:disabled) { color: var(--tp); background: var(--bg-hi); border-color: var(--b2); }
+    .refresh-btn:disabled { cursor: default; opacity: .55; }
+    .refresh-btn svg { width: 14px; height: 14px; transition: transform .6s ease; }
+    .refresh-btn.spinning svg { animation: refresh-spin .8s linear infinite; }
+    @keyframes refresh-spin { to { transform: rotate(360deg); } }
     .seg { display: flex; background: var(--bg-surf); border: 1px solid var(--b1);
       border-radius: 8px; overflow: hidden; }
     .seg-btn { padding: 6px 14px; font-size: 12px; font-family: 'Sora', sans-serif;
@@ -206,6 +217,8 @@
   };
   let rangeKey = '30d';
   let expanded = new Set();
+  let lastRefreshed = null;
+  let isRefreshing = false;
 
   // ─── Helpers (copied from history.html) ─────────────────────────────────────
   function statusClass(s) {
@@ -315,12 +328,22 @@
       ${DATA.page.description ? `<p>${escapeHtml(DATA.page.description)}</p>` : ''}
     </div>`;
 
+    const refreshedLabel = lastRefreshed ? `Updated ${fmtRelative(lastRefreshed)}` : '';
     html += `<div class="controls">
+      <div class="refreshed" id="refreshed">${escapeHtml(refreshedLabel)}</div>
       <div class="seg">
         ${['24h','7d','30d'].map(k =>
           `<button class="seg-btn${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`
         ).join('')}
       </div>
+      <button class="refresh-btn${isRefreshing ? ' spinning' : ''}" id="refresh-btn" title="Refresh"${isRefreshing ? ' disabled' : ''}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/>
+          <path d="M21 3v5h-5"/>
+          <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/>
+          <path d="M3 21v-5h5"/>
+        </svg>
+      </button>
     </div>`;
 
     if (!DATA.services.length) {
@@ -340,6 +363,8 @@
         render();
       });
     });
+    const refreshBtn = root.querySelector('#refresh-btn');
+    if (refreshBtn) refreshBtn.addEventListener('click', () => load(true));
     root.querySelectorAll('.svc-head').forEach(h => {
       h.addEventListener('click', () => {
         const row = h.parentElement;
@@ -521,21 +546,47 @@
   }
 
   // ─── Load ───────────────────────────────────────────────────────────────────
-  async function load() {
+  async function load(manual = false) {
     if (!SLUG) return showError('Status page not found', 'Missing slug in URL.');
+    if (isRefreshing) return;
+    isRefreshing = true;
+    const btn = document.getElementById('refresh-btn');
+    if (btn) { btn.classList.add('spinning'); btn.disabled = true; }
+    const started = Date.now();
     try {
       const res = await fetch('/api/public/status/' + encodeURIComponent(SLUG), { cache: 'no-store' });
       if (res.status === 404) return showError('Status page not found', 'The URL you requested does not match any published status page.');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       DATA = await res.json();
+      lastRefreshed = new Date().toISOString();
       render();
     } catch (err) {
       showError('Could not load status', err.message || 'Network error');
+    } finally {
+      if (manual) {
+        const elapsed = Date.now() - started;
+        const hold = Math.max(0, 500 - elapsed);
+        setTimeout(() => {
+          isRefreshing = false;
+          const b = document.getElementById('refresh-btn');
+          if (b) { b.classList.remove('spinning'); b.disabled = false; }
+        }, hold);
+      } else {
+        isRefreshing = false;
+        const b = document.getElementById('refresh-btn');
+        if (b) { b.classList.remove('spinning'); b.disabled = false; }
+      }
     }
   }
 
+  // Periodically refresh the "Updated Xs ago" label between fetches.
+  setInterval(() => {
+    const el = document.getElementById('refreshed');
+    if (el && lastRefreshed) el.textContent = 'Updated ' + fmtRelative(lastRefreshed);
+  }, 10000);
+
   load();
-  setInterval(load, 60000);
+  setInterval(() => load(false), 60000);
 </script>
 </body>
 </html>
