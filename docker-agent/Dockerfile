@@ -12,6 +12,7 @@ RUN mkdir -p /app/data
 ENV NODE_ENV=production \
     DASHBOARD_URL=http://host.docker.internal:55964 \
     POLL_INTERVAL_MS=30000 \
-    REPORT_API_KEY=
+    REPORT_API_KEY= \
+    DOCKER_API_VERSION=1.43
 
 CMD ["node", "index.js"]
