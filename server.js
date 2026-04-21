@@ -7,6 +7,7 @@ const crypto    = require('crypto');
 const bcrypt    = require('bcryptjs');
 const session   = require('express-session');
 const FileStore = require('session-file-store')(session);
+const webpush   = require('web-push');
 
 const app       = express();
 const PORT      = process.env.PORT || 55964;
@@ -15,6 +16,8 @@ const REPO      = 'loswastaken/homelab-dashboard';
 const DATA_DIR  = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'services.json');
 const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
+const VAPID_FILE = path.join(DATA_DIR, 'vapid.json');
+const SUBS_FILE  = path.join(DATA_DIR, 'push-subscriptions.json');
 const SESS_DIR  = path.join(DATA_DIR, 'sessions');
 
 if (!fs.existsSync(DATA_DIR))  fs.mkdirSync(DATA_DIR,  { recursive: true });
@@ -46,6 +49,7 @@ function defaults() {
       weatherLocation: '',
       weatherCountryCode: '',
       weatherUnits: 'fahrenheit',
+      pushEnabled: false,
     },
     categories: [],
     services:   []
@@ -79,6 +83,72 @@ function initSecrets() {
 }
 
 const secrets = initSecrets();
+
+// ─── Push notifications (VAPID + subscriptions) ──────────────────────────────
+
+function loadVapid() {
+  try   { return JSON.parse(fs.readFileSync(VAPID_FILE, 'utf8')); }
+  catch { return null; }
+}
+
+function ensureVapid() {
+  let keys = loadVapid();
+  if (!keys || !keys.publicKey || !keys.privateKey) {
+    keys = webpush.generateVAPIDKeys();
+    fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2));
+  }
+  webpush.setVapidDetails('mailto:vasquezct02@protonmail.com', keys.publicKey, keys.privateKey);
+  return keys;
+}
+
+function loadSubs() {
+  try   { const v = JSON.parse(fs.readFileSync(SUBS_FILE, 'utf8')); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+
+function saveSubs(list) {
+  fs.writeFileSync(SUBS_FILE, JSON.stringify(list, null, 2));
+}
+
+const vapidKeys = ensureVapid();
+
+function eventLabel(type) {
+  if (type === 'offline')  return 'Offline';
+  if (type === 'degraded') return 'Degraded';
+  if (type === 'recovery') return 'Recovered';
+  return type;
+}
+
+async function notifyPush(svc, type, note = '') {
+  const subs = loadSubs();
+  if (subs.length === 0) return;
+  const payload = JSON.stringify({
+    title: `${svc.name || 'Service'} — ${eventLabel(type)}`,
+    body:  note || '',
+    tag:   `${svc.id}-${type}`,
+    url:   '/'
+  });
+  const stale = new Set();
+  await Promise.allSettled(subs.map(async sub => {
+    try {
+      await webpush.sendNotification(sub, payload);
+    } catch (err) {
+      if (err && (err.statusCode === 404 || err.statusCode === 410)) stale.add(sub.endpoint);
+      else console.error('[push] send failed:', err.statusCode || err.message);
+    }
+  }));
+  if (stale.size) saveSubs(subs.filter(s => !stale.has(s.endpoint)));
+}
+
+function maybeNotify(svc, type, note) {
+  try {
+    if (!['offline','degraded','recovery'].includes(type)) return;
+    if (!load().settings?.pushEnabled) return;
+    notifyPush(svc, type, note);
+  } catch (e) {
+    console.error('[push] maybeNotify error:', e.message);
+  }
+}
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
 
@@ -437,10 +507,12 @@ async function checkAll() {
     accumulateHourlyTick(svc, tick);
     // event log: record transitions
     if (prevStatus !== svc.status) {
-      if (svc.status === 'offline')  pushEvent(svc, 'offline',  'Service became unreachable');
-      if (svc.status === 'degraded') pushEvent(svc, 'degraded', 'Service returned 5xx response');
-      if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded'))
-                                     pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
+      if (svc.status === 'offline')  { pushEvent(svc, 'offline',  'Service became unreachable'); maybeNotify(svc, 'offline',  'Service became unreachable'); }
+      if (svc.status === 'degraded') { pushEvent(svc, 'degraded', 'Service returned 5xx response'); maybeNotify(svc, 'degraded', 'Service returned 5xx response'); }
+      if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
+        pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
+        maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
+      }
     }
   }
 
@@ -569,12 +641,21 @@ app.post('/api/services/:id/report', (req, res) => {
   svc.lastChecked = new Date().toISOString();
   accumulateDailyTick(svc, tick);
   accumulateHourlyTick(svc, tick);
-  if (status === 'degraded' && prevStatus !== 'degraded')
-    pushEvent(svc, 'degraded', desc || 'Service reported degraded');
-  if (status === 'offline' && prevStatus !== 'offline')
-    pushEvent(svc, 'offline', desc || 'Service reported offline');
-  if (status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded'))
-    pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
+  if (status === 'degraded' && prevStatus !== 'degraded') {
+    const note = desc || 'Service reported degraded';
+    pushEvent(svc, 'degraded', note);
+    maybeNotify(svc, 'degraded', note);
+  }
+  if (status === 'offline' && prevStatus !== 'offline') {
+    const note = desc || 'Service reported offline';
+    pushEvent(svc, 'offline', note);
+    maybeNotify(svc, 'offline', note);
+  }
+  if (status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
+    const note = `Recovered from ${prevStatus}`;
+    pushEvent(svc, 'recovery', note);
+    maybeNotify(svc, 'recovery', note);
+  }
 
   save(d);
   res.json(svc);
@@ -669,6 +750,55 @@ app.put('/api/config', (req, res) => {
   if (req.body.categories) d.categories = req.body.categories;
   save(d);
   res.json({ settings: d.settings, categories: d.categories });
+});
+
+// ─── API: Push Notifications ─────────────────────────────────────────────────
+
+app.get('/api/push/vapid-public-key', (_, res) => {
+  res.json({ publicKey: vapidKeys.publicKey });
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  const sub = req.body;
+  if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    return res.status(400).json({ error: 'Invalid subscription' });
+  }
+  const subs = loadSubs();
+  const idx  = subs.findIndex(s => s.endpoint === sub.endpoint);
+  const entry = { endpoint: sub.endpoint, keys: sub.keys, addedAt: new Date().toISOString() };
+  if (idx >= 0) subs[idx] = entry; else subs.push(entry);
+  saveSubs(subs);
+  res.json({ ok: true, count: subs.length });
+});
+
+app.post('/api/push/unsubscribe', (req, res) => {
+  const endpoint = req.body && req.body.endpoint;
+  if (!endpoint) return res.status(400).json({ error: 'Missing endpoint' });
+  const subs = loadSubs().filter(s => s.endpoint !== endpoint);
+  saveSubs(subs);
+  res.json({ ok: true, count: subs.length });
+});
+
+app.post('/api/push/test', async (req, res) => {
+  const sub = req.body && req.body.subscription;
+  if (!sub || !sub.endpoint || !sub.keys) {
+    return res.status(400).json({ error: 'Missing subscription in body' });
+  }
+  try {
+    await webpush.sendNotification(sub, JSON.stringify({
+      title: 'Homelab — Test notification',
+      body:  'If you can see this, push notifications are working.',
+      tag:   'test',
+      url:   '/'
+    }));
+    res.json({ ok: true });
+  } catch (err) {
+    if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+      const subs = loadSubs().filter(s => s.endpoint !== sub.endpoint);
+      saveSubs(subs);
+    }
+    res.status(500).json({ ok: false, error: err.message || 'Send failed' });
+  }
 });
 
 // ─── API: Updates ────────────────────────────────────────────────────────────
