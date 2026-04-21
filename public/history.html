@@ -280,6 +280,9 @@
     .cat-del { font-size: 16px; color: var(--tm); cursor: pointer; transition: color .15s;
       line-height: 1; background: none; border: none; padding: 0 2px; }
     .cat-del:hover { color: var(--red); }
+    .cat-edit { font-size: 13px; color: var(--tm); cursor: pointer; transition: color .15s;
+      line-height: 1; background: none; border: none; padding: 0 2px; }
+    .cat-edit:hover { color: var(--tp); }
     .cat-item.cat-sub { margin-left: 20px; border-left: 2px solid var(--b0); background: var(--bg-base); }
     .color-swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .swatch { width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
@@ -448,7 +451,8 @@
             style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px"
             oninput="onHexInput(this.value)">
         </div>
-        <button class="btn-sm" style="margin-bottom:0" onclick="addCategory()">+ Add</button>
+        <button class="btn-sm" id="cat-submit-btn" style="margin-bottom:0" onclick="submitCategory()">+ Add</button>
+        <button class="btn-sec" id="cat-cancel-btn" style="margin-bottom:0;display:none" onclick="cancelCatEdit()">Cancel</button>
       </div>
 
       <div class="modal-sec">Account</div>
@@ -1042,6 +1046,7 @@ function renderEvents(el, events, showSvc = false) {
 // ─── Settings modal ───────────────────────────────────────────────────────────
 let pendingCats = [];
 let selectedColor = 'blue';
+let editingCatId = null;
 
 const COLOR_CSS = {
   blue:   { pip: '#5285b8' }, green:  { pip: '#5a9e72' }, amber: { pip: '#c4884a' },
@@ -1094,7 +1099,8 @@ function renderCfgCats() {
       <span class="cat-pip" style="background:${pip}"></span>
       <span class="cat-name">${cat.name}</span>
       <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${cat.color}</span>
-      <button class="cat-del" onclick="removeCat(${i})" style="margin-left:auto">×</button>
+      <button class="cat-edit" onclick="editCategory(${i})" title="Edit" style="margin-left:auto">\u270e</button>
+      <button class="cat-del" onclick="removeCat(${i})" title="Delete">\u00d7</button>
     </div>`);
     [...pendingCats.filter(c => c.parentId === cat.id)].sort((a,b) => a.name.localeCompare(b.name)).forEach(sub => {
       const si     = pendingCats.indexOf(sub);
@@ -1103,7 +1109,8 @@ function renderCfgCats() {
         <span class="cat-pip" style="background:${subPip}"></span>
         <span class="cat-name" style="font-size:12px">\u21b3 ${sub.name}</span>
         <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${sub.color}</span>
-        <button class="cat-del" onclick="removeCat(${si})" style="margin-left:auto">×</button>
+        <button class="cat-edit" onclick="editCategory(${si})" title="Edit" style="margin-left:auto">\u270e</button>
+        <button class="cat-del" onclick="removeCat(${si})" title="Delete">\u00d7</button>
       </div>`);
     });
   });
@@ -1111,10 +1118,11 @@ function renderCfgCats() {
   renderParentSelect();
 }
 
-function renderParentSelect() {
+function renderParentSelect(excludeId = null) {
   const sel = document.getElementById('new-cat-parent');
   if (!sel) return;
-  const sorted = [...pendingCats.filter(c => !c.parentId)].sort((a,b) => a.name.localeCompare(b.name));
+  const sorted = [...pendingCats.filter(c => !c.parentId && c.id !== excludeId)]
+    .sort((a,b) => a.name.localeCompare(b.name));
   sel.innerHTML = '<option value="">None (top-level)</option>'
     + sorted.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 }
@@ -1129,16 +1137,64 @@ function removeCat(i) {
   renderCfgCats();
 }
 
-function addCategory() {
+function submitCategory() {
   const name = document.getElementById('new-cat-name').value.trim();
-  const parentId = document.getElementById('new-cat-parent').value || null;
+  const parentSel = document.getElementById('new-cat-parent');
+  const parentId = (parentSel.disabled ? null : parentSel.value) || null;
   if (!name) return;
+
+  if (editingCatId) {
+    const target = pendingCats.find(c => c.id === editingCatId);
+    if (!target) { cancelCatEdit(); return; }
+    target.name = name;
+    target.color = selectedColor;
+    if (parentId) target.parentId = parentId;
+    else delete target.parentId;
+    cancelCatEdit();
+    return;
+  }
+
   const id = name.toLowerCase().replace(/\s+/g, '-');
   if (pendingCats.find(c => c.id === id)) { alert('Category ID already exists.'); return; }
   const entry = { id, name, color: selectedColor };
   if (parentId) entry.parentId = parentId;
   pendingCats.push(entry);
   document.getElementById('new-cat-name').value = '';
+  renderCfgCats();
+}
+
+function editCategory(i) {
+  const cat = pendingCats[i];
+  if (!cat) return;
+  editingCatId = cat.id;
+  document.getElementById('new-cat-name').value = cat.name;
+  selectedColor = cat.color;
+  const hex = document.getElementById('color-hex');
+  if (hex) hex.value = getColors(cat.color).pip;
+  renderSwatches();
+
+  const hasSubs = pendingCats.some(c => c.parentId === cat.id);
+  renderParentSelect(cat.id);
+  const sel = document.getElementById('new-cat-parent');
+  if (hasSubs) {
+    sel.value = '';
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.value = cat.parentId || '';
+  }
+
+  document.getElementById('cat-submit-btn').textContent = 'Save';
+  document.getElementById('cat-cancel-btn').style.display = '';
+}
+
+function cancelCatEdit() {
+  editingCatId = null;
+  document.getElementById('new-cat-name').value = '';
+  const sel = document.getElementById('new-cat-parent');
+  if (sel) { sel.disabled = false; sel.value = ''; }
+  document.getElementById('cat-submit-btn').textContent = '+ Add';
+  document.getElementById('cat-cancel-btn').style.display = 'none';
   renderCfgCats();
 }
 
