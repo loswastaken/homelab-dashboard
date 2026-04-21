@@ -783,7 +783,7 @@
 ═══════════════════════════════════════════════════ */
 let APP   = { services: [], categories: [], settings: {} };
 let filter = 'all';
-let pollTimer, countdownTimer, countdownSecs = 60;
+let countdownTimer, countdownSecs = 60;
 let weatherTimer = null;
 let weatherState = { text: 'Weather disabled', error: false };
 let pendingCats = [];
@@ -857,7 +857,6 @@ function startPoll() {
 }
 
 function clearPoll() {
-  clearInterval(pollTimer);
   clearInterval(countdownTimer);
 }
 
@@ -1499,15 +1498,6 @@ function openSettings() {
   switchSettingsTab('general');
   document.getElementById('cfg-overlay').classList.add('show');
   document.body.classList.add('modal-open');
-}
-
-function copyApiKey() {
-  const key = document.getElementById('cfg-apikey').value;
-  navigator.clipboard.writeText(key).then(() => {
-    const btn = event.target;
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy', 1500);
-  });
 }
 
 function closeCfgModal() {
