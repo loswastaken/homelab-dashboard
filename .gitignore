@@ -1,5 +1,8 @@
 node_modules/
 pm2-agent/node_modules/
+pm2-agent/data/
+docker-agent/node_modules/
+docker-agent/data/
 
 # Live data lives in the NAS volume, not in the repo.
 # The committed data/services.json is a seed bundled into the Docker image.

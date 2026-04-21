@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name:          'pm2-agent',
+    name:          'docker-agent',
     script:        './index.js',
     cwd:           __dirname,
     watch:         false,

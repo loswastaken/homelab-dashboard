@@ -29,8 +29,10 @@ app.use(express.json());
 // ─── Data helpers ────────────────────────────────────────────────────────────
 
 function load() {
-  try   { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
-  catch { return defaults(); }
+  let data;
+  try   { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
+  catch { data = defaults(); }
+  return migrateData(data);
 }
 
 function save(d) {
@@ -54,8 +56,31 @@ function defaults() {
     },
     categories:  [],
     services:    [],
-    statusPages: []
+    statusPages: [],
+    pm2Agents:    [],
+    dockerAgents: []
   };
+}
+
+// Ensure new top-level arrays and per-service fields exist on data loaded from
+// older versions of services.json. Idempotent — safe to call on every load.
+function migrateData(data) {
+  if (!data || typeof data !== 'object') return defaults();
+  if (!Array.isArray(data.services))    data.services    = [];
+  if (!Array.isArray(data.categories))  data.categories  = [];
+  if (!Array.isArray(data.statusPages)) data.statusPages = [];
+  if (!Array.isArray(data.pm2Agents))    data.pm2Agents    = [];
+  if (!Array.isArray(data.dockerAgents)) data.dockerAgents = [];
+  for (const svc of data.services) {
+    if (!svc.checkType) {
+      svc.checkType = svc.url ? 'url' : 'pm2';
+    }
+    if (svc.pm2AgentId         === undefined) svc.pm2AgentId         = '';
+    if (svc.pm2ProcessName     === undefined) svc.pm2ProcessName     = '';
+    if (svc.dockerAgentId      === undefined) svc.dockerAgentId      = '';
+    if (svc.dockerContainerName === undefined) svc.dockerContainerName = '';
+  }
+  return data;
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -355,8 +380,12 @@ app.get('/api/public/status/:slug', (req, res) => {
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
 app.use((req, res, next) => {
-  // Report endpoint: accept valid API key in lieu of a session, with per-IP rate limiting
-  if (req.path.match(/^\/api\/services\/[^/]+\/report$/) && req.method === 'POST') {
+  // Agent endpoints (report + PM2/Docker agent register/discovery/monitored)
+  // accept a valid X-Api-Key in lieu of a session, with shared per-IP rate limiting.
+  const isReport = req.path.match(/^\/api\/services\/[^/]+\/report$/) && req.method === 'POST';
+  const isAgentApi = /^\/api\/(pm2|docker)\/agents\/(register$|[^/]+\/(discovery|monitored)$)/.test(req.path)
+    && (req.method === 'POST' || req.method === 'GET');
+  if (isReport || isAgentApi) {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const limit = checkReportLimit(ip);
     if (limit.count >= 50) {
@@ -514,12 +543,13 @@ function accumulateHourlyTick(svc, tick) {
   entry.uptime = denom > 0 ? parseFloat((entry.online / denom * 100).toFixed(2)) : null;
 }
 
-// Services without a URL rely on external pushes (PM2 agent, /report endpoint).
-// If nothing has reported within the stale window, treat the service as offline
-// so history keeps accumulating and the status flips. lastChecked stays frozen
-// at the time of the last real contact, which is what the UI needs for "X ago".
+// Services with checkType pm2/docker rely on external pushes (PM2/Docker agent,
+// /report endpoint). If nothing has reported within the stale window, treat the
+// service as offline so history keeps accumulating and the status flips.
+// lastChecked stays frozen at the time of the last real contact, which is what
+// the UI needs for "X ago".
 function isReportStale(svc, now, defaultThresholdSec) {
-  if (svc.url) return false;
+  if (svc.checkType !== 'pm2' && svc.checkType !== 'docker') return false;
   if (svc.checkEnabled === false) return false;
   if (svc.maintenance || svc.disabled) return false;
   const perSvc = Number(svc.reportInterval) > 0 ? Number(svc.reportInterval) * 4 : null;
@@ -733,6 +763,37 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
+// Validate + normalize checkType-specific fields. Mutates svc in place.
+// Returns { ok: true } on success or { ok: false, error } otherwise.
+function applyCheckTypeFields(svc) {
+  const allowed = ['url', 'pm2', 'docker'];
+  if (!allowed.includes(svc.checkType)) svc.checkType = 'url';
+  if (svc.checkType === 'url') {
+    if (!svc.url || !String(svc.url).trim()) {
+      return { ok: false, error: 'A URL is required for URL-checked services' };
+    }
+    svc.pm2AgentId = '';
+    svc.pm2ProcessName = '';
+    svc.dockerAgentId = '';
+    svc.dockerContainerName = '';
+  } else if (svc.checkType === 'pm2') {
+    svc.url = '';
+    svc.dockerAgentId = '';
+    svc.dockerContainerName = '';
+    if (!svc.pm2AgentId || !svc.pm2ProcessName) {
+      return { ok: false, error: 'Select a PM2 host and process' };
+    }
+  } else if (svc.checkType === 'docker') {
+    svc.url = '';
+    svc.pm2AgentId = '';
+    svc.pm2ProcessName = '';
+    if (!svc.dockerAgentId || !svc.dockerContainerName) {
+      return { ok: false, error: 'Select a Docker host and container' };
+    }
+  }
+  return { ok: true };
+}
+
 app.post('/api/services', (req, res) => {
   const d   = load();
   const svc = {
@@ -741,8 +802,13 @@ app.post('/api/services', (req, res) => {
     desc:         '',
     abbr:         '',
     cat:          '',
+    checkType:    'url',
     url:          '',
     port:         '',
+    pm2AgentId:         '',
+    pm2ProcessName:     '',
+    dockerAgentId:      '',
+    dockerContainerName: '',
     hasUI:        true,
     checkEnabled: true,
     disabled:     false,
@@ -753,6 +819,8 @@ app.post('/api/services', (req, res) => {
     lastChecked:  null,
     ...req.body
   };
+  const v = applyCheckTypeFields(svc);
+  if (!v.ok) return res.status(400).json({ error: v.error });
   d.services.push(svc);
   save(d);
   res.json(svc);
@@ -763,7 +831,10 @@ app.put('/api/services/:id', (req, res) => {
   const i    = d.services.findIndex(s => s.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: 'Not found' });
   const prev = d.services[i];
-  d.services[i] = { ...prev, ...req.body };
+  const next = { ...prev, ...req.body };
+  const v = applyCheckTypeFields(next);
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  d.services[i] = next;
   if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
     d.services[i].status = req.body.maintenance ? 'maintenance' : 'unknown';
   }
@@ -877,6 +948,132 @@ app.post('/api/services/:id/check', async (req, res) => {
   }
   res.json(svc);
 });
+
+// ─── API: Agent registration & discovery (PM2 + Docker) ─────────────────────
+//
+// Each agent kind ('pm2' | 'docker') maintains a list of hosts in
+// data.pm2Agents / data.dockerAgents. The agent-facing endpoints use the same
+// X-Api-Key as /report (enforced by the auth gate). The UI-facing list/delete
+// endpoints use the session like other admin APIs.
+
+function agentListFor(data, kind) {
+  if (kind === 'pm2')    return data.pm2Agents || (data.pm2Agents = []);
+  if (kind === 'docker') return data.dockerAgents || (data.dockerAgents = []);
+  return [];
+}
+
+function findAgent(list, id) {
+  return list.find(a => a.id === id) || null;
+}
+
+function mountAgentRoutes(kind) {
+  const base = `/api/${kind}/agents`;
+  const matchField = kind === 'pm2' ? 'pm2AgentId' : 'dockerAgentId';
+  const nameField  = kind === 'pm2' ? 'pm2ProcessName' : 'dockerContainerName';
+
+  // Agent announces itself. Idempotent by hostname — same host always gets
+  // back the same id so mappings don't break across agent restarts.
+  app.post(`${base}/register`, (req, res) => {
+    const d = load();
+    const list = agentListFor(d, kind);
+    const hostname = String(req.body?.hostname || '').trim() || 'unknown';
+    const name = String(req.body?.name || hostname).trim() || hostname;
+    let agent = list.find(a => a.hostname === hostname);
+    if (!agent) {
+      agent = {
+        id:       'agt_' + crypto.randomBytes(8).toString('hex'),
+        name,
+        hostname,
+        lastSeen: new Date().toISOString(),
+        items:    []
+      };
+      list.push(agent);
+    } else {
+      agent.lastSeen = new Date().toISOString();
+      // Keep the name in sync unless the UI has already renamed it.
+      if (!agent.renamed) agent.name = name;
+    }
+    save(d);
+    res.json({ agentId: agent.id, name: agent.name });
+  });
+
+  // Agent pushes its current discovery list (processes or containers).
+  app.post(`${base}/:id/discovery`, (req, res) => {
+    const d = load();
+    const agent = findAgent(agentListFor(d, kind), req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not registered' });
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    agent.items = items;
+    agent.lastSeen = new Date().toISOString();
+    save(d);
+    res.json({ ok: true, count: items.length });
+  });
+
+  // Agent pulls the list of services it should report on.
+  app.get(`${base}/:id/monitored`, (req, res) => {
+    const d = load();
+    const agent = findAgent(agentListFor(d, kind), req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not registered' });
+    const monitored = (d.services || [])
+      .filter(s => s[matchField] === agent.id && s.checkType === kind && !s.disabled && s[nameField])
+      .map(s => ({ serviceId: s.id, name: s[nameField] }));
+    res.json({ monitored });
+  });
+
+  // UI: list all registered agents for this kind.
+  app.get(base, (_, res) => {
+    const d = load();
+    const list = agentListFor(d, kind);
+    const now = Date.now();
+    res.json({
+      agents: list.map(a => ({
+        id:       a.id,
+        name:     a.name,
+        hostname: a.hostname,
+        lastSeen: a.lastSeen,
+        items:    (a.items || []).length,
+        stale:    a.lastSeen ? (now - Date.parse(a.lastSeen)) > 10 * 60 * 1000 : true
+      }))
+    });
+  });
+
+  // UI: fetch last-known discovery list (for the modal dropdown).
+  app.get(`${base}/:id/items`, (req, res) => {
+    const d = load();
+    const agent = findAgent(agentListFor(d, kind), req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    res.json({ items: agent.items || [] });
+  });
+
+  // UI: rename an agent.
+  app.put(`${base}/:id`, (req, res) => {
+    const d = load();
+    const agent = findAgent(agentListFor(d, kind), req.params.id);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    const newName = String(req.body?.name || '').trim();
+    if (!newName) return res.status(400).json({ error: 'Name is required' });
+    agent.name = newName;
+    agent.renamed = true;
+    save(d);
+    res.json({ agent });
+  });
+
+  // UI: remove an agent entry.
+  app.delete(`${base}/:id`, (req, res) => {
+    const d = load();
+    const list = agentListFor(d, kind);
+    const before = list.length;
+    const removed = list.filter(a => a.id !== req.params.id);
+    if (removed.length === before) return res.status(404).json({ error: 'Agent not found' });
+    if (kind === 'pm2')    d.pm2Agents    = removed;
+    if (kind === 'docker') d.dockerAgents = removed;
+    save(d);
+    res.json({ ok: true });
+  });
+}
+
+mountAgentRoutes('pm2');
+mountAgentRoutes('docker');
 
 // ─── API: Account ────────────────────────────────────────────────────────────
 

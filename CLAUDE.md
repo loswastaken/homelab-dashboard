@@ -125,6 +125,14 @@ sudo docker compose up -d
 | `DELETE` | `/api/status-pages/:id` | Delete a status page (auth) |
 | `GET` | `/status/:slug` | Serves the public status page HTML (**no auth**) |
 | `GET` | `/api/public/status/:slug` | Sanitized public status data — no service URLs, no event notes, categories only if explicitly revealed (**no auth**) |
+| `POST` | `/api/pm2/agents/register` | Agent registers itself (idempotent by hostname). **X-Api-Key** |
+| `POST` | `/api/pm2/agents/:id/discovery` | Agent pushes current process list + updates `lastSeen`. **X-Api-Key** |
+| `GET` | `/api/pm2/agents/:id/monitored` | Agent pulls `[{ serviceId, name }]` to report on. **X-Api-Key** |
+| `GET` | `/api/pm2/agents` | UI: list registered PM2 agents (with `stale` flag) |
+| `GET` | `/api/pm2/agents/:id/items` | UI: last-known process list (populates the modal dropdown) |
+| `PUT` | `/api/pm2/agents/:id` | UI: rename an agent |
+| `DELETE` | `/api/pm2/agents/:id` | UI: remove an agent entry |
+| `POST/GET/PUT/DELETE` | `/api/docker/agents/...` | Same shape as PM2 above, for Docker agents |
 
 ### Health Check (`ping`)
 
@@ -265,13 +273,63 @@ Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). L
 
 ---
 
+## Service Check Types
+
+Every service has an explicit `checkType: 'url' | 'pm2' | 'docker'`:
+
+- **`url`** — standard HTTP(S) health check (existing behavior). Requires `svc.url`.
+- **`pm2`** — status is pushed by a PM2 agent. Requires `svc.pm2AgentId` + `svc.pm2ProcessName`.
+- **`docker`** — status is pushed by a Docker agent. Requires `svc.dockerAgentId` + `svc.dockerContainerName`.
+
+`migrateData()` in [server.js](server.js) fills `checkType` on load: `url` if `svc.url` is non-empty, else `pm2` (preserves behavior for existing push-reported services; `docker` is strictly opt-in). `applyCheckTypeFields()` enforces per-type rules on create/edit and clears fields that belong to other types so stale data doesn't leak across edits.
+
+`checkAll()`'s URL ping already filters on `svc.url`, so pm2/docker services are naturally skipped. `isReportStale()` triggers the watchdog only when `checkType === 'pm2'` or `'docker'`.
+
+Top-level arrays on `data/services.json` hold registered agents: `pm2Agents: []` and `dockerAgents: []`. Entry shape: `{ id, name, hostname, lastSeen, items, renamed? }`. Agent IDs are stable per hostname (idempotent register). A `renamed: true` flag prevents register from overwriting a UI rename.
+
+---
+
 ## PM2 Agent (`pm2-agent/`)
 
-Runs on any host where PM2 manages processes. Polls `pm2 jlist` every 30s and POSTs status to the dashboard's `/api/services/:id/report` endpoint using the `X-Api-Key` header.
+Runs on any host where PM2 manages processes. The dashboard is the source of truth — the agent registers itself, pushes the full PM2 process list, then pulls back which services to report on.
 
-- **Process map:** `PM2_MAP` in `pm2-agent/index.js` — maps PM2 process names to dashboard service IDs
-- **Config:** `pm2-agent/ecosystem.config.js` — set `DASHBOARD_URL` and `REPORT_API_KEY` (from Settings → Report API Key)
-- **Auto-update:** `pm2-agent/update-agent.sh` — compares local vs remote git SHA, pulls + restarts only if changed. Add to cron: `*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh`
+Flow:
+
+1. **Register** — `POST /api/pm2/agents/register` with `{ name, hostname }`. Server returns a stable `agentId` (idempotent by hostname). Persisted to `pm2-agent/data/agent-id`.
+2. **Poll** every 30s (configurable via `POLL_INTERVAL_MS`):
+   - Run `pm2 jlist`, parse JSON.
+   - `POST /api/pm2/agents/:id/discovery` with `[{ name, status, restarts, uptime }]`.
+   - `GET /api/pm2/agents/:id/monitored` → `[{ serviceId, name }]`.
+   - For each monitored entry, match by process name and POST `{ status, desc }` to `/api/services/:serviceId/report`. Missing process → `{ status: 'offline', desc: 'process not found' }`.
+3. On HTTP 404 from the dashboard, the agent wipes its local `agent-id` and re-registers next poll (handles the case where the UI deleted the agent).
+
+Status mapping: `online → online`, `stopped / stopping → offline`, anything else (`errored`, `launching`, `one-launch-status`) → `degraded`.
+
+- **Config:** `pm2-agent/ecosystem.config.js` — set `DASHBOARD_URL`, `REPORT_API_KEY` (from Settings → API Key), and optional `AGENT_NAME` (defaults to `os.hostname()`).
+- **Auto-update:** `pm2-agent/update-agent.sh` — compares local vs remote git SHA, pulls + `pm2 restart` only if changed. Add to cron: `*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh`.
+- **No more `PM2_MAP`** — the mapping lives in the dashboard UI as a dropdown on each service's modal. Upgrading an existing PM2 agent host requires re-mapping each service once via the modal.
+
+---
+
+## Docker Agent (`docker-agent/`)
+
+Mirrors the PM2 agent. Runs on any host with Docker, needs socket access (user in the `docker` group, or mount `/var/run/docker.sock` if containerized).
+
+Flow mirrors PM2 agent: register → discover → pull monitored → report. Discovery source is `docker ps -a --format '{{json .}}'` parsed line-by-line. Health is parsed from the `Status` column via regex (`(healthy)` / `(unhealthy)` / `(health: starting)`).
+
+Status mapping `dockerToDashboard()`:
+
+- `running` + `healthy` (or no healthcheck) → **online**
+- `running` + `starting` (≥3 rising-edge transitions in last 10 min) → **degraded**, `desc: 'boot-loop: N restarts in 10m'`
+- `running` + `starting` (normal) → **online**, `desc: 'starting · ...'`
+- `running` + `unhealthy` → **degraded**
+- `restarting` / `paused` → **degraded**
+- `exited` / `dead` / `created` / `removing` → **offline**
+
+Boot-loop tracking is in-memory (`Map<containerId, number[]>` of timestamps captured on the **transition into** `starting`, pruned to the last 10 min on each poll). Agent restart resets it — acceptable because restarting the agent usually means the host is healthy again.
+
+- **Config:** `docker-agent/ecosystem.config.js` — same vars as PM2 agent (`DASHBOARD_URL`, `REPORT_API_KEY`, optional `AGENT_NAME`).
+- **Auto-update:** `docker-agent/update-agent.sh` — cron: `*/15 * * * * bash ~/homelab-dashboard/docker-agent/update-agent.sh`.
 
 ---
 
@@ -305,4 +363,4 @@ On first start with no `data/auth.json`, the app redirects to `/setup` for accou
 - `data/services.json` and `data/auth.json` should never be committed with real data.
 - Session store (`session-file-store`) logs are suppressed with `logFn: () => {}`.
 - `dailyHistory` and `events` on existing services start accumulating from the first deploy of this version — no retroactive data from the per-check `history[]` ticks.
-- **Push-reported services and stale reports:** if the PM2 agent (or any other `/report` source) stops sending updates, the watchdog in `checkAll()` flips the service to offline after `settings.reportStaleAfter` seconds and keeps accumulating offline ticks. This was added because a silent agent would otherwise leave the public status page showing a misleadingly-green banner. If you see unexpected offline flips, check the agent host first (`pm2 list`, `systemctl status`, agent's cron-driven `update-agent.sh`) rather than assuming the service itself is down.
+- **Push-reported services and stale reports:** if a PM2 or Docker agent (or any other `/report` source) stops sending updates, the watchdog in `checkAll()` flips the service to offline after `settings.reportStaleAfter` seconds and keeps accumulating offline ticks. This was added because a silent agent would otherwise leave the public status page showing a misleadingly-green banner. If you see unexpected offline flips, check the agent host first (`pm2 list`, the Connected Agents list in Settings → General, agent's cron-driven `update-agent.sh`) rather than assuming the service itself is down.

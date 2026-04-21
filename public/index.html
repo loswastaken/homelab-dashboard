@@ -283,6 +283,27 @@
     .modal-sec::after { content: ''; flex:1; height: 1px; background: var(--b0); }
 
     /* settings tabs */
+    .seg-strip { display: inline-flex; background: var(--bg-surf); border: 1px solid var(--b0); border-radius: 8px; padding: 2px; }
+    .seg-btn   { padding: 6px 14px; font-size: 12px; font-family: 'Sora', sans-serif;
+                 font-weight: 500; color: var(--ts); background: transparent; border: none;
+                 border-radius: 6px; cursor: pointer; transition: all .15s; }
+    .seg-btn:hover  { color: var(--tp); background: var(--b0); }
+    .seg-btn.active { color: var(--tp); background: var(--bg-hi); }
+
+    .agent-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                 padding: 8px 10px; border: 1px solid var(--b0); border-radius: 6px;
+                 background: var(--bg-surf); margin-bottom: 6px; font-size: 12px; }
+    .agent-row .meta { display: flex; flex-direction: column; gap: 2px; }
+    .agent-row .title { font-weight: 500; color: var(--tp); }
+    .agent-row .sub   { font-size: 11px; color: var(--tm); font-family: 'JetBrains Mono', monospace; }
+    .agent-row.stale .title::after { content: ' · stale'; color: var(--amber); font-weight: 400; }
+    .agent-empty { font-size: 12px; color: var(--tm); padding: 10px 0; }
+
+    .type-pill { font-size: 9px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase;
+                 padding: 2px 6px; border-radius: 4px; border: 1px solid var(--b0); color: var(--tm); }
+    .type-pill.pm2    { color: #c4884a; border-color: rgba(196,136,74,.35); background: rgba(196,136,74,.10); }
+    .type-pill.docker { color: #5285b8; border-color: rgba(82,133,184,.35); background: rgba(82,133,184,.10); }
+
     .settings-tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg-surf);
       border: 1px solid var(--b1); border-radius: 8px; padding: 3px;
       margin-bottom: 18px; }
@@ -556,9 +577,40 @@
       </div>
 
       <div class="form-group">
-        <label class="form-lbl">Check URL <span>(leave blank to skip auto-check)</span></label>
+        <label class="form-lbl">Check Type</label>
+        <div class="seg-strip" id="f-check-type-strip" role="tablist">
+          <button type="button" class="seg-btn active" data-check-type="url"    onclick="setCheckType('url')">URL</button>
+          <button type="button" class="seg-btn"        data-check-type="pm2"    onclick="setCheckType('pm2')">PM2</button>
+          <button type="button" class="seg-btn"        data-check-type="docker" onclick="setCheckType('docker')">Docker</button>
+        </div>
+        <input type="hidden" id="f-check-type" value="url">
+      </div>
+
+      <div class="form-group when-url">
+        <label class="form-lbl">Check URL</label>
         <input class="form-inp" id="f-url" placeholder="http://10.24.4.26:32400">
-        <div class="toggle-desc" style="margin-top:6px;">Leave blank for services pushed via the PM2 agent or /report API. They're marked offline if no report arrives within the stale threshold (Settings → General).</div>
+      </div>
+
+      <div class="form-group when-pm2" style="display:none">
+        <label class="form-lbl">PM2 Host</label>
+        <select class="form-inp" id="f-pm2-agent" onchange="onAgentSelect('pm2')"></select>
+        <label class="form-lbl" style="margin-top:10px">Process</label>
+        <select class="form-inp" id="f-pm2-process"></select>
+        <div class="toggle-desc" style="margin-top:6px;">
+          <a href="#" onclick="togglePm2Manual(event)" id="pm2-manual-link">Enter a process name manually</a>
+        </div>
+        <input class="form-inp" id="f-pm2-process-manual" placeholder="my-app" style="display:none;margin-top:6px">
+      </div>
+
+      <div class="form-group when-docker" style="display:none">
+        <label class="form-lbl">Docker Host</label>
+        <select class="form-inp" id="f-docker-agent" onchange="onAgentSelect('docker')"></select>
+        <label class="form-lbl" style="margin-top:10px">Container</label>
+        <select class="form-inp" id="f-docker-container"></select>
+        <div class="toggle-desc" style="margin-top:6px;">
+          <a href="#" onclick="toggleDockerManual(event)" id="docker-manual-link">Enter a container name manually</a>
+        </div>
+        <input class="form-inp" id="f-docker-container-manual" placeholder="plex" style="display:none;margin-top:6px">
       </div>
 
       <div class="modal-sec">Options</div>
@@ -652,6 +704,9 @@
           <label class="form-lbl">Stale Report Threshold <span>(seconds, for push-reported services)</span></label>
           <input class="form-inp" id="cfg-stale" type="number" min="10" max="3600" placeholder="120">
         </div>
+
+        <div class="modal-sec" style="margin-top:16px">Connected Agents</div>
+        <div id="cfg-agent-list" style="display:flex;flex-direction:column;gap:6px"></div>
       </div>
 
       <div class="settings-panel" data-panel="account" data-footer="hide">
@@ -747,13 +802,21 @@
       <div class="settings-panel" data-panel="apikey" data-footer="hide">
         <div class="modal-sec">Report API Key</div>
         <div class="form-group">
-          <label class="form-lbl">Used by external agents (PM2, etc.) via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
+          <label class="form-lbl">Used by the PM2 and Docker agents via <span style="font-family:'JetBrains Mono',monospace">X-Api-Key</span> header</label>
           <div style="display:flex;gap:8px">
             <input class="form-inp" id="cfg-apikey" readonly
               style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ts);cursor:default">
             <button class="btn-sm" onclick="copyApiKey(this)" style="flex-shrink:0">Copy</button>
           </div>
         </div>
+        <div class="modal-sec" style="margin-top:16px">Install the PM2 agent</div>
+        <div class="toggle-desc" style="margin-bottom:8px">Run on any host where PM2 manages processes. The agent registers itself and appears in the service modal's PM2 Host dropdown.</div>
+        <pre id="pm2-install-snippet" style="font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg-surf);border:1px solid var(--b0);border-radius:6px;padding:10px;white-space:pre-wrap;margin:0 0 8px;color:var(--ts)"></pre>
+        <button class="btn-sm" onclick="copySnippet('pm2-install-snippet', this)">Copy</button>
+        <div class="modal-sec" style="margin-top:16px">Install the Docker agent</div>
+        <div class="toggle-desc" style="margin-bottom:8px">Run on any host with Docker. The agent needs access to the Docker socket (member of the <span style="font-family:'JetBrains Mono',monospace">docker</span> group, or mount <span style="font-family:'JetBrains Mono',monospace">/var/run/docker.sock</span>).</div>
+        <pre id="docker-install-snippet" style="font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg-surf);border:1px solid var(--b0);border-radius:6px;padding:10px;white-space:pre-wrap;margin:0 0 8px;color:var(--ts)"></pre>
+        <button class="btn-sm" onclick="copySnippet('docker-install-snippet', this)">Copy</button>
       </div>
 
       <div class="settings-panel" data-panel="updates">
@@ -995,6 +1058,11 @@ function renderCard(s) {
     : '';
   const pinBtn  = isDisabled ? '' : `<button class="act-btn${s.pinnedAt ? ' pin-on' : ''}" onclick="togglePin('${s.id}')">${s.pinnedAt ? 'Pinned' : 'Pin'}</button>`;
   const checked = (!isMaint && !isDisabled && !s.checkEnabled) ? '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>' : '';
+  const typePill = s.checkType === 'pm2'
+    ? `<span class="type-pill pm2" title="PM2 agent">PM2</span>`
+    : s.checkType === 'docker'
+      ? `<span class="type-pill docker" title="Docker agent">DOCKER</span>`
+      : '';
   const lastChk = s.lastChecked
     ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
     : '—';
@@ -1020,6 +1088,7 @@ function renderCard(s) {
           </div>
           <div class="card-actions">
             ${resBtn}
+            ${typePill}
             ${checked}
             ${pinBtn}
             <button class="act-btn" onclick="openEditModal('${s.id}')">✎</button>
@@ -1326,6 +1395,10 @@ function tick() {
 /* ═══════════════════════════════════════════════════
    SERVICE MODAL
 ═══════════════════════════════════════════════════ */
+/* Service modal — per-modal state for agent dropdowns. Hydrated by
+   loadAgents() when the modal opens and refreshed on agent selection. */
+let svcAgentCache = { pm2: [], docker: [] };
+
 function openAddModal() {
   document.getElementById('modal-title').textContent = 'Add Service';
   document.getElementById('edit-id').value = '';
@@ -1339,6 +1412,8 @@ function openAddModal() {
   document.getElementById('f-maint').checked    = false;
   document.getElementById('f-disabled').checked = false;
   populateCatSelect('');
+  setCheckType('url');
+  hydrateAgentSelectors({ pm2AgentId: '', pm2ProcessName: '', dockerAgentId: '', dockerContainerName: '' });
   document.getElementById('svc-overlay').classList.add('show');
   document.body.classList.add('modal-open');
 }
@@ -1358,8 +1433,120 @@ function openEditModal(id) {
   document.getElementById('f-maint').checked    = !!s.maintenance;
   document.getElementById('f-disabled').checked = !!s.disabled;
   populateCatSelect(s.cat);
+  setCheckType(s.checkType || 'url');
+  hydrateAgentSelectors({
+    pm2AgentId:          s.pm2AgentId || '',
+    pm2ProcessName:      s.pm2ProcessName || '',
+    dockerAgentId:       s.dockerAgentId || '',
+    dockerContainerName: s.dockerContainerName || ''
+  });
   document.getElementById('svc-overlay').classList.add('show');
   document.body.classList.add('modal-open');
+}
+
+function setCheckType(t) {
+  const valid = ['url','pm2','docker'].includes(t) ? t : 'url';
+  document.getElementById('f-check-type').value = valid;
+  document.querySelectorAll('#f-check-type-strip .seg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.checkType === valid);
+  });
+  document.querySelector('.when-url').style.display    = valid === 'url'    ? '' : 'none';
+  document.querySelector('.when-pm2').style.display    = valid === 'pm2'    ? '' : 'none';
+  document.querySelector('.when-docker').style.display = valid === 'docker' ? '' : 'none';
+}
+
+async function hydrateAgentSelectors(preselect) {
+  // Always fetch both lists so switching the segment control feels instant.
+  try {
+    const [pm2, dock] = await Promise.all([
+      fetch('/api/pm2/agents').then(r => r.ok ? r.json() : { agents: [] }),
+      fetch('/api/docker/agents').then(r => r.ok ? r.json() : { agents: [] })
+    ]);
+    svcAgentCache.pm2    = pm2.agents    || [];
+    svcAgentCache.docker = dock.agents || [];
+  } catch {
+    svcAgentCache = { pm2: [], docker: [] };
+  }
+  populateAgentSelect('pm2',    preselect.pm2AgentId);
+  populateAgentSelect('docker', preselect.dockerAgentId);
+  await loadAgentItems('pm2',    preselect.pm2AgentId,    preselect.pm2ProcessName);
+  await loadAgentItems('docker', preselect.dockerAgentId, preselect.dockerContainerName);
+}
+
+function populateAgentSelect(kind, selectedId) {
+  const sel = document.getElementById(`f-${kind}-agent`);
+  const list = svcAgentCache[kind] || [];
+  if (list.length === 0) {
+    sel.innerHTML = `<option value="">No ${kind === 'pm2' ? 'PM2' : 'Docker'} agents connected — see Settings → API Key</option>`;
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = list.map(a => {
+    const label = a.stale ? `${a.name} · stale` : `${a.name}`;
+    return `<option value="${a.id}" ${a.id === selectedId ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+  if (!selectedId && list.length) sel.value = list[0].id;
+}
+
+async function loadAgentItems(kind, agentId, selectedName) {
+  const itemSel = document.getElementById(kind === 'pm2' ? 'f-pm2-process' : 'f-docker-container');
+  if (!agentId) {
+    itemSel.innerHTML = `<option value="">Select a host first</option>`;
+    itemSel.disabled = true;
+    return;
+  }
+  itemSel.disabled = false;
+  itemSel.innerHTML = `<option value="">Loading…</option>`;
+  try {
+    const res = await fetch(`/api/${kind}/agents/${agentId}/items`);
+    const data = res.ok ? await res.json() : { items: [] };
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) {
+      itemSel.innerHTML = `<option value="">No ${kind === 'pm2' ? 'processes' : 'containers'} reported yet</option>`;
+      return;
+    }
+    const hasPreselected = selectedName && items.some(i => i.name === selectedName);
+    const customOption = selectedName && !hasPreselected
+      ? `<option value="${selectedName}" selected>${selectedName} (custom)</option>` : '';
+    itemSel.innerHTML = customOption + items.map(i => {
+      const tag = kind === 'pm2'
+        ? (i.status || 'unknown')
+        : (i.state || (i.status || '').split(' ')[0] || 'unknown');
+      return `<option value="${i.name}" ${i.name === selectedName ? 'selected' : ''}>${i.name} (${tag})</option>`;
+    }).join('');
+  } catch {
+    itemSel.innerHTML = `<option value="">Failed to load — try again</option>`;
+  }
+}
+
+async function onAgentSelect(kind) {
+  const agentId = document.getElementById(`f-${kind}-agent`).value;
+  await loadAgentItems(kind, agentId, '');
+}
+
+function togglePm2Manual(e) {
+  e?.preventDefault();
+  const sel = document.getElementById('f-pm2-process');
+  const inp = document.getElementById('f-pm2-process-manual');
+  const link = document.getElementById('pm2-manual-link');
+  const manual = inp.style.display === 'none';
+  inp.style.display = manual ? '' : 'none';
+  sel.style.display = manual ? 'none' : '';
+  link.textContent = manual ? 'Pick from list instead' : 'Enter a process name manually';
+  if (manual) inp.value = sel.value || '';
+}
+
+function toggleDockerManual(e) {
+  e?.preventDefault();
+  const sel = document.getElementById('f-docker-container');
+  const inp = document.getElementById('f-docker-container-manual');
+  const link = document.getElementById('docker-manual-link');
+  const manual = inp.style.display === 'none';
+  inp.style.display = manual ? '' : 'none';
+  sel.style.display = manual ? 'none' : '';
+  link.textContent = manual ? 'Pick from list instead' : 'Enter a container name manually';
+  if (manual) inp.value = sel.value || '';
 }
 
 function populateCatSelect(selected) {
@@ -1380,13 +1567,31 @@ function closeSvcModal() {
 
 async function submitSvc() {
   const id   = document.getElementById('edit-id').value;
+  const checkType = document.getElementById('f-check-type').value || 'url';
+
+  // The manual text input takes precedence when visible — that's how the user
+  // opts out of the discovered-list and names something not currently running.
+  const pm2ManualVisible    = document.getElementById('f-pm2-process-manual').style.display !== 'none';
+  const dockerManualVisible = document.getElementById('f-docker-container-manual').style.display !== 'none';
+  const pm2ProcessName      = (pm2ManualVisible
+    ? document.getElementById('f-pm2-process-manual').value
+    : document.getElementById('f-pm2-process').value).trim();
+  const dockerContainerName = (dockerManualVisible
+    ? document.getElementById('f-docker-container-manual').value
+    : document.getElementById('f-docker-container').value).trim();
+
   const body = {
     name:         document.getElementById('f-name').value.trim(),
     abbr:         document.getElementById('f-abbr').value.trim().toUpperCase().slice(0,4),
     desc:         document.getElementById('f-desc').value.trim(),
     cat:          document.getElementById('f-cat').value,
-    url:          document.getElementById('f-url').value.trim(),
+    checkType,
+    url:          checkType === 'url' ? document.getElementById('f-url').value.trim() : '',
     port:         document.getElementById('f-port').value.trim(),
+    pm2AgentId:          checkType === 'pm2'    ? document.getElementById('f-pm2-agent').value    : '',
+    pm2ProcessName:      checkType === 'pm2'    ? pm2ProcessName : '',
+    dockerAgentId:       checkType === 'docker' ? document.getElementById('f-docker-agent').value : '',
+    dockerContainerName: checkType === 'docker' ? dockerContainerName : '',
     hasUI:        document.getElementById('f-hasui').checked,
     checkEnabled: document.getElementById('f-check').checked,
     maintenance:  document.getElementById('f-maint').checked,
@@ -1396,9 +1601,27 @@ async function submitSvc() {
     alert('Name, abbreviation, and category are required.');
     return;
   }
+  if (checkType === 'url' && !body.url) {
+    alert('A URL is required for URL-checked services.');
+    return;
+  }
+  if (checkType === 'pm2' && (!body.pm2AgentId || !body.pm2ProcessName)) {
+    alert('Select a PM2 host and process (or enter a process name manually).');
+    return;
+  }
+  if (checkType === 'docker' && (!body.dockerAgentId || !body.dockerContainerName)) {
+    alert('Select a Docker host and container (or enter a container name manually).');
+    return;
+  }
   const method = id ? 'PUT' : 'POST';
   const url    = id ? `/api/services/${id}` : '/api/services';
-  await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!res.ok) {
+    let msg = 'Failed to save service.';
+    try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+    alert(msg);
+    return;
+  }
   closeSvcModal();
   await doRefreshAll();
 }
@@ -1450,13 +1673,66 @@ async function loadApiKeyIntoField() {
   const field = document.getElementById('cfg-apikey');
   if (!field) return;
   field.value = 'Loading…';
+  let apiKey = '';
   try {
     const res = await fetch('/api/auth/api-key');
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const { apiKey } = await res.json();
+    apiKey = (await res.json()).apiKey || '';
     field.value = apiKey || '—';
   } catch {
     field.value = '—';
+  }
+  renderAgentSnippets(apiKey);
+}
+
+function renderAgentSnippets(apiKey) {
+  const dashUrl = window.location.origin;
+  const key     = apiKey || 'PASTE_KEY_FROM_DASHBOARD_SETTINGS';
+  const pm2El = document.getElementById('pm2-install-snippet');
+  const dkEl  = document.getElementById('docker-install-snippet');
+  if (pm2El) {
+    pm2El.textContent =
+      '# On the host, as the user that runs PM2:\n' +
+      'cd ~ && git clone https://github.com/loswastaken/homelab-dashboard.git\n' +
+      'cd homelab-dashboard/pm2-agent\n' +
+      '\n' +
+      '# Edit ecosystem.config.js and set:\n' +
+      '#   DASHBOARD_URL:   ' + dashUrl + '\n' +
+      '#   REPORT_API_KEY:  ' + key + '\n' +
+      '\n' +
+      'pm2 start ecosystem.config.js\n' +
+      'pm2 save\n' +
+      '\n' +
+      '# Auto-update every 15 min (optional):\n' +
+      '(crontab -l 2>/dev/null; echo "*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh >> ~/pm2-agent-update.log 2>&1") | crontab -';
+  }
+  if (dkEl) {
+    dkEl.textContent =
+      '# On the host, as a user in the `docker` group:\n' +
+      'cd ~ && git clone https://github.com/loswastaken/homelab-dashboard.git\n' +
+      'cd homelab-dashboard/docker-agent\n' +
+      '\n' +
+      '# Edit ecosystem.config.js and set:\n' +
+      '#   DASHBOARD_URL:   ' + dashUrl + '\n' +
+      '#   REPORT_API_KEY:  ' + key + '\n' +
+      '\n' +
+      'pm2 start ecosystem.config.js\n' +
+      'pm2 save\n' +
+      '\n' +
+      '# Auto-update every 15 min (optional):\n' +
+      '(crontab -l 2>/dev/null; echo "*/15 * * * * bash ~/homelab-dashboard/docker-agent/update-agent.sh >> ~/docker-agent-update.log 2>&1") | crontab -';
+  }
+}
+
+function copySnippet(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const text = el.textContent || '';
+  const done = () => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done).catch(() => execCopy(text, done));
+  } else {
+    execCopy(text, done);
   }
 }
 
@@ -1495,9 +1771,88 @@ function openSettings() {
   document.getElementById('acct-msg').textContent  = '';
   renderCfgCats();
   renderSwatches();
+  renderConnectedAgents();
   switchSettingsTab('general');
   document.getElementById('cfg-overlay').classList.add('show');
   document.body.classList.add('modal-open');
+}
+
+async function renderConnectedAgents() {
+  const box = document.getElementById('cfg-agent-list');
+  if (!box) return;
+  box.innerHTML = '<div class="agent-empty">Loading…</div>';
+  let pm2 = [], dk = [];
+  try {
+    const [a, b] = await Promise.all([
+      fetch('/api/pm2/agents').then(r => r.ok ? r.json() : { agents: [] }),
+      fetch('/api/docker/agents').then(r => r.ok ? r.json() : { agents: [] })
+    ]);
+    pm2 = Array.isArray(a.agents) ? a.agents : [];
+    dk  = Array.isArray(b.agents) ? b.agents : [];
+  } catch {}
+  const rows = [
+    ...pm2.map(a => ({ kind: 'pm2',    a })),
+    ...dk.map(a  => ({ kind: 'docker', a }))
+  ];
+  if (!rows.length) {
+    box.innerHTML = '<div class="agent-empty">No agents connected. See Settings → API Key for install instructions.</div>';
+    return;
+  }
+  box.innerHTML = '';
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  for (const { kind, a } of rows) {
+    const stale = a.stale ? ' stale' : '';
+    const count = typeof a.items === 'number' ? a.items : (Array.isArray(a.items) ? a.items.length : 0);
+    const last  = a.lastSeen ? relTime(a.lastSeen) : 'never';
+    const row = document.createElement('div');
+    row.className = 'agent-row' + stale;
+    row.innerHTML =
+      '<div class="meta">'
+      +   '<div class="title"><span class="type-pill ' + kind + '">' + kind + '</span> '
+      +     esc(a.name || a.hostname || a.id) + '</div>'
+      +   '<div class="sub">' + esc(a.hostname || '') + ' · ' + count + ' items · seen ' + last + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px">'
+      +   '<button class="btn-sm" data-act="rename">Rename</button>'
+      +   '<button class="btn-sm btn-danger" data-act="delete">Delete</button>'
+      + '</div>';
+    row.querySelector('[data-act="rename"]').onclick = () => renameAgent(kind, a);
+    row.querySelector('[data-act="delete"]').onclick = () => deleteAgent(kind, a);
+    box.appendChild(row);
+  }
+}
+
+function relTime(iso) {
+  const t = new Date(iso).getTime();
+  if (!t) return 'never';
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60)    return s + 's ago';
+  if (s < 3600)  return Math.round(s / 60)   + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+
+async function renameAgent(kind, a) {
+  const name = prompt('Rename agent:', a.name || a.hostname || '');
+  if (name == null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const res = await fetch('/api/' + kind + '/agents/' + encodeURIComponent(a.id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: trimmed })
+  });
+  if (res.ok) renderConnectedAgents();
+  else        alert('Rename failed.');
+}
+
+async function deleteAgent(kind, a) {
+  if (!confirm('Remove agent "' + (a.name || a.hostname || a.id) + '"? Services pointing at it will stop receiving reports until remapped.')) return;
+  const res = await fetch('/api/' + kind + '/agents/' + encodeURIComponent(a.id), { method: 'DELETE' });
+  if (res.ok) renderConnectedAgents();
+  else        alert('Delete failed.');
 }
 
 function closeCfgModal() {

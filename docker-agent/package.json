@@ -1,7 +1,7 @@
 {
-  "name": "pm2-agent",
+  "name": "docker-agent",
   "version": "1.0.0",
-  "description": "Reports PM2 process status to homelab-dashboard (register + discover + report)",
+  "description": "Reports Docker container status to homelab-dashboard (register + discover + report)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

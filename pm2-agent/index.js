@@ -1,15 +1,22 @@
 const { execSync } = require('child_process');
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
 const http = require('http');
+const https = require('https');
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:55964';
 const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS || '30000', 10);
 const API_KEY       = process.env.REPORT_API_KEY || '';
+const AGENT_NAME    = process.env.AGENT_NAME || os.hostname() || 'pm2-agent';
 
-// Map PM2 process names → dashboard service IDs.
-// Add/remove entries to match your `pm2 list` output and your dashboard service IDs.
-const PM2_MAP = {
-  'my-app': 'service-id-from-dashboard',
-};
+const DATA_DIR = path.join(__dirname, 'data');
+const ID_FILE  = path.join(DATA_DIR, 'agent-id');
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+let agentId = '';
+try { agentId = fs.readFileSync(ID_FILE, 'utf8').trim(); } catch {}
 
 // ─── PM2 ─────────────────────────────────────────────────────────────────────
 
@@ -19,9 +26,9 @@ function pm2List() {
 }
 
 function pm2ToDashboardStatus(pm2Status) {
-  if (pm2Status === 'online')                          return 'online';
+  if (pm2Status === 'online')                              return 'online';
   if (pm2Status === 'stopped' || pm2Status === 'stopping') return 'offline';
-  return 'degraded'; // errored, launching, one-launch, etc.
+  return 'degraded'; // errored, launching, one-launch-status, etc.
 }
 
 function fmtUptime(ms) {
@@ -33,68 +40,124 @@ function fmtUptime(ms) {
   return `${Math.floor(s / 86400)}d`;
 }
 
-// ─── Dashboard API ────────────────────────────────────────────────────────────
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
 
-function put(serviceId, body) {
+function httpJson(method, url, body) {
   return new Promise((resolve, reject) => {
-    const payload = JSON.stringify(body);
-    const url     = new URL(`${DASHBOARD_URL}/api/services/${serviceId}/report`);
-
-    const req = http.request({
-      hostname: url.hostname,
-      port:     url.port || 80,
-      path:     url.pathname,
-      method:   'POST',
+    const parsed = new URL(url);
+    const mod = parsed.protocol === 'https:' ? https : http;
+    const payload = body ? JSON.stringify(body) : '';
+    const req = mod.request({
+      hostname: parsed.hostname,
+      port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path:     parsed.pathname + (parsed.search || ''),
+      method,
       headers: {
-        'Content-Type':   'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-        ...(API_KEY ? { 'X-Api-Key': API_KEY } : {}),
-      },
+        'Accept':       'application/json',
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}),
+        ...(API_KEY ? { 'X-Api-Key': API_KEY } : {})
+      }
     }, res => {
-      res.resume();
-      resolve(res.statusCode);
+      let buf = '';
+      res.on('data', c => buf += c);
+      res.on('end', () => {
+        if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${buf.slice(0, 200)}`));
+        try { resolve(buf ? JSON.parse(buf) : {}); }
+        catch { reject(new Error('Invalid JSON from dashboard')); }
+      });
     });
-
-    req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.setTimeout(8000, () => { req.destroy(); reject(new Error('timeout')); });
     req.on('error', reject);
-    req.write(payload);
+    if (payload) req.write(payload);
     req.end();
   });
+}
+
+// ─── Registration ─────────────────────────────────────────────────────────────
+
+async function register() {
+  try {
+    const out = await httpJson('POST', `${DASHBOARD_URL}/api/pm2/agents/register`, {
+      name:     AGENT_NAME,
+      hostname: os.hostname()
+    });
+    if (out.agentId && out.agentId !== agentId) {
+      agentId = out.agentId;
+      fs.writeFileSync(ID_FILE, agentId);
+    }
+    console.log(`[${ts()}] Registered as ${AGENT_NAME} → ${agentId}`);
+  } catch (err) {
+    console.error(`[${ts()}] Register failed: ${err.message}`);
+  }
 }
 
 // ─── Poll ─────────────────────────────────────────────────────────────────────
 
 async function poll() {
+  if (!agentId) await register();
+  if (!agentId) return;
+
   let procs;
-  try {
-    procs = pm2List();
-  } catch (err) {
+  try { procs = pm2List(); }
+  catch (err) {
     console.error(`[${ts()}] pm2 jlist failed: ${err.message}`);
     return;
   }
 
-  for (const proc of procs) {
-    const serviceId = PM2_MAP[proc.name];
-    if (!serviceId) continue;
-
-    const env      = proc.pm2_env || {};
-    const status   = pm2ToDashboardStatus(env.status);
-    const restarts = env.restart_time != null ? env.restart_time : 0;
-    const uptime   = env.pm_uptime ? fmtUptime(Date.now() - env.pm_uptime) : null;
-
-    const body = {
-      status,
-      // Overwrite desc with live PM2 stats so the dashboard shows something useful.
-      desc: uptime
-        ? `restarts: ${restarts} · up ${uptime}`
-        : `restarts: ${restarts} · ${env.status}`,
+  const discovery = procs.map(p => {
+    const env = p.pm2_env || {};
+    return {
+      name:     p.name,
+      status:   env.status || 'unknown',
+      restarts: env.restart_time != null ? env.restart_time : 0,
+      uptime:   env.pm_uptime ? fmtUptime(Date.now() - env.pm_uptime) : null
     };
+  });
 
+  try {
+    await httpJson('POST', `${DASHBOARD_URL}/api/pm2/agents/${agentId}/discovery`, { items: discovery });
+  } catch (err) {
+    if (/HTTP 404/.test(err.message)) {
+      console.warn(`[${ts()}] Agent id not recognized, re-registering`);
+      agentId = '';
+      try { fs.unlinkSync(ID_FILE); } catch {}
+      return;
+    }
+    console.error(`[${ts()}] Discovery push failed: ${err.message}`);
+    return;
+  }
+
+  let monitored;
+  try {
+    const r = await httpJson('GET', `${DASHBOARD_URL}/api/pm2/agents/${agentId}/monitored`);
+    monitored = Array.isArray(r.monitored) ? r.monitored : [];
+  } catch (err) {
+    console.error(`[${ts()}] Monitored pull failed: ${err.message}`);
+    return;
+  }
+
+  for (const m of monitored) {
+    const proc = procs.find(p => p.name === m.name);
+    let body;
+    if (!proc) {
+      body = { status: 'offline', desc: 'process not found' };
+    } else {
+      const env = proc.pm2_env || {};
+      const status = pm2ToDashboardStatus(env.status);
+      const restarts = env.restart_time != null ? env.restart_time : 0;
+      const uptime   = env.pm_uptime ? fmtUptime(Date.now() - env.pm_uptime) : null;
+      body = {
+        status,
+        desc: uptime
+          ? `restarts: ${restarts} · up ${uptime}`
+          : `restarts: ${restarts} · ${env.status}`
+      };
+    }
     try {
-      const code = await put(serviceId, body);
-      console.log(`[${ts()}] ${proc.name} → ${status} (HTTP ${code})`);
+      await httpJson('POST', `${DASHBOARD_URL}/api/services/${m.serviceId}/report`, body);
+      console.log(`[${ts()}] ${m.name} → ${body.status}`);
     } catch (err) {
-      console.error(`[${ts()}] Failed to update ${proc.name}: ${err.message}`);
+      console.error(`[${ts()}] Report failed for ${m.name}: ${err.message}`);
     }
   }
 }
@@ -106,5 +169,8 @@ function ts() {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 console.log(`[${ts()}] pm2-agent starting — polling every ${POLL_MS / 1000}s → ${DASHBOARD_URL}`);
-poll();
-setInterval(poll, POLL_MS);
+(async () => {
+  await register();
+  await poll();
+  setInterval(poll, POLL_MS);
+})();
