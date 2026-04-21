@@ -413,7 +413,7 @@ async function getWeatherData(force = false) {
 
 async function checkAll() {
   const toCheck = load().services
-    .filter(s => s.url && s.checkEnabled && !s.maintenance)
+    .filter(s => s.url && s.checkEnabled && !s.maintenance && !s.disabled)
     .map(s => ({ id: s.id, url: s.url }));
 
   const results = await Promise.all(
@@ -442,6 +442,7 @@ async function checkAll() {
   }
 
   for (const svc of fresh.services) {
+    if (svc.disabled) continue;
     if (svc.maintenance) {
       svc.history     = pushHistory(svc.history, 3);
       accumulateDailyTick(svc, 3);
@@ -496,6 +497,7 @@ app.post('/api/services', (req, res) => {
     port:         '',
     hasUI:        true,
     checkEnabled: true,
+    disabled:     false,
     status:       'unknown',
     response:     '—',
     uptime:       '—',
@@ -516,6 +518,14 @@ app.put('/api/services/:id', (req, res) => {
   d.services[i] = { ...prev, ...req.body };
   if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
     d.services[i].status = req.body.maintenance ? 'maintenance' : 'unknown';
+  }
+  if (req.body.disabled !== undefined && !!req.body.disabled !== !!prev.disabled) {
+    if (req.body.disabled) {
+      d.services[i].maintenance = false;
+      d.services[i].status = 'disabled';
+    } else {
+      d.services[i].status = 'unknown';
+    }
   }
   save(d);
   res.json(d.services[i]);
@@ -726,6 +736,7 @@ app.get('/api/history', (req, res) => {
     abbr:         s.abbr,
     cat:          s.cat,
     status:       s.status,
+    disabled:     !!s.disabled,
     maintenance:  !!s.maintenance,
     uptime:       s.uptime,
     dailyHistory:  (s.dailyHistory  || []).slice(-30),

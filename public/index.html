@@ -124,7 +124,7 @@
     .content { padding: 26px 40px 60px; flex: 1; }
 
     /* ─── Stats ─── */
-    .stats { display: grid; grid-template-columns: repeat(5,1fr); gap: 10px; margin-bottom: 24px; }
+    .stats { display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; margin-bottom: 24px; }
     .stat { background: var(--bg-surf); border: 1px solid var(--b0); border-radius: 8px;
       padding: 12px 14px; transition: border-color .2s; }
     .stat:hover { border-color: var(--b1); }
@@ -180,11 +180,13 @@
     .badge.offline      { background: var(--red-bg);    color: var(--red);   }
     .badge.unknown      { background: var(--b0);        color: var(--ts);    }
     .badge.maintenance  { background: var(--slate-bg);  color: var(--slate); }
+    .badge.disabled     { background: rgba(237,232,213,.04); color: var(--tm); }
     .badge.online       .bdot { background: var(--green); }
     .badge.degraded     .bdot { background: var(--amber); animation: pulse 2s infinite; }
     .badge.offline      .bdot { background: var(--red); }
     .badge.unknown      .bdot { background: var(--ts); }
     .badge.maintenance  .bdot { background: var(--slate); }
+    .badge.disabled     .bdot { background: var(--tm); }
 
     /* card action buttons (top-right) */
     .card-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
@@ -363,7 +365,7 @@
       .content { padding: 20px 24px 60px; }
       .alert { margin: 14px 24px 0; }
       .stats { grid-template-columns: repeat(3, 1fr); }
-      .grid { grid-template-columns: repeat(2, 1fr); }
+      .grid  { grid-template-columns: repeat(2, 1fr); }
     }
 
     @media (max-width: 640px) {
@@ -382,8 +384,7 @@
       .content { padding: 14px 16px 60px; }
       .alert { margin: 10px 16px 0; }
       .stats { grid-template-columns: repeat(2, 1fr); }
-      .stats .stat:last-child { grid-column: 1 / -1; }
-      .grid { grid-template-columns: 1fr; }
+      .grid  { grid-template-columns: 1fr; }
       .filter-row { flex-wrap: wrap; gap: 8px; }
       .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; max-width: 100%; }
       .tabs::-webkit-scrollbar { display: none; }
@@ -476,6 +477,8 @@
         <div class="stat-val cr" id="s-offline">—</div><div class="stat-sub">unreachable</div></div>
       <div class="stat"><div class="stat-lbl">Maintenance</div>
         <div class="stat-val cm" id="s-maint">—</div><div class="stat-sub">paused</div></div>
+      <div class="stat"><div class="stat-lbl">Disabled</div>
+        <div class="stat-val" id="s-disabled" style="color:var(--tm)">—</div><div class="stat-sub">inactive</div></div>
     </div>
 
     <div class="filter-row">
@@ -556,6 +559,13 @@
           <div class="toggle-desc">Pause health checks and suppress alerts</div>
         </div>
         <label class="toggle"><input type="checkbox" id="f-maint"><span class="tslider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-name">Disabled</div>
+          <div class="toggle-desc">Remove from all checks and move to the Disabled section</div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="f-disabled"><span class="tslider"></span></label>
       </div>
     </div>
     <div class="modal-foot">
@@ -829,10 +839,11 @@ function renderWeatherFromState() {
 }
 
 function updateFavicon(services) {
-  const visible = services.filter(s => !s.maintenance);
+  const active  = services.filter(s => !s.disabled);
+  const visible = active.filter(s => !s.maintenance);
   const anyOffline    = visible.some(s => s.status === 'offline');
   const anyDegraded   = visible.some(s => s.status === 'degraded');
-  const anyMaintenance = services.some(s => s.maintenance);
+  const anyMaintenance = active.some(s => s.maintenance);
 
   let href = '/favicon.svg';
   if (anyOffline)                          href = '/favicon-offline.svg';
@@ -901,6 +912,7 @@ function historyLabel() {
 }
 
 function renderCard(s) {
+  const isDisabled = !!s.disabled;
   const cat    = catFor(s.cat);
   const colors = getColors(cat.color);
   const hist   = (s.history || []).slice(-30);
@@ -910,29 +922,34 @@ function renderCard(s) {
     ? `<a class="open-link" href="${s.url}" target="_blank">Open ↗</a>`
     : `<span class="open-link dim">No UI ↗</span>`;
 
-  const isMaint = !!s.maintenance;
-  const resBtn  = (!isMaint && (s.status==='degraded'||s.status==='offline'))
+  const isMaint = !!s.maintenance && !isDisabled;
+  const resBtn  = (!isMaint && !isDisabled && (s.status==='degraded'||s.status==='offline'))
     ? `<button class="act-btn resolve" onclick="resolveService('${s.id}')">✓ Resolve</button>`
     : '';
-  const pinBtn  = `<button class="act-btn${s.pinnedAt ? ' pin-on' : ''}" onclick="togglePin('${s.id}')">${s.pinnedAt ? 'Pinned' : 'Pin'}</button>`;
-  const checked = (!isMaint && !s.checkEnabled) ? '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>' : '';
+  const pinBtn  = isDisabled ? '' : `<button class="act-btn${s.pinnedAt ? ' pin-on' : ''}" onclick="togglePin('${s.id}')">${s.pinnedAt ? 'Pinned' : 'Pin'}</button>`;
+  const checked = (!isMaint && !isDisabled && !s.checkEnabled) ? '<span style="font-size:9px;color:var(--tm);padding:2px 6px;border:1px solid var(--b0);border-radius:4px">manual</span>' : '';
   const lastChk = s.lastChecked
     ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
     : '—';
-  const borderColor = isMaint ? 'var(--slate)' : colors.card;
+  const borderColor = isDisabled ? 'var(--tm)' : isMaint ? 'var(--slate)' : colors.card;
+  const badgeClass  = isDisabled ? 'disabled' : (s.status || 'unknown');
+  const badgeLabel  = isDisabled ? 'disabled' : isMaint ? 'maintenance' : (s.status || 'unknown');
+  const iconBg      = isDisabled ? 'var(--b0)' : isMaint ? 'var(--slate-bg)' : colors.icon;
+  const iconColor   = isDisabled ? 'var(--tm)'  : isMaint ? 'var(--slate)'   : colors.card;
+  const cardOpacity = isDisabled ? ';opacity:.5' : isMaint ? ';opacity:.75' : '';
 
   return `
-    <div class="card" data-id="${s.id}" style="border-left-color:${borderColor}${isMaint?';opacity:.75':''}">
+    <div class="card" data-id="${s.id}" style="border-left-color:${borderColor}${cardOpacity}">
       <div class="card-top">
         <div class="card-meta">
-          <div class="svc-icon" style="background:${isMaint?'var(--slate-bg)':colors.icon};color:${isMaint?'var(--slate)':colors.card}">${s.abbr||'?'}</div>
+          <div class="svc-icon" style="background:${iconBg};color:${iconColor}">${s.abbr||'?'}</div>
           <div class="svc-name">${s.name}</div>
           <div class="svc-desc">${s.desc||''}</div>
         </div>
         <div class="card-right">
-          ${s.pinnedAt ? '<span class="pin-tag">pinned</span>' : ''}
-          <div class="badge ${s.status||'unknown'}">
-            <span class="bdot"></span>${isMaint ? 'maintenance' : (s.status||'unknown')}
+          ${s.pinnedAt && !isDisabled ? '<span class="pin-tag">pinned</span>' : ''}
+          <div class="badge ${badgeClass}">
+            <span class="bdot"></span>${badgeLabel}
           </div>
           <div class="card-actions">
             ${resBtn}
@@ -945,7 +962,7 @@ function renderCard(s) {
       </div>
 
       <div class="uptime-bar">${ticks.length ? ticks : '<div class="tick unk" style="flex:1"></div>'}</div>
-      <div class="tick-lbl">${isMaint ? '🔧 in maintenance · history paused' : `${historyLabel()} · checked ${lastChk}`}</div>
+      <div class="tick-lbl">${isDisabled ? 'Disabled · checks paused' : isMaint ? '🔧 in maintenance · history paused' : `${historyLabel()} · checked ${lastChk}`}</div>
 
       <hr class="divider">
 
@@ -956,7 +973,7 @@ function renderCard(s) {
       </div>
 
       <div class="card-foot">
-        <span class="cat-tag" style="color:${colors.card}">${cat.name}</span>
+        <span class="cat-tag" style="color:${isDisabled ? 'var(--tm)' : colors.card}">${cat.name}</span>
         ${linkHtml}
       </div>
     </div>`;
@@ -964,7 +981,7 @@ function renderCard(s) {
 
 /* ─── Per-service state snapshot for change detection ─── */
 const prevStates = new Map(); // id → "status|maintenance"
-function svcSnap(s) { return `${s.status}|${!!s.maintenance}|${s.pinnedAt||''}`; }
+function svcSnap(s) { return `${s.status}|${!!s.maintenance}|${s.pinnedAt||''}|${!!s.disabled}`; }
 
 /* Silent in-place update of the fields that change every poll */
 function patchCard(el, s) {
@@ -979,9 +996,11 @@ function patchCard(el, s) {
     : '<div class="tick unk" style="flex:1"></div>';
 
   const lbl = el.querySelector('.tick-lbl');
-  if (lbl) lbl.textContent = isMaint
-    ? '🔧 in maintenance · history paused'
-    : `${historyLabel()} · checked ${lastChk}`;
+  if (lbl) lbl.textContent = s.disabled
+    ? 'Disabled · checks paused'
+    : isMaint
+      ? '🔧 in maintenance · history paused'
+      : `${historyLabel()} · checked ${lastChk}`;
 
   const up = el.querySelector('[data-field="uptime"]');
   if (up) up.textContent = s.uptime || '—';
@@ -1054,40 +1073,47 @@ function buildGridHtml(svcs) {
 
 function renderAll(fresh = false) {
   let raw;
+  const disabledSvcs = filter === 'all' ? getSortedSvcs(APP.services.filter(s => s.disabled)) : [];
   if (filter === 'all') {
-    raw = APP.services.filter(s => isTopLevel(s.cat));
+    raw = APP.services.filter(s => !s.disabled && isTopLevel(s.cat));
   } else {
     const subs   = subCatsOf(filter);
     const subIds = new Set(subs.map(c => c.id));
-    raw = APP.services.filter(s => s.cat === filter || subIds.has(s.cat));
+    raw = APP.services.filter(s => !s.disabled && (s.cat === filter || subIds.has(s.cat)));
   }
   const svcs = getSortedSvcs(raw);
+  const allSvcs = [...svcs, ...disabledSvcs];
   const grid = document.getElementById('grid');
 
   /* ── Full (re)render: first load or filter switch ── */
   if (fresh || grid.querySelector('[data-id]') === null) {
-    if (svcs.length === 0) {
+    if (allSvcs.length === 0) {
       grid.innerHTML =
         `<div class="empty" style="grid-column:1/-1">
           <div class="empty-big">◇</div>
           <div class="empty-txt">No services in this category yet.<br>Click <b>+ Add Service</b> to get started.</div>
          </div>`;
     } else {
-      grid.innerHTML = buildGridHtml(svcs);
+      let html = buildGridHtml(svcs);
+      if (disabledSvcs.length) {
+        html += `<div class="section-hdr" data-section="disabled" style="color:var(--tm)">Disabled</div>`;
+        html += disabledSvcs.map(renderCard).join('');
+      }
+      grid.innerHTML = html;
       grid.querySelectorAll('.card').forEach((el, i) => {
         el.classList.add('card-init');
         el.style.animationDelay = `${i * 40}ms`;
       });
     }
-    svcs.forEach(s => prevStates.set(s.id, svcSnap(s)));
+    allSvcs.forEach(s => prevStates.set(s.id, svcSnap(s)));
 
   /* ── Smart patch: poll update ── */
   } else {
-    const expectedOrder = svcs.map(s => s.id).join(',');
+    const expectedOrder = allSvcs.map(s => s.id).join(',');
     const renderedOrder = [...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id).join(',');
     if (expectedOrder !== renderedOrder) { renderAll(true); return; }
 
-    const currentIds  = new Set(svcs.map(s => s.id));
+    const currentIds  = new Set(allSvcs.map(s => s.id));
     const renderedIds = new Set([...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id));
 
     /* remove deleted */
@@ -1098,7 +1124,7 @@ function renderAll(fresh = false) {
       }
     }
 
-    for (const s of svcs) {
+    for (const s of allSvcs) {
       const el   = grid.querySelector(`[data-id="${s.id}"]`);
       const snap = svcSnap(s);
       const prev = prevStates.get(s.id);
@@ -1111,7 +1137,7 @@ function renderAll(fresh = false) {
         newEl.classList.add('card-init');
         grid.appendChild(newEl);
       } else if (prev !== snap) {
-        /* status / maintenance changed → replace card + flash */
+        /* status / maintenance / disabled changed → replace card + flash */
         const tmp = document.createElement('div');
         tmp.innerHTML = renderCard(s).trim();
         const newEl = tmp.firstElementChild;
@@ -1125,20 +1151,23 @@ function renderAll(fresh = false) {
     }
   }
 
-  /* stats — exclude maintenance services from problem counts */
-  const total    = APP.services.length;
-  const online   = APP.services.filter(s=>s.status==='online').length;
-  const degraded = APP.services.filter(s=>!s.maintenance&&s.status==='degraded').length;
-  const offline  = APP.services.filter(s=>!s.maintenance&&s.status==='offline').length;
-  const maint    = APP.services.filter(s=>s.maintenance).length;
+  /* stats — exclude disabled and maintenance services from problem counts */
+  const active   = APP.services.filter(s=>!s.disabled);
+  const disabled = APP.services.filter(s=>s.disabled).length;
+  const total    = active.length;
+  const online   = active.filter(s=>s.status==='online').length;
+  const degraded = active.filter(s=>!s.maintenance&&s.status==='degraded').length;
+  const offline  = active.filter(s=>!s.maintenance&&s.status==='offline').length;
+  const maint    = active.filter(s=>s.maintenance).length;
   document.getElementById('s-total').textContent    = total;
   document.getElementById('s-online').textContent   = online;
   document.getElementById('s-degraded').textContent = degraded;
   document.getElementById('s-offline').textContent  = offline;
   document.getElementById('s-maint').textContent    = maint;
+  document.getElementById('s-disabled').textContent = disabled;
 
-  /* alert bar — ignore services in maintenance */
-  const bad = APP.services.filter(s=>!s.maintenance&&(s.status==='degraded'||s.status==='offline'));
+  /* alert bar — ignore services in maintenance or disabled */
+  const bad = active.filter(s=>!s.maintenance&&(s.status==='degraded'||s.status==='offline'));
   const bar = document.getElementById('alert-bar');
   if (bad.length) {
     bar.classList.add('show');
@@ -1237,9 +1266,10 @@ function openAddModal() {
   document.getElementById('f-desc').value  = '';
   document.getElementById('f-url').value   = '';
   document.getElementById('f-port').value  = '';
-  document.getElementById('f-hasui').checked = true;
-  document.getElementById('f-check').checked = true;
-  document.getElementById('f-maint').checked = false;
+  document.getElementById('f-hasui').checked    = true;
+  document.getElementById('f-check').checked    = true;
+  document.getElementById('f-maint').checked    = false;
+  document.getElementById('f-disabled').checked = false;
   populateCatSelect('');
   document.getElementById('svc-overlay').classList.add('show');
 }
@@ -1254,9 +1284,10 @@ function openEditModal(id) {
   document.getElementById('f-desc').value  = s.desc||'';
   document.getElementById('f-url').value   = s.url||'';
   document.getElementById('f-port').value  = s.port||'';
-  document.getElementById('f-hasui').checked = !!s.hasUI;
-  document.getElementById('f-check').checked = !!s.checkEnabled;
-  document.getElementById('f-maint').checked = !!s.maintenance;
+  document.getElementById('f-hasui').checked    = !!s.hasUI;
+  document.getElementById('f-check').checked    = !!s.checkEnabled;
+  document.getElementById('f-maint').checked    = !!s.maintenance;
+  document.getElementById('f-disabled').checked = !!s.disabled;
   populateCatSelect(s.cat);
   document.getElementById('svc-overlay').classList.add('show');
 }
@@ -1287,7 +1318,8 @@ async function submitSvc() {
     port:         document.getElementById('f-port').value.trim(),
     hasUI:        document.getElementById('f-hasui').checked,
     checkEnabled: document.getElementById('f-check').checked,
-    maintenance:  document.getElementById('f-maint').checked
+    maintenance:  document.getElementById('f-maint').checked,
+    disabled:     document.getElementById('f-disabled').checked
   };
   if (!body.name || !body.abbr || !body.cat) {
     alert('Name, abbreviation, and category are required.');
