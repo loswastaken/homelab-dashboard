@@ -105,7 +105,7 @@
 
     .bar-strip { display: flex; gap: 2px; align-items: stretch; height: 34px;
       flex: 1 1 0; min-width: 0; overflow: hidden; }
-    .bar { flex: 1 1 0; min-width: 0; max-width: 12px; border-radius: 2px;
+    .bar { flex: 1 1 0; min-width: 0; border-radius: 2px;
       transition: filter .15s, transform .15s; cursor: default; position: relative;
       background: var(--bg-hi); }
     .bar.ok    { background: var(--green); }
@@ -202,10 +202,9 @@
   const RANGES = {
     '24h': { key: '24h', slots: 24, label: '24h', unit: 'hour' },
     '7d':  { key: '7d',  slots: 7,  label: '7d',  unit: 'day'  },
-    '30d': { key: '30d', slots: 30, label: '30d', unit: 'day'  },
-    '90d': { key: '90d', slots: 90, label: '90d', unit: 'day'  }
+    '30d': { key: '30d', slots: 30, label: '30d', unit: 'day'  }
   };
-  let rangeKey = '90d';
+  let rangeKey = '30d';
   let expanded = new Set();
 
   // ─── Helpers (copied from history.html) ─────────────────────────────────────
@@ -318,7 +317,7 @@
 
     html += `<div class="controls">
       <div class="seg">
-        ${['24h','7d','30d','90d'].map(k =>
+        ${['24h','7d','30d'].map(k =>
           `<button class="seg-btn${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`
         ).join('')}
       </div>
