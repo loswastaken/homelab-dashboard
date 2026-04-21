@@ -47,12 +47,12 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 
 `.github/workflows/docker.yml` — triggers on push to `main` and `workflow_dispatch`. Uses `docker/setup-buildx-action@v3` (required for GHA cache backend). Pushes `latest` and `sha-*` tags.
 
-### Updating the compose file on the NAS
+### Updating the compose file on the host
 
-Watchtower only updates the Docker image — it does NOT pull the `docker-compose.yml`. When compose file changes are pushed, manually update on the NAS:
+Watchtower only updates the Docker image — it does NOT pull the `docker-compose.yml`. When compose file changes are pushed, manually update on the host:
 
 ```bash
-cd /volume2/docker/homelab-dashboard
+cd /path/to/homelab-dashboard
 curl -o docker-compose.yml https://raw.githubusercontent.com/loswastaken/homelab-dashboard/main/docker-compose.yml
 sudo docker compose up -d
 ```
@@ -105,8 +105,8 @@ sudo docker compose up -d
 ### Health Check (`ping`)
 
 - Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`
-- `statusCode < 500` = online; timeout or error = offline
-- **Known limitation:** checks run server-side from the NAS. Services on different VLANs/subnets the NAS can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the NAS via SSH.
+- `statusCode < 500` = online; `statusCode >= 500` = degraded (server error); timeout or connection error = offline
+- **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
 ### History Ticks
 
@@ -144,7 +144,7 @@ Single-file vanilla JS app. No build step.
 - **Smart card updates:** Poll refreshes do NOT re-render the whole grid. Each service card has `data-id`. On poll, only cards whose `status` or `maintenance` flag changed get replaced (with an amber flash animation). Unchanged cards are silently patched in-place (history ticks, uptime, response, last-checked). Initial load and filter switches use a stagger `fadein` animation.
 - **`renderAll(fresh)`:** `fresh=true` = full re-render with animation (first load, filter switch, manual refresh). `fresh=false` = smart in-place patch.
 - **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete.
-- **`prevStates` Map:** Tracks `"status|maintenance"` snapshot per service ID for change detection.
+- **`prevStates` Map:** Tracks `"status|maintenance|pinnedAt|disabled"` snapshot per service ID for change detection.
 - **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
 - **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location. Displays icon emoji, temperature in JetBrains Mono, city + abbreviated state (US state lookup map), condition text. Polls every 10 minutes. Hidden entirely on mobile (`≤640px`).
 - **Dynamic favicon:** `updateFavicon()` called on every poll. Swaps among `favicon.svg` (green), `favicon-degraded.svg` (amber), `favicon-offline.svg` (red), `favicon-maintenance.svg` (grey) based on service states. Maintenance-mode services excluded from offline/degraded check.
@@ -156,7 +156,7 @@ Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pi
 
 ### Stats Row
 
-Five cards in a `repeat(5, 1fr)` grid: **Services · Online · Degraded · Offline · Maintenance**. Maintenance count = services with `maintenance: true`.
+Six cards in a `repeat(6, 1fr)` grid: **Services · Online · Degraded · Offline · Maintenance · Disabled**. "Services" count excludes disabled services. Maintenance count = active services with `maintenance: true`. Disabled count = services with `disabled: true`.
 
 ---
 
@@ -192,20 +192,20 @@ Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). L
 
 ## PM2 Agent (`pm2-agent/`)
 
-Runs on the **Bass VM** (Ubuntu). Polls `pm2 jlist` every 30s and POSTs status to the dashboard's `/api/services/:id/report` endpoint using the `X-Api-Key` header.
+Runs on any host where PM2 manages processes. Polls `pm2 jlist` every 30s and POSTs status to the dashboard's `/api/services/:id/report` endpoint using the `X-Api-Key` header.
 
-- **Process map:** `PM2_MAP = { 'Bass': 'redbot' }` — PM2 process name → dashboard service ID
-- **Config:** `pm2-agent/ecosystem.config.js` — set `REPORT_API_KEY` to the key from Settings → Report API Key
+- **Process map:** `PM2_MAP` in `pm2-agent/index.js` — maps PM2 process names to dashboard service IDs
+- **Config:** `pm2-agent/ecosystem.config.js` — set `DASHBOARD_URL` and `REPORT_API_KEY` (from Settings → Report API Key)
 - **Auto-update:** `pm2-agent/update-agent.sh` — compares local vs remote git SHA, pulls + restarts only if changed. Add to cron: `*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh`
 
 ---
 
 ## Docker & Deployment
 
-### On the NAS (Synology DS423+)
+### On the host
 
 ```bash
-cd /volume2/docker/homelab-dashboard
+cd /path/to/homelab-dashboard
 sudo docker compose pull
 sudo docker compose up -d
 ```
@@ -224,7 +224,7 @@ On first start with no `data/auth.json`, the app redirects to `/setup` for accou
 
 ## Known Issues / Notes
 
-- **Home Assistant (10.24.3.218:8123)** shows offline on the dashboard. Root cause: the NAS (`10.24.4.x`) and HA (`10.24.3.x`) are on different subnets/VLANs — the NAS cannot reach HA for health checks even though the user's browser can. Fix: add a firewall rule allowing NAS → HA, or use the `/report` endpoint from a script on the HA host.
+- **Cross-subnet services** may show offline on the dashboard even when reachable from the browser. Root cause: health checks run server-side from the Docker host — if the host and the target service are on different VLANs/subnets with no routing between them, pings will always fail. Fix: add a firewall rule to allow the host to reach the service, or use the `/report` endpoint pushed from a script running on the same network as the service.
 - `data/services.json` and `data/auth.json` should never be committed with real data.
 - Session store (`session-file-store`) logs are suppressed with `logFn: () => {}`.
 - `dailyHistory` and `events` on existing services start accumulating from the first deploy of this version — no retroactive data from the per-check `history[]` ticks.

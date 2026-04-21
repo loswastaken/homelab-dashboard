@@ -8,7 +8,7 @@ module.exports = {
     max_restarts:  10,
     env: {
       NODE_ENV:          'production',
-      DASHBOARD_URL:     'http://10.24.4.26:55964',
+      DASHBOARD_URL:     'http://YOUR_DASHBOARD_HOST:55964',
       POLL_INTERVAL_MS:  '30000',
       REPORT_API_KEY:    'PASTE_KEY_FROM_DASHBOARD_SETTINGS',
     },

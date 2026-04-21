@@ -1,6 +1,6 @@
-# los.dev · Homelab Dashboard
+# Homelab Dashboard
 
-Self-hosted service monitoring dashboard running in Docker on a Synology DS423+. Dark-themed, no framework dependencies.
+Self-hosted service monitoring dashboard. Runs in Docker, dark-themed, no framework dependencies.
 
 ---
 
@@ -26,12 +26,12 @@ Self-hosted service monitoring dashboard running in Docker on a Synology DS423+.
 
 ### 1. Create the data directory
 ```bash
-mkdir -p /volume2/docker/homelab-dashboard/data
+mkdir -p /your/data/path
 ```
 
 ### 2. Pull the compose file
 ```bash
-cd /volume2/docker/homelab-dashboard
+cd /your/data/path
 curl -O https://raw.githubusercontent.com/loswastaken/homelab-dashboard/main/docker-compose.yml
 ```
 
@@ -64,7 +64,7 @@ Open **Settings → Updates** and click **Check for Updates**. If an update is a
 
 ### Manual (SSH)
 ```bash
-cd /volume2/docker/homelab-dashboard
+cd /your/data/path
 sudo docker compose pull && sudo docker compose up -d
 ```
 
@@ -170,9 +170,9 @@ Click **Check for Updates** to compare the running build against the latest comm
 
 ---
 
-## PM2 Agent (Bass VM)
+## PM2 Agent
 
-The PM2 agent runs on Bass VM and pushes process status to the dashboard for services that don't have a check URL.
+The PM2 agent runs on any host where PM2 manages processes and pushes process status to the dashboard for services that don't have a check URL.
 
 ### Setup
 ```bash
@@ -184,12 +184,15 @@ pm2 save
 ```
 
 ### Process Map
-Edit `pm2-agent/index.js`:
+Edit `pm2-agent/index.js` to map your PM2 process names to dashboard service IDs:
 ```js
 const PM2_MAP = {
-  'Bass': 'redbot',   // PM2 process name → dashboard service ID
+  'my-app':     'service-id-from-dashboard',   // PM2 process name → dashboard service ID
+  'another-app': 'another-service-id',
 };
 ```
+
+Service IDs are visible in the dashboard URL when editing a service, or in `data/services.json`.
 
 ### Auto-Update (Cron)
 ```bash
@@ -208,7 +211,7 @@ Point the tunnel at `localhost:55964`. The built-in login page handles auth. Add
 
 ## Data & Persistence
 
-All persistent data lives in `/volume2/docker/homelab-dashboard/data/` on the NAS:
+All persistent data lives in the `data/` directory mounted via the Docker volume:
 
 | File | Contents |
 |---|---|
