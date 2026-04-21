@@ -9,7 +9,7 @@ Self-hosted service monitoring dashboard. Runs in Docker, dark-themed, no framew
 | Layer | Tech |
 |---|---|
 | Backend | Node.js + Express |
-| Frontend | Vanilla JS — `index.html` (dashboard) + `history.html` (uptime history) |
+| Frontend | Vanilla JS — `index.html` (dashboard) + `history.html` (uptime history) + `status-pages.html` / `status-page.html` (public status pages) |
 | Persistence | `data/services.json` — mounted Docker volume |
 | Auth | Session-based (bcrypt + express-session) |
 | Images | Built by GitHub Actions, pushed to `ghcr.io` |
@@ -134,6 +134,25 @@ Tracks status transitions with timestamps: offline, degraded, recovery, maintena
 
 ---
 
+## Public Status Pages
+
+Uptime Kuma-style public pages for sharing service health without exposing the dashboard.
+
+### Managing Pages
+Open **Status Pages** from the sidebar. Each page has:
+- **Name, slug, description** — slug must be `a-z0-9` with dashes, 2–40 chars, and not a reserved word (`api`, `login`, `status`, etc.)
+- **Service picker** — grouped by category; toggle per-category "reveal name" to show or hide category labels publicly
+- **Banner** — optional overall status banner at the top
+- **Event log** — optional global incident log at the bottom
+
+### Public View
+Served at `/status/<slug>` (no auth). Auto-refreshes every 60s; also has a manual ↺ button and an "Updated Xs ago" label. Range toggle: **24h / 7d / 30d** (default 30d; 24h uses hourly resolution).
+
+### Privacy
+The public API strips service URLs, ports, response times, last-checked timestamps, raw tick history, and event notes. Only `{ ts, type }` is exposed for events. Category names appear only if the page explicitly opts in per category.
+
+---
+
 ## Settings
 
 Open **Settings** from the sidebar.
@@ -146,6 +165,7 @@ Open **Settings** from the sidebar.
 | Server Label | Shown in the sidebar footer |
 | NAS IP | Shown in the sidebar footer |
 | Health Check Interval | Seconds between auto-check cycles (min 10, default 60) |
+| Report Stale After | Seconds before a push-reported service (no check URL) is flipped to offline if no `/report` arrives. Default 120. Per-service override: set `reportInterval` on the service and the threshold becomes `reportInterval × 4`. |
 
 ### Weather
 Shows a live weather pill in the dashboard header (hidden on mobile). Uses the Open-Meteo free API — no API key required.
@@ -237,7 +257,7 @@ Never included in the Docker image — lives only in the mounted volume.
 
 ## API Reference
 
-All endpoints require an authenticated session except `/api/services/:id/report` (accepts `X-Api-Key` header).
+All endpoints require an authenticated session except `/api/services/:id/report` (accepts `X-Api-Key` header), `/status/:slug`, and `/api/public/status/:slug` (public status pages — no auth).
 
 | Method | Path | Description |
 |---|---|---|
@@ -263,3 +283,9 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | POST | `/api/update/apply` | Trigger Watchtower to pull + redeploy |
 | POST | `/api/login` | Authenticate |
 | POST | `/api/logout` | End session |
+| GET | `/api/status-pages` | List configured public status pages |
+| POST | `/api/status-pages` | Create a status page |
+| PUT | `/api/status-pages/:id` | Update a status page |
+| DELETE | `/api/status-pages/:id` | Delete a status page |
+| GET | `/status/:slug` | Public status page HTML (no auth) |
+| GET | `/api/public/status/:slug` | Sanitized public status data (no auth) |

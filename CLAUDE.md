@@ -181,8 +181,9 @@ Public-facing, unauthenticated uptime pages (Uptime Kuma style) served at `/stat
 - **Privacy / sanitization:** `sanitizeServiceForPublic()` in `server.js` strips `url`, `port`, `response`, `lastChecked`, raw `history`, `hourlyHistory`, and `pinnedAt`. Event `note` bodies are always dropped; only `{ ts, type }` is emitted. Category names are only included when the category id is in the page's `includedCategoryIds`.
 - **Overall status:** `computeOverallStatus()` — `outage` if any included service is offline, `degraded` if any degraded, `maintenance` if all are in maintenance, else `operational`.
 - **Management UI:** `public/status-pages.html` — auth-gated page listing all status pages as cards with an editor modal (name, slug, description, per-category grouped service picker, reveal-category-name toggles, banner/log toggles). Linked from the "Overview" nav section in both `index.html` and `history.html`.
-- **Public view:** `public/status-page.html` — single standalone file. Reads slug from `location.pathname`, fetches `/api/public/status/:slug`, auto-refreshes every 60s. 7d/30d/90d bar-strip toggle (default 90d), expandable per-service detail with canvas chart + sanitized event log, optional global incident log. Uses the same CSS tokens as the rest of the app, inlined.
-- **Uptime Kuma aesthetic:** centered ~960px container, big banner at top (green/amber/red/blue-grey), stacked service rows with thin day bars that left-pad with empty grey slots when history is shorter than the selected window, rounded 10-12px corners throughout.
+- **Public view:** `public/status-page.html` — single standalone file. Reads slug from `location.pathname`, fetches `/api/public/status/:slug`, auto-refreshes every 60s. 24h/7d/30d bar-strip toggle (default 30d; 24h uses hourly data, 7d/30d use daily), expandable per-service detail with canvas chart + sanitized event log, optional global incident log. Uses the same CSS tokens as the rest of the app, inlined.
+- **Freshness indicators:** a manual ↺ refresh button and an "Updated Xs ago" label sit next to the range toggle and under the banner. Both are driven by a client-side `lastRefreshed` timestamp (set on each successful fetch) and a 10s ticker that keeps the relative labels live between polls. The banner meta deliberately does NOT use `page.updatedAt` (which is the admin edit time, not data freshness).
+- **Uptime Kuma aesthetic:** centered ~960px container, big banner at top (green/amber/red/blue-grey), stacked service rows with uniform pill-shaped bars that fill the strip. Shorter histories render fewer, wider bars rather than left-padding with empty slots. Rounded 10–12px corners throughout.
 
 ### Data Files
 
@@ -217,7 +218,7 @@ Tabbed layout with seven panels: **General · Account · Weather · Notification
 - `switchSettingsTab(tabId)` toggles the `.active` class on the matching tab/panel pair and shows/hides the shared footer based on the active panel's `data-footer` attribute.
 - `data-footer="hide"` on a panel hides the shared Cancel / Save Settings footer (used for tabs whose primary action lives inside the panel). Use sparingly: hiding the footer also hides Save for any pending changes made on other tabs before switching, which is why the Updates panel no longer uses it.
 - `openSettings()` resets to the General tab on every open.
-- A symmetrical (non-tabbed) settings modal also exists in `public/history.html` — category/settings changes must be applied to both files.
+- A symmetrical (non-tabbed) settings modal markup still exists in `public/history.html` but is no longer reachable from the UI (the sidebar button now routes to `/`). Treat it as dead code — do NOT re-sync settings changes into it.
 
 ### Categories Tab
 
@@ -235,7 +236,7 @@ Six cards in a `repeat(6, 1fr)` grid: **Services · Online · Degraded · Offlin
 
 ## Uptime History Page (`public/history.html`)
 
-Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). Links from the sidebar "Uptime History" nav item.
+Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). Links from the sidebar "Uptime History" nav item. The sidebar's former Settings button was replaced with a **Back to Dashboard** link (routes to `/`) because the duplicated settings modal kept drifting from the dashboard's. The modal markup/JS is still in the file as dead code — prefer editing the dashboard's settings modal in `index.html` and deleting the stale copy here, rather than re-syncing it.
 
 ### List View (Atlassian-style)
 
