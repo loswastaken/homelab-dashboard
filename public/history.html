@@ -123,7 +123,7 @@
       text-transform: uppercase; color: var(--ts); }
 
     /* ─── Service list (Atlassian-style) ─── */
-    .svc-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 36px; }
+    .svc-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 36px; }
     .svc-row { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
       padding: 14px 18px; display: flex; align-items: center; gap: 16px;
       cursor: pointer; transition: all .15s; }
@@ -383,6 +383,10 @@
       <div class="form-group">
         <label class="form-lbl">Health Check Interval <span>(seconds, min 10)</span></label>
         <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
+      </div>
+      <div class="form-group">
+        <label class="form-lbl">Stale Report Threshold <span>(seconds, for push-reported services)</span></label>
+        <input class="form-inp" id="cfg-stale" type="number" min="10" max="3600" placeholder="120">
       </div>
 
       <div class="modal-sec">Weather</div>
@@ -1063,6 +1067,7 @@ function openSettings() {
   document.getElementById('cfg-serverlabel').value = s.serverLabel   || '';
   document.getElementById('cfg-ip').value          = s.nasIp         || '';
   document.getElementById('cfg-interval').value    = s.checkInterval || 60;
+  document.getElementById('cfg-stale').value       = s.reportStaleAfter || 120;
   document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
   document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
   document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
@@ -1243,6 +1248,7 @@ function execCopy(text, cb) {
 
 async function saveSettings() {
   const interval = parseInt(document.getElementById('cfg-interval').value, 10);
+  const stale    = parseInt(document.getElementById('cfg-stale').value, 10);
   const res = await fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1253,6 +1259,7 @@ async function saveSettings() {
         serverLabel:        document.getElementById('cfg-serverlabel').value.trim(),
         nasIp:              document.getElementById('cfg-ip').value.trim(),
         checkInterval:      Math.max(10, isNaN(interval) ? 60 : interval),
+        reportStaleAfter:   Math.max(10, isNaN(stale) ? 120 : stale),
         weatherEnabled:     document.getElementById('cfg-weather-enabled').checked,
         weatherLocation:    document.getElementById('cfg-weather-location').value.trim(),
         weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),

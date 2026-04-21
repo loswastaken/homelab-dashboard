@@ -50,6 +50,7 @@ function defaults() {
       weatherCountryCode: '',
       weatherUnits: 'fahrenheit',
       pushEnabled: false,
+      reportStaleAfter: 120,
     },
     categories:  [],
     services:    [],
@@ -484,6 +485,22 @@ function accumulateHourlyTick(svc, tick) {
   entry.uptime = denom > 0 ? parseFloat((entry.online / denom * 100).toFixed(2)) : null;
 }
 
+// Services without a URL rely on external pushes (PM2 agent, /report endpoint).
+// If nothing has reported within the stale window, treat the service as offline
+// so history keeps accumulating and the status flips. lastChecked stays frozen
+// at the time of the last real contact, which is what the UI needs for "X ago".
+function isReportStale(svc, now, defaultThresholdSec) {
+  if (svc.url) return false;
+  if (svc.checkEnabled === false) return false;
+  if (svc.maintenance || svc.disabled) return false;
+  const perSvc = Number(svc.reportInterval) > 0 ? Number(svc.reportInterval) * 4 : null;
+  const thresholdMs = (perSvc || defaultThresholdSec) * 1000;
+  if (!svc.lastChecked) return true;
+  const last = Date.parse(svc.lastChecked);
+  if (Number.isNaN(last)) return true;
+  return (now - last) > thresholdMs;
+}
+
 const WEATHER_CODE_MAP = {
   0: 'Clear',
   1: 'Mostly clear',
@@ -631,8 +648,32 @@ async function checkAll() {
     }
   }
 
+  // Watchdog for report-based services (no URL). If the last /report is older
+  // than the threshold, accumulate an offline tick so uptime reflects reality.
+  const staleThreshold = Math.max(10, fresh.settings?.reportStaleAfter || 120);
+  const now = Date.now();
+  let staleCount = 0;
+  for (const svc of fresh.services) {
+    if (!isReportStale(svc, now, staleThreshold)) continue;
+    staleCount++;
+    const prevStatus = svc.status;
+    svc.history = pushHistory(svc.history, 0);
+    svc.status  = 'offline';
+    svc.uptime  = calcUptime(svc.history);
+    accumulateDailyTick(svc, 0);
+    accumulateHourlyTick(svc, 0);
+    if (prevStatus !== 'offline') {
+      const note = svc.lastChecked
+        ? `No report received in over ${staleThreshold}s`
+        : 'No report ever received from agent';
+      pushEvent(svc, 'offline', note);
+      maybeNotify(svc, 'offline', note);
+    }
+  }
+
   save(fresh);
-  console.log(`[${new Date().toLocaleTimeString()}] Checked ${results.length} services`);
+  const suffix = staleCount ? ` (+${staleCount} stale)` : '';
+  console.log(`[${new Date().toLocaleTimeString()}] Checked ${results.length} services${suffix}`);
 }
 
 // ─── Scheduling ──────────────────────────────────────────────────────────────

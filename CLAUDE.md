@@ -132,6 +132,10 @@ sudo docker compose up -d
 - If a service is already `degraded` and a new connection error arrives, it stays `degraded` rather than flipping to `offline`
 - **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
+### Report Staleness Watchdog
+
+Services without a `url` (pushed via PM2 agent or the `/report` API) have no active check, so a silent agent would leave `status`, `history`, and `dailyHistory` frozen and inflate the public status page's uptime. To prevent this, `checkAll()` runs a watchdog pass on every cycle: if a push-reported service hasn't sent a report within `settings.reportStaleAfter` seconds (default 120s, configurable in Settings → General), it's treated as offline — an offline tick is pushed to `history`, `dailyHistory`, and `hourlyHistory`; `status` flips to `offline`; and a single `offline` event + push notification fires on the transition. `lastChecked` is NOT touched by the watchdog so it accurately reflects the time of the last real contact. Per-service override: `svc.reportInterval` (seconds) — when set, the threshold becomes `reportInterval * 4`. When a real `/report` arrives, the existing recovery-event path flips status back to online.
+
 ### History Ticks
 
 Values stored in `svc.history[]` (last 30 per-check ticks, used for the main dashboard bar):
@@ -299,3 +303,4 @@ On first start with no `data/auth.json`, the app redirects to `/setup` for accou
 - `data/services.json` and `data/auth.json` should never be committed with real data.
 - Session store (`session-file-store`) logs are suppressed with `logFn: () => {}`.
 - `dailyHistory` and `events` on existing services start accumulating from the first deploy of this version — no retroactive data from the per-check `history[]` ticks.
+- **Push-reported services and stale reports:** if the PM2 agent (or any other `/report` source) stops sending updates, the watchdog in `checkAll()` flips the service to offline after `settings.reportStaleAfter` seconds and keeps accumulating offline ticks. This was added because a silent agent would otherwise leave the public status page showing a misleadingly-green banner. If you see unexpected offline flips, check the agent host first (`pm2 list`, `systemctl status`, agent's cron-driven `update-agent.sh`) rather than assuming the service itself is down.

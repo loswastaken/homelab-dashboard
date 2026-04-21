@@ -558,6 +558,7 @@
       <div class="form-group">
         <label class="form-lbl">Check URL <span>(leave blank to skip auto-check)</span></label>
         <input class="form-inp" id="f-url" placeholder="http://10.24.4.26:32400">
+        <div class="toggle-desc" style="margin-top:6px;">Leave blank for services pushed via the PM2 agent or /report API. They're marked offline if no report arrives within the stale threshold (Settings → General).</div>
       </div>
 
       <div class="modal-sec">Options</div>
@@ -645,6 +646,11 @@
         <div class="form-group">
           <label class="form-lbl">Health Check Interval <span>(seconds, min 10)</span></label>
           <input class="form-inp" id="cfg-interval" type="number" min="10" max="3600" placeholder="60">
+        </div>
+
+        <div class="form-group">
+          <label class="form-lbl">Stale Report Threshold <span>(seconds, for push-reported services)</span></label>
+          <input class="form-inp" id="cfg-stale" type="number" min="10" max="3600" placeholder="120">
         </div>
       </div>
 
@@ -1454,6 +1460,7 @@ function openSettings() {
   document.getElementById('cfg-serverlabel').value = s.serverLabel   || '';
   document.getElementById('cfg-ip').value          = s.nasIp         || '';
   document.getElementById('cfg-interval').value    = s.checkInterval || 60;
+  document.getElementById('cfg-stale').value       = s.reportStaleAfter || 120;
   document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
   document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
   document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
@@ -1622,6 +1629,7 @@ function onHexInput(val) {
 
 async function saveSettings() {
   const interval = parseInt(document.getElementById('cfg-interval').value, 10);
+  const stale    = parseInt(document.getElementById('cfg-stale').value, 10);
   await fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1632,6 +1640,7 @@ async function saveSettings() {
         serverLabel:   document.getElementById('cfg-serverlabel').value.trim(),
         nasIp:         document.getElementById('cfg-ip').value.trim(),
         checkInterval: Math.max(10, isNaN(interval) ? 60 : interval),
+        reportStaleAfter: Math.max(10, isNaN(stale) ? 120 : stale),
         weatherEnabled: document.getElementById('cfg-weather-enabled').checked,
         weatherLocation: document.getElementById('cfg-weather-location').value.trim(),
         weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),
