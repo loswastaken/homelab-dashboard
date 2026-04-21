@@ -132,7 +132,7 @@
     .svc-abbr { width: 36px; height: 36px; border-radius: 8px; display: flex;
       align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
       letter-spacing: .04em; flex-shrink: 0; }
-    .svc-info { flex: 1; min-width: 0; }
+    .svc-info { flex: 0 1 200px; min-width: 140px; }
     .svc-name { font-size: 13px; font-weight: 500; color: var(--tp);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .svc-meta { font-size: 11px; color: var(--ts); margin-top: 1px; }
@@ -143,17 +143,17 @@
     .svc-uptime-label.cr { color: var(--red); }
     .svc-uptime-label.cm { color: var(--slate); }
 
-    /* ─── 30-day bar strip ─── */
-    .bar-strip { display: flex; gap: 3px; align-items: flex-end; height: 28px;
-      flex-shrink: 0; }
-    .bar { flex: 1; min-width: 5px; max-width: 10px; border-radius: 3px 3px 0 0;
-      transition: opacity .15s; cursor: default; position: relative; }
-    .bar.ok     { background: var(--green); opacity: .75; }
-    .bar.warn   { background: var(--amber); opacity: .75; }
-    .bar.bad    { background: var(--red);   opacity: .75; }
-    .bar.maint  { background: var(--slate); opacity: .4; }
-    .bar.empty  { background: var(--b1);    opacity: 1; height: 4px !important; align-self: center; border-radius: 3px; }
-    .bar:hover { opacity: 1; }
+    /* ─── Uptime bar strip (uniform pill bars) ─── */
+    .bar-strip { display: flex; gap: 2px; align-items: stretch; height: 28px;
+      flex: 1 1 0; min-width: 0; overflow: hidden; }
+    .bar { flex: 1 1 0; min-width: 0; border-radius: 2px;
+      transition: filter .15s, transform .15s; cursor: default; position: relative; }
+    .bar.ok     { background: var(--green); }
+    .bar.warn   { background: var(--amber); }
+    .bar.bad    { background: var(--red);   }
+    .bar.maint  { background: var(--slate); opacity: .55; }
+    .bar.empty  { background: var(--b1); }
+    .bar:not(.empty):hover { filter: brightness(1.15); transform: scaleY(1.06); }
     .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
       transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
       border-radius: 6px; padding: 5px 9px; white-space: nowrap; font-size: 11px;
@@ -689,11 +689,6 @@ function fmtHour(tsHour) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
 }
 
-function barHeight(pct) {
-  if (pct === null || pct === undefined) return 8;
-  return Math.max(8, Math.round(pct / 100 * 28));
-}
-
 function sliceHistory(svc) {
   if (rangeDays === 1) {
     // 24h view: use hourly data, last 24 entries
@@ -716,13 +711,27 @@ function calcAvgUptime(hist) {
   return valid.reduce((a, e) => a + e.uptime, 0) / valid.length;
 }
 
-function countIncidents(hist) {
-  return hist.reduce((n, e) => n + (e.offline || 0), 0);
+function rangeCutoff() {
+  const cutoff = new Date();
+  if (rangeDays === 1) cutoff.setHours(cutoff.getHours() - 24);
+  else cutoff.setDate(cutoff.getDate() - rangeDays);
+  return cutoff;
+}
+
+// An "incident" = a transition into offline or degraded state within the
+// selected range. The server only records these events on true status
+// transitions (see pushEvent in server.js), so counting them gives the
+// real number of outages rather than the number of offline ticks.
+function countIncidents(svc) {
+  const cutoff = rangeCutoff();
+  return (svc.events || []).filter(e =>
+    (e.type === 'offline' || e.type === 'degraded') &&
+    new Date(e.ts) >= cutoff
+  ).length;
 }
 
 function filterEvents(events) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - rangeDays);
+  const cutoff = rangeCutoff();
   return (events || []).filter(e => new Date(e.ts) >= cutoff).reverse();
 }
 
@@ -751,7 +760,7 @@ function render() {
 // ─── Summary cards ────────────────────────────────────────────────────────────
 function renderSummary(svcs) {
   const allHist  = svcs.flatMap(s => sliceHistory(s));
-  const incidents = svcs.reduce((n, s) => n + countIncidents(sliceHistory(s)), 0);
+  const incidents = svcs.reduce((n, s) => n + countIncidents(s), 0);
   const tracked   = svcs.filter(s => sliceHistory(s).length > 0).length;
 
   // avg uptime across all services
@@ -807,10 +816,9 @@ function renderList(svcs) {
       } else {
         const e   = hist[histIdx];
         const pct = e.uptime;
-        const h   = barHeight(pct);
         const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
         const tip = `${entryLabel(e)}: ${fmtUptime(pct)}`;
-        bars.push(`<div class="bar ${cls}" style="height:${h}px"><span class="bar-tooltip">${tip}</span></div>`);
+        bars.push(`<div class="bar ${cls}"><span class="bar-tooltip">${tip}</span></div>`);
       }
     }
 
@@ -819,7 +827,7 @@ function renderList(svcs) {
       <div class="svc-abbr" style="background:${colors.card};color:${colors.icon}">${svc.abbr || '?'}</div>
       <div class="svc-info">
         <div class="svc-name">${svc.name || svc.id}</div>
-        <div class="svc-meta">${hist.length} ${unit}${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(hist)} incident${countIncidents(hist) !== 1 ? 's' : ''}</div>
+        <div class="svc-meta">${hist.length} ${unit}${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(svc)} incident${countIncidents(svc) !== 1 ? 's' : ''}</div>
       </div>
       <div class="bar-strip">${bars.join('')}</div>
       <div class="status-pip ${sc}"></div>
@@ -848,7 +856,7 @@ function renderDetail(svc) {
   const hist   = sliceHistory(svc);
   const colors = getColors(svc.cat);
   const avg    = calcAvgUptime(hist);
-  const incidents = countIncidents(hist);
+  const incidents = countIncidents(svc);
   const events = filterEvents(svc.events);
 
   // Metrics: avg uptime, incidents, longest streak
