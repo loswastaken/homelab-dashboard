@@ -788,7 +788,7 @@ app.post('/api/push/test', async (req, res) => {
     await webpush.sendNotification(sub, JSON.stringify({
       title: 'Homelab — Test notification',
       body:  'If you can see this, push notifications are working.',
-      tag:   'test',
+      tag:   'test-' + Date.now(),
       url:   '/'
     }));
     res.json({ ok: true });

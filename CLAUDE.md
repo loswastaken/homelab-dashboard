@@ -185,6 +185,20 @@ Single-file vanilla JS app. No build step.
 - **Dynamic favicon:** `updateFavicon()` called on every poll. Swaps among `favicon.svg` (green), `favicon-degraded.svg` (amber), `favicon-offline.svg` (red), `favicon-maintenance.svg` (grey) based on service states. Maintenance-mode services excluded from offline/degraded check.
 - **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 3-minute safety timeout.
 
+### Settings Modal
+
+Tabbed layout with seven panels: **General · Account · Weather · Notifications · Categories · API Key · Updates**. Introduced in commit `40341a7`.
+
+- Markup: `.settings-tab[data-tab="..."]` buttons in the header, `.settings-panel[data-panel="..."]` bodies. Tab strip scrolls horizontally on narrow screens.
+- `switchSettingsTab(tabId)` toggles the `.active` class on the matching tab/panel pair and shows/hides the shared footer based on the active panel's `data-footer` attribute.
+- `data-footer="hide"` on a panel hides the shared Cancel / Save Settings footer (used for tabs whose primary action lives inside the panel). Use sparingly: hiding the footer also hides Save for any pending changes made on other tabs before switching, which is why the Updates panel no longer uses it.
+- `openSettings()` resets to the General tab on every open.
+- A symmetrical (non-tabbed) settings modal also exists in `public/history.html` — category/settings changes must be applied to both files.
+
+### Categories Tab
+
+Categories can be created, edited inline, and deleted. Each row has a pencil button that loads its name, color, and parent into the Add form; the primary button switches to "Save" and a Cancel button appears. The category id (derived from the name) is kept stable across renames so services referencing it via `svc.cat` are not orphaned. The parent select is filtered to prevent self-parenting and disabled entirely when editing a category that has subcategories.
+
 ### Color System
 
 Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pink`, `slate`) or any `#rrggbb` hex. `getColors(colorKey)` returns `{ card, icon, pip }` — hex colors use `hex + '22'` for the icon background (8-digit hex alpha).
@@ -250,6 +264,8 @@ sudo docker compose up -d
 Scoped to containers with label `com.centurylinklabs.watchtower.scope=homelab`. Polls every 300s. Automatically pulls and redeploys when GHCR has a new image.
 
 **HTTP API** is enabled (`WATCHTOWER_HTTP_API_UPDATE=true`) on port 8080. The dashboard uses this for one-click updates via `POST /v1/update` with a Bearer token. Token is shared via `WATCHTOWER_HTTP_API_TOKEN` env var in both services. Because the dashboard uses `network_mode: host`, `WATCHTOWER_HTTP_API_URL=http://localhost:8080` overrides the default `http://watchtower:8080`.
+
+**Gotcha:** enabling `WATCHTOWER_HTTP_API_UPDATE=true` disables periodic polling by default. `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true` must also be set to keep the 5-minute poll alive alongside the HTTP API. Without it, Watchtower logs `Periodic runs are not enabled.` and images only refresh via one-click updates.
 
 ### First-Run Setup
 

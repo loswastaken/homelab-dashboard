@@ -13,6 +13,7 @@ services:
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_SCOPE=homelab           # only watch containers with this label
       - WATCHTOWER_HTTP_API_UPDATE=true
+      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=true   # keep the 5-minute poll running alongside the HTTP API
       - WATCHTOWER_HTTP_API_TOKEN=605a27e361f06ea4abbad1a0bc37601d093b8f6ee612a93ef60c16747dcb557f
     ports:
       - "8080:8080"
