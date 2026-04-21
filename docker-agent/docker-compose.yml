@@ -1,0 +1,18 @@
+services:
+  docker-agent:
+    build: .
+    # Or pull from GHCR once published:
+    # image: ghcr.io/loswastaken/homelab-dashboard-docker-agent:latest
+    container_name: homelab-docker-agent
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DASHBOARD_URL:    http://10.24.4.26:55964
+      REPORT_API_KEY:   PASTE_KEY_FROM_DASHBOARD_SETTINGS
+      POLL_INTERVAL_MS: 30000
+      # AGENT_NAME:     synology
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/app/data
+    labels:
+      com.centurylinklabs.watchtower.scope: homelab

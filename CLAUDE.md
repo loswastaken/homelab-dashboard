@@ -313,7 +313,7 @@ Status mapping: `online → online`, `stopped / stopping → offline`, anything 
 
 ## Docker Agent (`docker-agent/`)
 
-Mirrors the PM2 agent. Runs on any host with Docker, needs socket access (user in the `docker` group, or mount `/var/run/docker.sock` if containerized).
+Runs as a **Docker container** on any host with Docker (unlike the PM2 agent which is managed by PM2). Mounts the Docker socket read-only so it can `docker ps` on the host.
 
 Flow mirrors PM2 agent: register → discover → pull monitored → report. Discovery source is `docker ps -a --format '{{json .}}'` parsed line-by-line. Health is parsed from the `Status` column via regex (`(healthy)` / `(unhealthy)` / `(health: starting)`).
 
@@ -328,8 +328,13 @@ Status mapping `dockerToDashboard()`:
 
 Boot-loop tracking is in-memory (`Map<containerId, number[]>` of timestamps captured on the **transition into** `starting`, pruned to the last 10 min on each poll). Agent restart resets it — acceptable because restarting the agent usually means the host is healthy again.
 
-- **Config:** `docker-agent/ecosystem.config.js` — same vars as PM2 agent (`DASHBOARD_URL`, `REPORT_API_KEY`, optional `AGENT_NAME`).
-- **Auto-update:** `docker-agent/update-agent.sh` — cron: `*/15 * * * * bash ~/homelab-dashboard/docker-agent/update-agent.sh`.
+- **Image:** `ghcr.io/loswastaken/homelab-dashboard-docker-agent:latest` — built by `.github/workflows/docker-agent.yml` on any change under `docker-agent/`.
+- **Dockerfile:** Alpine + Node 20 + `docker-cli`. Image is ~80 MB.
+- **Config:** env vars on the container — `DASHBOARD_URL`, `REPORT_API_KEY`, optional `AGENT_NAME`, `POLL_INTERVAL_MS`.
+- **Required mounts:** `/var/run/docker.sock:/var/run/docker.sock:ro` (socket access) and `./data:/app/data` (persists agent ID across restarts).
+- **Networking:** `network_mode: host` so the agent can reach the dashboard at its LAN IP without extra network setup.
+- **Auto-update:** label the container with `com.centurylinklabs.watchtower.scope: homelab` and Watchtower will pull updates on the same 5-min cycle as the dashboard.
+- The `docker-agent/docker-compose.yml` in the repo is a reference/dev-build template. Production deploys should use the GHCR image directly (see the install snippet in Settings → API Key).
 
 ---
 

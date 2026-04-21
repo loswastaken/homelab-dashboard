@@ -1710,19 +1710,27 @@ function renderAgentSnippets(apiKey) {
   }
   if (dkEl) {
     dkEl.textContent =
-      '# On the host, as a user in the `docker` group:\n' +
-      'cd ~ && git clone https://github.com/loswastaken/homelab-dashboard.git\n' +
-      'cd homelab-dashboard/docker-agent\n' +
+      '# On the host — runs as a Docker container with socket access.\n' +
+      'mkdir -p ~/homelab-docker-agent/data && cd ~/homelab-docker-agent\n' +
       '\n' +
-      '# Edit ecosystem.config.js and set:\n' +
-      '#   DASHBOARD_URL:   ' + dashUrl + '\n' +
-      '#   REPORT_API_KEY:  ' + key + '\n' +
+      'cat > docker-compose.yml <<YAML\n' +
+      'services:\n' +
+      '  docker-agent:\n' +
+      '    image: ghcr.io/loswastaken/homelab-dashboard-docker-agent:latest\n' +
+      '    container_name: homelab-docker-agent\n' +
+      '    restart: unless-stopped\n' +
+      '    network_mode: host\n' +
+      '    environment:\n' +
+      '      DASHBOARD_URL:  ' + dashUrl + '\n' +
+      '      REPORT_API_KEY: ' + key + '\n' +
+      '    volumes:\n' +
+      '      - /var/run/docker.sock:/var/run/docker.sock:ro\n' +
+      '      - ./data:/app/data\n' +
+      '    labels:\n' +
+      '      com.centurylinklabs.watchtower.scope: homelab\n' +
+      'YAML\n' +
       '\n' +
-      'pm2 start ecosystem.config.js\n' +
-      'pm2 save\n' +
-      '\n' +
-      '# Auto-update every 15 min (optional):\n' +
-      '(crontab -l 2>/dev/null; echo "*/15 * * * * bash ~/homelab-dashboard/docker-agent/update-agent.sh >> ~/docker-agent-update.log 2>&1") | crontab -';
+      'sudo docker compose up -d';
   }
 }
 
