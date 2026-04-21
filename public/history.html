@@ -144,10 +144,10 @@
     .svc-uptime-label.cm { color: var(--slate); }
 
     /* ─── Uptime bar strip (uniform pill bars) ─── */
-    .bar-strip { display: flex; gap: 2px; align-items: stretch; height: 28px;
+    .bar-strip { display: flex; gap: 3px; align-items: stretch; height: 28px;
       flex: 1 1 0; min-width: 0; overflow: hidden; }
-    .bar { flex: 1 1 0; min-width: 0; border-radius: 2px;
-      transition: filter .15s, transform .15s; cursor: default; position: relative; }
+    .bar { flex: 1 1 0; min-width: 0; height: 100%; box-sizing: border-box;
+      border-radius: 2px; transition: filter .15s; cursor: default; position: relative; }
     .bar.ok     { background: var(--green); }
     .bar.warn   { background: var(--amber); }
     .bar.bad    { background: var(--red);   }
