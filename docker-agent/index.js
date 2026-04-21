@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
@@ -32,8 +32,15 @@ const BOOT_LOOP_THRESHOLD = 3;
 // The `Status` column contains human text like "Up 2 hours (healthy)" or
 // "Up 30 seconds (health: starting)" or "Exited (137) 5 minutes ago".
 function dockerList() {
-  const raw = execSync("docker ps -a --format '{{json .}}'", { encoding: 'utf8', timeout: 10000 });
-  return raw
+  const r = spawnSync('docker', ['ps', '-a', '--format', '{{json .}}'], {
+    encoding: 'utf8',
+    timeout:  30000
+  });
+  if (r.error)  throw r.error;
+  if (r.status !== 0) {
+    throw new Error(`docker ps exited ${r.status}: ${(r.stderr || '').trim()}`);
+  }
+  return (r.stdout || '')
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
