@@ -71,6 +71,7 @@
     .side-foot { margin-top: auto; padding: 16px 20px 0; border-top: 1px solid var(--b0); }
     .foot-lbl { font-size: 10px; color: var(--tm); margin-bottom: 3px; }
     .foot-val { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+    .foot-ver { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--tm); margin-top: 6px; }
 
     /* ─── Main ─── */
     .main { margin-left: var(--sw); min-height: 100vh; display: flex;
@@ -230,6 +231,7 @@
     .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
       z-index: 500; align-items: center; justify-content: center; padding: 20px; }
     .overlay.show { display: flex; }
+    body.modal-open { overflow: hidden; }
 
     .modal { background: var(--bg-modal); border: 1px solid var(--b1);
       border-radius: 14px; width: 100%; max-width: 560px;
@@ -281,15 +283,13 @@
     .modal-sec::after { content: ''; flex:1; height: 1px; background: var(--b0); }
 
     /* settings tabs */
-    .settings-tabs { display: flex; gap: 2px; background: var(--bg-surf);
+    .settings-tabs { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg-surf);
       border: 1px solid var(--b1); border-radius: 8px; padding: 3px;
-      margin-bottom: 18px; overflow-x: auto; scrollbar-width: none;
-      -webkit-overflow-scrolling: touch; }
-    .settings-tabs::-webkit-scrollbar { display: none; }
-    .settings-tab { padding: 6px 12px; font-family: 'Sora', sans-serif;
+      margin-bottom: 18px; }
+    .settings-tab { flex: 1 1 auto; padding: 6px 10px; font-family: 'Sora', sans-serif;
       font-size: 11px; font-weight: 500; line-height: 1; letter-spacing: .04em;
       color: var(--ts); background: none; border: none; border-radius: 6px;
-      cursor: pointer; white-space: nowrap; transition: all .15s; }
+      cursor: pointer; white-space: nowrap; text-align: center; transition: all .15s; }
     .settings-tab:hover  { color: var(--tp); background: var(--b0); }
     .settings-tab.active { color: var(--tp); background: var(--bg-hi); }
     .settings-panel { display: none; }
@@ -440,6 +440,7 @@
   <div class="side-foot">
     <div class="foot-lbl" id="foot-label">Homelab Server</div>
     <div class="foot-val" id="foot-ip"></div>
+    <div class="foot-ver" id="foot-ver" title="Build version">—</div>
     <button onclick="openSettings()" style="margin-top:10px;width:100%;font-family:'Sora',sans-serif;
       font-size:11px;font-weight:500;color:var(--ts);background:none;border:1px solid var(--b0);
       border-radius:5px;padding:5px 10px;cursor:pointer;transition:all .15s;text-align:left;"
@@ -1257,6 +1258,7 @@ function renderAll(fresh = false) {
   if (s.siteTitle)    { document.title = s.siteTitle; document.getElementById('brand-name').textContent = s.siteTitle; }
   if (s.serverLabel)  document.getElementById('foot-label').textContent = s.serverLabel;
   if (s.nasIp)        document.getElementById('foot-ip').textContent = s.nasIp;
+  document.getElementById('foot-ver').textContent = APP.version ? 'build ' + APP.version : 'build dev';
 }
 
 function renderNavCats() {
@@ -1332,6 +1334,7 @@ function openAddModal() {
   document.getElementById('f-disabled').checked = false;
   populateCatSelect('');
   document.getElementById('svc-overlay').classList.add('show');
+  document.body.classList.add('modal-open');
 }
 
 function openEditModal(id) {
@@ -1350,6 +1353,7 @@ function openEditModal(id) {
   document.getElementById('f-disabled').checked = !!s.disabled;
   populateCatSelect(s.cat);
   document.getElementById('svc-overlay').classList.add('show');
+  document.body.classList.add('modal-open');
 }
 
 function populateCatSelect(selected) {
@@ -1365,6 +1369,7 @@ function populateCatSelect(selected) {
 
 function closeSvcModal() {
   document.getElementById('svc-overlay').classList.remove('show');
+  document.body.classList.remove('modal-open');
 }
 
 async function submitSvc() {
@@ -1465,6 +1470,7 @@ function openSettings() {
   renderSwatches();
   switchSettingsTab('general');
   document.getElementById('cfg-overlay').classList.add('show');
+  document.body.classList.add('modal-open');
 }
 
 function copyApiKey() {
@@ -1478,6 +1484,7 @@ function copyApiKey() {
 
 function closeCfgModal() {
   document.getElementById('cfg-overlay').classList.remove('show');
+  document.body.classList.remove('modal-open');
 }
 
 function renderCfgCats() {
