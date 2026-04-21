@@ -153,7 +153,7 @@
     .bar.bad    { background: var(--red);   }
     .bar.maint  { background: var(--slate); opacity: .55; }
     .bar.empty  { background: var(--b1); }
-    .bar:not(.empty):hover { filter: brightness(1.15); transform: scaleY(1.06); }
+    .bar:not(.empty):hover { filter: brightness(1.15); }
     .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
       transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
       border-radius: 6px; padding: 5px 9px; white-space: nowrap; font-size: 11px;
@@ -812,7 +812,7 @@ function renderList(svcs) {
     for (let i = 0; i < slots; i++) {
       const histIdx = hist.length - slots + i;
       if (histIdx < 0) {
-        bars.push('<div class="bar empty" style="height:4px"></div>');
+        bars.push('<div class="bar empty"></div>');
       } else {
         const e   = hist[histIdx];
         const pct = e.uptime;
