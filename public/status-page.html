@@ -83,7 +83,7 @@
     /* ─── Service rows ─── */
     .svc-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 40px; }
     .svc-row { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
-      transition: all .15s; overflow: hidden; }
+      transition: all .15s; }
     .svc-row:hover { background: var(--bg-cardh); border-color: var(--b1); }
     .svc-row.open { border-color: var(--b2); background: var(--bg-cardh); }
     .svc-head { padding: 14px 18px; display: flex; align-items: center; gap: 16px;
@@ -243,8 +243,10 @@
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
   function barHeight(pct) {
+    // Container is 28px tall; cap at 24px so the rounded top of the bar
+    // stays visible and doesn't read as clipped against the row edge.
     if (pct === null || pct === undefined) return 8;
-    return Math.max(8, Math.round(pct / 100 * 28));
+    return Math.max(8, Math.round(pct / 100 * 24));
   }
   function calcAvgUptime(hist) {
     const valid = hist.filter(e => e.uptime !== null && e.uptime !== undefined);
