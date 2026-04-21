@@ -103,9 +103,9 @@
     .svc-uptime-label.cr { color: var(--red); }
     .svc-uptime-label.cm { color: var(--slate); }
 
-    .bar-strip { display: flex; gap: 3px; align-items: stretch; height: 34px;
-      flex: 1 1 260px; min-width: 120px; }
-    .bar { flex: 1 1 0; min-width: 4px; max-width: 12px; border-radius: 3px;
+    .bar-strip { display: flex; gap: 2px; align-items: stretch; height: 34px;
+      flex: 1 1 0; min-width: 0; overflow: hidden; }
+    .bar { flex: 1 1 0; min-width: 0; max-width: 12px; border-radius: 2px;
       transition: filter .15s, transform .15s; cursor: default; position: relative;
       background: var(--bg-hi); }
     .bar.ok    { background: var(--green); }
