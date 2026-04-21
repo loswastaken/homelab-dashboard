@@ -237,12 +237,14 @@ function ping(url, timeoutMs = 5000) {
       timeout:  timeoutMs,
       rejectUnauthorized: false
     }, res => {
-      resolve({ ok: res.statusCode < 500, elapsed: Date.now() - t0 });
+      const elapsed = Date.now() - t0;
+      const serverError = res.statusCode >= 500;
+      resolve({ ok: !serverError, serverError, elapsed });
       res.resume();
     });
 
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, elapsed: null }); });
-    req.on('error',   () => resolve({ ok: false, elapsed: null }));
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, serverError: false, elapsed: null }); });
+    req.on('error',   () => resolve({ ok: false, serverError: false, elapsed: null }));
     req.end();
   });
 }
@@ -425,19 +427,20 @@ async function checkAll() {
     const svc = fresh.services.find(s => s.id === id);
     if (!svc) continue;
     const prevStatus = svc.status;
-    const tick   = r.ok ? 1 : 0;
+    const tick   = r.serverError ? 2 : r.ok ? 1 : 0;
     svc.history  = pushHistory(svc.history, tick);
-    svc.status   = r.ok ? 'online' : (svc.status === 'degraded' ? 'degraded' : 'offline');
-    svc.response = r.ok ? r.elapsed + 'ms' : '—';
+    svc.status   = r.serverError ? 'degraded' : r.ok ? 'online' : (svc.status === 'degraded' ? 'degraded' : 'offline');
+    svc.response = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
     svc.uptime   = calcUptime(svc.history);
     svc.lastChecked = new Date().toISOString();
     accumulateDailyTick(svc, tick);
     accumulateHourlyTick(svc, tick);
     // event log: record transitions
     if (prevStatus !== svc.status) {
-      if (svc.status === 'offline')   pushEvent(svc, 'offline',   'Service became unreachable');
+      if (svc.status === 'offline')  pushEvent(svc, 'offline',  'Service became unreachable');
+      if (svc.status === 'degraded') pushEvent(svc, 'degraded', 'Service returned 5xx response');
       if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded'))
-                                       pushEvent(svc, 'recovery',  `Recovered from ${prevStatus}`);
+                                     pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
     }
   }
 
@@ -610,10 +613,10 @@ app.post('/api/services/:id/check', async (req, res) => {
 
   if (svc.url && svc.checkEnabled) {
     const r      = await ping(svc.url);
-    const tick   = r.ok ? 1 : 0;
+    const tick   = r.serverError ? 2 : r.ok ? 1 : 0;
     svc.history  = pushHistory(svc.history, tick);
-    svc.status   = r.ok ? 'online' : 'offline';
-    svc.response     = r.ok ? r.elapsed + 'ms' : '—';
+    svc.status   = r.serverError ? 'degraded' : r.ok ? 'online' : 'offline';
+    svc.response = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
     svc.uptime       = calcUptime(svc.history);
     svc.lastChecked  = new Date().toISOString();
     save(d);
