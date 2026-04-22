@@ -2142,11 +2142,12 @@ async function sendTestIfttt(btn) {
       }),
     });
     const j = await r.json().catch(() => ({}));
+    console.log('[ifttt-test]', r.status, j);
     if (r.ok) {
       msg.textContent = 'Test event sent!';
       msg.style.color = 'var(--green)';
     } else {
-      msg.textContent = j.error || 'Error — check key/event name';
+      msg.textContent = (j.error || `HTTP ${r.status}`).slice(0, 200);
       msg.style.color = 'var(--red)';
     }
   } catch (e) {
