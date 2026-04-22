@@ -670,6 +670,7 @@
         <button class="settings-tab"        data-tab="account"       role="tab" onclick="switchSettingsTab('account')">Account</button>
         <button class="settings-tab"        data-tab="weather"       role="tab" onclick="switchSettingsTab('weather')">Weather</button>
         <button class="settings-tab"        data-tab="notifications" role="tab" onclick="switchSettingsTab('notifications')">Notifications</button>
+        <button class="settings-tab"        data-tab="alerts"        role="tab" onclick="switchSettingsTab('alerts')">Alerts</button>
         <button class="settings-tab"        data-tab="categories"    role="tab" onclick="switchSettingsTab('categories')">Categories</button>
         <button class="settings-tab"        data-tab="apikey"        role="tab" onclick="switchSettingsTab('apikey')">API Key</button>
         <button class="settings-tab"        data-tab="updates"       role="tab" onclick="switchSettingsTab('updates')">Updates</button>
@@ -708,24 +709,6 @@
         <div class="form-group">
           <label class="form-lbl">Stale Report Threshold <span>(seconds, for push-reported services)</span></label>
           <input class="form-inp" id="cfg-stale" type="number" min="10" max="3600" placeholder="120">
-        </div>
-
-        <div class="modal-sec" style="margin-top:16px">Alert Thresholds</div>
-
-        <div class="form-row">
-          <div>
-            <label class="form-lbl">Escalate to Offline After <span>(consecutive degraded checks)</span></label>
-            <input class="form-inp" id="cfg-esc-count" type="number" min="1" max="100" placeholder="3">
-          </div>
-          <div>
-            <label class="form-lbl">Escalation Window <span>(minutes)</span></label>
-            <input class="form-inp" id="cfg-esc-window" type="number" min="1" max="1440" placeholder="5">
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-lbl">Slow Response Threshold <span>(ms, 0 = disabled. Per-service override available on each service.)</span></label>
-          <input class="form-inp" id="cfg-slow-ms" type="number" min="0" max="600000" placeholder="0">
         </div>
 
         <div class="modal-sec" style="margin-top:16px">Connected Agents</div>
@@ -827,6 +810,36 @@
             <button class="btn-sm" type="button" onclick="sendTestNtfy(this)">Send test notification</button>
             <span id="ntfy-message" style="font-size:12px;color:var(--ts)"></span>
           </div>
+        </div>
+      </div>
+
+      <div class="settings-panel" data-panel="alerts" data-footer="show">
+        <div class="modal-sec">Degraded &rarr; Offline Escalation</div>
+        <div style="font-size:12px;color:var(--ts);margin-bottom:10px">
+          A URL service that returns 5xx or exceeds the slow-response threshold is marked
+          <strong>degraded</strong>. If it stays degraded for this many consecutive checks within
+          the configured window, it escalates to <strong>offline</strong> and a notification fires.
+        </div>
+        <div class="form-row">
+          <div>
+            <label class="form-lbl">Escalate to Offline After <span>(consecutive degraded checks)</span></label>
+            <input class="form-inp" id="cfg-esc-count" type="number" min="1" max="100" placeholder="3">
+          </div>
+          <div>
+            <label class="form-lbl">Escalation Window <span>(minutes)</span></label>
+            <input class="form-inp" id="cfg-esc-window" type="number" min="1" max="1440" placeholder="5">
+          </div>
+        </div>
+
+        <div class="modal-sec" style="margin-top:16px">Slow Response Threshold</div>
+        <div style="font-size:12px;color:var(--ts);margin-bottom:10px">
+          When a URL service returns 2xx but the response takes longer than this, it's treated as
+          degraded (same visual, same notification). Set to <strong>0</strong> to disable globally.
+          Each URL service can override this from its edit modal.
+        </div>
+        <div class="form-group">
+          <label class="form-lbl">Global Threshold <span>(ms, 0 = disabled)</span></label>
+          <input class="form-inp" id="cfg-slow-ms" type="number" min="0" max="600000" placeholder="0">
         </div>
       </div>
 
