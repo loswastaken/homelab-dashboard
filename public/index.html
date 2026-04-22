@@ -772,6 +772,23 @@
           <button class="btn-sm" type="button" onclick="sendTestPush(this)">Send test notification</button>
           <span id="push-message" style="font-size:12px;color:var(--ts)"></span>
         </div>
+        <hr style="margin:14px 0;border:none;border-top:1px solid var(--border)">
+        <div class="modal-sec" style="margin-bottom:8px">IFTTT</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">Enable IFTTT notifications</div>
+            <div class="toggle-desc">POST to an IFTTT Maker webhook on status changes</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="cfg-ifttt-enabled"><span class="tslider"></span></label>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+          <input class="input-sm" id="cfg-ifttt-key"   type="password" placeholder="Webhook key (from ifttt.com/maker_webhooks/settings)" autocomplete="off">
+          <input class="input-sm" id="cfg-ifttt-event" type="text"     placeholder="Event name (default: homelab_alert)">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn-sm" type="button" onclick="sendTestIfttt(this)">Send test event</button>
+            <span id="ifttt-message" style="font-size:12px;color:var(--ts)"></span>
+          </div>
+        </div>
       </div>
 
       <div class="settings-panel" data-panel="categories" data-footer="show">
@@ -1774,6 +1791,11 @@ function openSettings() {
   document.getElementById('push-message').textContent    = '';
   document.getElementById('push-message').style.color    = 'var(--ts)';
   syncPushToggleWithBrowser();
+  document.getElementById('cfg-ifttt-enabled').checked   = !!s.iftttEnabled;
+  document.getElementById('cfg-ifttt-key').value         = s.iftttWebhookKey || '';
+  document.getElementById('cfg-ifttt-event').value       = s.iftttEventName  || '';
+  document.getElementById('ifttt-message').textContent   = '';
+  document.getElementById('ifttt-message').style.color   = 'var(--ts)';
   document.getElementById('cfg-apikey').value      = '';
   document.getElementById('cfg-curpw').value       = '';
   document.getElementById('cfg-newuser').value     = '';
@@ -2021,7 +2043,10 @@ async function saveSettings() {
         weatherLocation: document.getElementById('cfg-weather-location').value.trim(),
         weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),
         weatherUnits: document.getElementById('cfg-weather-units').value === 'celsius' ? 'celsius' : 'fahrenheit',
-        pushEnabled: document.getElementById('cfg-push-enabled').checked,
+        pushEnabled:     document.getElementById('cfg-push-enabled').checked,
+        iftttEnabled:    document.getElementById('cfg-ifttt-enabled').checked,
+        iftttWebhookKey: document.getElementById('cfg-ifttt-key').value.trim(),
+        iftttEventName:  document.getElementById('cfg-ifttt-event').value.trim(),
       },
       categories: pendingCats
     })
@@ -2100,6 +2125,28 @@ async function sendTestPush(btn) {
     btn.disabled = false;
     btn.textContent = original;
   }
+}
+
+async function sendTestIfttt(btn) {
+  const msg = document.getElementById('ifttt-message');
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+  msg.style.color = 'var(--ts)';
+  try {
+    const r = await fetch('/api/ifttt/test', { method: 'POST' });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      msg.textContent = 'Test event sent!';
+      msg.style.color = 'var(--green)';
+    } else {
+      msg.textContent = j.error || 'Error — check key/event name';
+      msg.style.color = 'var(--red)';
+    }
+  } catch (e) {
+    msg.textContent = 'Network error';
+    msg.style.color = 'var(--red)';
+  }
+  btn.disabled = false;
 }
 
 async function changeAccount() {

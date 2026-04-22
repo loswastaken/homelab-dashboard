@@ -52,6 +52,9 @@ function defaults() {
       weatherCountryCode: '',
       weatherUnits: 'fahrenheit',
       pushEnabled: false,
+      iftttEnabled: false,
+      iftttWebhookKey: '',
+      iftttEventName: 'homelab_alert',
       reportStaleAfter: 120,
     },
     categories:  [],
@@ -168,13 +171,30 @@ async function notifyPush(svc, type, note = '') {
   if (stale.size) saveSubs(subs.filter(s => !stale.has(s.endpoint)));
 }
 
+async function notifyIfttt(svc, type, note = '') {
+  const s = load().settings;
+  if (!s.iftttWebhookKey || !s.iftttEventName) return;
+  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/json/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value1: svc.name || svc.id, value2: eventLabel(type), value3: note || '' }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (e) {
+    console.error('[ifttt] send failed:', e.message);
+  }
+}
+
 function maybeNotify(svc, type, note) {
   try {
     if (!['offline','degraded','recovery'].includes(type)) return;
-    if (!load().settings?.pushEnabled) return;
-    notifyPush(svc, type, note);
+    const s = load().settings;
+    if (s.pushEnabled)  notifyPush(svc, type, note);
+    if (s.iftttEnabled) notifyIfttt(svc, type, note);
   } catch (e) {
-    console.error('[push] maybeNotify error:', e.message);
+    console.error('[notify] maybeNotify error:', e.message);
   }
 }
 
@@ -1118,6 +1138,9 @@ app.put('/api/config', (req, res) => {
     if (incoming.weatherLocation !== undefined) incoming.weatherLocation = String(incoming.weatherLocation || '').trim();
     if (incoming.weatherUnits !== undefined) incoming.weatherUnits = incoming.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
     if (incoming.weatherEnabled !== undefined) incoming.weatherEnabled = !!incoming.weatherEnabled;
+    if (incoming.iftttEnabled    !== undefined) incoming.iftttEnabled    = !!incoming.iftttEnabled;
+    if (incoming.iftttWebhookKey !== undefined) incoming.iftttWebhookKey = String(incoming.iftttWebhookKey || '').trim();
+    if (incoming.iftttEventName  !== undefined) incoming.iftttEventName  = String(incoming.iftttEventName  || '').trim() || 'homelab_alert';
     d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
   }
@@ -1172,6 +1195,31 @@ app.post('/api/push/test', async (req, res) => {
       saveSubs(subs);
     }
     res.status(500).json({ ok: false, error: err.message || 'Send failed' });
+  }
+});
+
+// ─── API: IFTTT ──────────────────────────────────────────────────────────────
+
+app.post('/api/ifttt/test', async (req, res) => {
+  const s = load().settings;
+  if (!s.iftttWebhookKey || !s.iftttEventName) {
+    return res.status(400).json({ ok: false, error: 'IFTTT webhook key and event name are required' });
+  }
+  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/json/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value1: 'Homelab Dashboard', value2: 'Test', value3: 'IFTTT integration is working.' }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      return res.status(502).json({ ok: false, error: `IFTTT returned ${r.status}: ${text}` });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: e.message });
   }
 });
 
