@@ -119,6 +119,8 @@ sudo docker compose up -d
 | `POST` | `/api/push/subscribe` | Register a browser push subscription |
 | `POST` | `/api/push/unsubscribe` | Remove a push subscription |
 | `POST` | `/api/push/test` | Send a test push notification to all subscribers |
+| `POST` | `/api/ifttt/test` | Send a test event to the configured IFTTT Maker webhook (accepts unsaved `webhookKey`/`eventName`) |
+| `POST` | `/api/ntfy/test` | Send a test notification to the configured ntfy topic (accepts unsaved `topic`) |
 | `GET` | `/api/status-pages` | List all configured public status pages (auth) |
 | `POST` | `/api/status-pages` | Create a new status page (auth) |
 | `PUT` | `/api/status-pages/:id` | Update a status page (auth) |
@@ -175,9 +177,19 @@ Added to each service object for the uptime history page:
 - **VAPID keys:** auto-generated on first start, stored in `data/vapid.json`. `ensureVapid()` generates and persists them if absent.
 - **Subscriptions:** stored in `data/push-subscriptions.json` as an array of Web Push subscription objects. Stale endpoints (HTTP 404/410) are pruned automatically after a failed send.
 - **`notifyPush(svc, type, note)`** — sends to all subscribers via `webpush.sendNotification`. Payload: `{ title, body, tag, url }`.
-- **`maybeNotify(svc, type, note)`** — gate function; only fires for `offline`, `degraded`, `recovery` types and only when `settings.pushEnabled` is true. Called by `checkAll()` and `/api/services/:id/report` on status transitions.
+- **`maybeNotify(svc, type, note)`** — gate function; only fires for `offline`, `degraded`, `recovery` types. Fans out to three independent channels, each with its own enable toggle: Web Push (`settings.pushEnabled`), IFTTT (`settings.iftttEnabled`), and ntfy (`settings.ntfyEnabled`). Called by `checkAll()` and `/api/services/:id/report` on status transitions.
 - **Frontend:** `public/push-client.js` (window.Push API — register, unregister, test, state) + `public/sw.js` (service worker — handles `push` events and `notificationclick`).
-- **Settings toggle:** `pushEnabled` (default `false`). Notifications are silently skipped when disabled, even if subscriptions exist.
+- **Settings toggles:** `pushEnabled`, `iftttEnabled`, `ntfyEnabled` (all default `false`). Each channel is silently skipped when disabled, even if its config is populated.
+
+### IFTTT Webhook
+
+- **`notifyIfttt(svc, type, note)`** — POSTs JSON to `https://maker.ifttt.com/trigger/{eventName}/with/key/{key}` with body `{ value1: service name, value2: event label, value3: note }`. Config: `settings.iftttWebhookKey` + `settings.iftttEventName`. Pasted keys/URLs are normalized by `normalizeIftttKey()` (accepts bare keys or full IFTTT URLs).
+- **Test endpoint:** `POST /api/ifttt/test` — accepts unsaved `{ webhookKey, eventName }` from the Notifications tab.
+
+### ntfy
+
+- **`notifyNtfy(svc, type, note)`** — POSTs `text/plain` body to `https://ntfy.sh/<topic>` with `Title`, `Priority` (4=offline, 3=degraded, 2=recovery), and `Tags` headers (red_circle / warning / white_check_mark). Config: `settings.ntfyTopic` only — server URL is hardcoded to `https://ntfy.sh`. Pasted URLs are normalized by `normalizeNtfyTopic()` to just the topic slug (a-zA-Z0-9_-, max 64 chars). Subscribe on iOS via the official ntfy app.
+- **Test endpoint:** `POST /api/ntfy/test` — accepts unsaved `{ topic }` from the Notifications tab.
 
 ### Public Status Pages
 

@@ -789,6 +789,22 @@
             <span id="ifttt-message" style="font-size:12px;color:var(--ts)"></span>
           </div>
         </div>
+
+        <div class="modal-sec" style="margin-top:16px;margin-bottom:8px">ntfy</div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-name">Enable ntfy notifications</div>
+            <div class="toggle-desc">Push to the ntfy iOS app via https://ntfy.sh/&lt;topic&gt;</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="cfg-ntfy-enabled"><span class="tslider"></span></label>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+          <input class="input-sm" id="cfg-ntfy-topic" type="text" placeholder="Topic (e.g. los-homelab-a8f3)" autocomplete="off">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn-sm" type="button" onclick="sendTestNtfy(this)">Send test notification</button>
+            <span id="ntfy-message" style="font-size:12px;color:var(--ts)"></span>
+          </div>
+        </div>
       </div>
 
       <div class="settings-panel" data-panel="categories" data-footer="show">
@@ -1796,6 +1812,10 @@ function openSettings() {
   document.getElementById('cfg-ifttt-event').value       = s.iftttEventName  || '';
   document.getElementById('ifttt-message').textContent   = '';
   document.getElementById('ifttt-message').style.color   = 'var(--ts)';
+  document.getElementById('cfg-ntfy-enabled').checked    = !!s.ntfyEnabled;
+  document.getElementById('cfg-ntfy-topic').value        = s.ntfyTopic || '';
+  document.getElementById('ntfy-message').textContent    = '';
+  document.getElementById('ntfy-message').style.color    = 'var(--ts)';
   document.getElementById('cfg-apikey').value      = '';
   document.getElementById('cfg-curpw').value       = '';
   document.getElementById('cfg-newuser').value     = '';
@@ -2047,6 +2067,8 @@ async function saveSettings() {
         iftttEnabled:    document.getElementById('cfg-ifttt-enabled').checked,
         iftttWebhookKey: document.getElementById('cfg-ifttt-key').value.trim(),
         iftttEventName:  document.getElementById('cfg-ifttt-event').value.trim(),
+        ntfyEnabled:     document.getElementById('cfg-ntfy-enabled').checked,
+        ntfyTopic:       document.getElementById('cfg-ntfy-topic').value.trim(),
       },
       categories: pendingCats
     })
@@ -2145,6 +2167,35 @@ async function sendTestIfttt(btn) {
     console.log('[ifttt-test]', r.status, j);
     if (r.ok) {
       msg.textContent = 'Test event sent!';
+      msg.style.color = 'var(--green)';
+    } else {
+      msg.textContent = (j.error || `HTTP ${r.status}`).slice(0, 200);
+      msg.style.color = 'var(--red)';
+    }
+  } catch (e) {
+    msg.textContent = 'Network error';
+    msg.style.color = 'var(--red)';
+  }
+  btn.disabled = false;
+}
+
+async function sendTestNtfy(btn) {
+  const msg = document.getElementById('ntfy-message');
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+  msg.style.color = 'var(--ts)';
+  try {
+    const r = await fetch('/api/ntfy/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: document.getElementById('cfg-ntfy-topic').value.trim(),
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    console.log('[ntfy-test]', r.status, j);
+    if (r.ok) {
+      msg.textContent = 'Test notification sent!';
       msg.style.color = 'var(--green)';
     } else {
       msg.textContent = (j.error || `HTTP ${r.status}`).slice(0, 200);

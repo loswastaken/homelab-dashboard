@@ -55,6 +55,8 @@ function defaults() {
       iftttEnabled: false,
       iftttWebhookKey: '',
       iftttEventName: 'homelab_alert',
+      ntfyEnabled: false,
+      ntfyTopic: '',
       reportStaleAfter: 120,
     },
     categories:  [],
@@ -183,6 +185,14 @@ function normalizeIftttEvent(v) {
   return e || 'homelab_alert';
 }
 
+function normalizeNtfyTopic(v) {
+  let t = String(v || '').trim();
+  const m = t.match(/ntfy\.sh\/([^?#\s/]+)/i);
+  if (m) t = m[1];
+  t = t.replace(/[^a-zA-Z0-9_-]/g, '');
+  return t.slice(0, 64);
+}
+
 async function notifyIfttt(svc, type, note = '') {
   const s = load().settings;
   if (!s.iftttWebhookKey || !s.iftttEventName) return;
@@ -199,12 +209,38 @@ async function notifyIfttt(svc, type, note = '') {
   }
 }
 
+async function notifyNtfy(svc, type, note = '') {
+  const s = load().settings;
+  if (!s.ntfyTopic) return;
+  const url = `https://ntfy.sh/${encodeURIComponent(s.ntfyTopic)}`;
+  const title = `${svc.name || svc.id}: ${eventLabel(type)}`;
+  const body  = note || eventLabel(type);
+  const priority = type === 'offline' ? '4' : type === 'degraded' ? '3' : '2';
+  const tags = type === 'offline' ? 'red_circle' : type === 'degraded' ? 'warning' : 'white_check_mark';
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Title': title,
+        'Priority': priority,
+        'Tags': tags,
+      },
+      body,
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (e) {
+    console.error('[ntfy] send failed:', e.message);
+  }
+}
+
 function maybeNotify(svc, type, note) {
   try {
     if (!['offline','degraded','recovery'].includes(type)) return;
     const s = load().settings;
     if (s.pushEnabled)  notifyPush(svc, type, note);
     if (s.iftttEnabled) notifyIfttt(svc, type, note);
+    if (s.ntfyEnabled)  notifyNtfy(svc, type, note);
   } catch (e) {
     console.error('[notify] maybeNotify error:', e.message);
   }
@@ -1181,6 +1217,8 @@ app.put('/api/config', (req, res) => {
     if (incoming.iftttEnabled    !== undefined) incoming.iftttEnabled    = !!incoming.iftttEnabled;
     if (incoming.iftttWebhookKey !== undefined) incoming.iftttWebhookKey = normalizeIftttKey(incoming.iftttWebhookKey);
     if (incoming.iftttEventName  !== undefined) incoming.iftttEventName  = normalizeIftttEvent(incoming.iftttEventName);
+    if (incoming.ntfyEnabled     !== undefined) incoming.ntfyEnabled     = !!incoming.ntfyEnabled;
+    if (incoming.ntfyTopic       !== undefined) incoming.ntfyTopic       = normalizeNtfyTopic(incoming.ntfyTopic);
     d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
   }
@@ -1266,6 +1304,42 @@ app.post('/api/ifttt/test', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('[ifttt] fetch failed:', e.name, e.message);
+    res.status(502).json({ ok: false, error: `${e.name}: ${e.message}` });
+  }
+});
+
+// ─── API: ntfy ───────────────────────────────────────────────────────────────
+
+app.post('/api/ntfy/test', async (req, res) => {
+  const s = load().settings;
+  const topic = normalizeNtfyTopic((req.body && req.body.topic) || s.ntfyTopic || '');
+  console.log(`[ntfy] test requested: topic=${topic || '(empty)'}`);
+  if (!topic) {
+    console.log('[ntfy] test rejected: missing topic');
+    return res.status(400).json({ ok: false, error: 'ntfy topic is required' });
+  }
+  const url = `https://ntfy.sh/${encodeURIComponent(topic)}`;
+  console.log(`[ntfy] POST ${url}`);
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Title': 'Homelab Dashboard: Test',
+        'Priority': '3',
+        'Tags': 'bell',
+      },
+      body: 'ntfy integration is working.',
+      signal: AbortSignal.timeout(8000),
+    });
+    const text = await r.text().catch(() => '');
+    console.log(`[ntfy] response ${r.status}: ${text.slice(0, 300)}`);
+    if (!r.ok) {
+      return res.status(502).json({ ok: false, error: `ntfy returned ${r.status}: ${text.slice(0, 300)}` });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[ntfy] fetch failed:', e.name, e.message);
     res.status(502).json({ ok: false, error: `${e.name}: ${e.message}` });
   }
 });
