@@ -964,6 +964,9 @@ async function doRefreshAll() {
   const icon = document.getElementById('refresh-icon');
   if (btn) { btn.disabled = true; icon.classList.add('spinning'); }
   document.getElementById('ring').classList.add('active');
+  // Manual refresh: re-ping services to update live status + response times,
+  // but do NOT record a history tick. The 30-min history bar is driven solely
+  // by the scheduled poll so its cadence stays predictable.
   try { await fetch('/api/check-all', { method: 'POST' }); } catch(e) {}
   await fetchData(true);
   if (btn) { btn.disabled = false; icon.classList.remove('spinning'); }

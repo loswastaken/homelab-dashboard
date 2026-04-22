@@ -736,7 +736,7 @@ async function getWeatherData(force = false) {
   return result;
 }
 
-async function checkAll() {
+async function checkAll({ recordHistory = true } = {}) {
   const toCheck = load().services
     .filter(s => s.url && s.checkEnabled && !s.maintenance && !s.disabled)
     .map(s => ({ id: s.id, url: s.url }));
@@ -797,12 +797,14 @@ async function checkAll() {
       svc.status = 'offline';
     }
 
-    svc.history  = pushHistory(svc.history, tick);
+    if (recordHistory) {
+      svc.history = pushHistory(svc.history, tick);
+      svc.uptime  = calcUptime(svc.history);
+      accumulateDailyTick(svc, tick);
+      accumulateHourlyTick(svc, tick);
+    }
     svc.response = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
-    svc.uptime   = calcUptime(svc.history);
     svc.lastChecked = new Date().toISOString();
-    accumulateDailyTick(svc, tick);
-    accumulateHourlyTick(svc, tick);
     // event log: record transitions
     if (prevStatus !== svc.status) {
       if (svc.status === 'offline')  { pushEvent(svc, 'offline',  'Service became unreachable'); maybeNotify(svc, 'offline',  'Service became unreachable'); }
@@ -821,9 +823,11 @@ async function checkAll() {
   for (const svc of fresh.services) {
     if (svc.disabled) continue;
     if (svc.maintenance) {
-      svc.history     = pushHistory(svc.history, 3);
-      accumulateDailyTick(svc, 3);
-      accumulateHourlyTick(svc, 3);
+      if (recordHistory) {
+        svc.history = pushHistory(svc.history, 3);
+        accumulateDailyTick(svc, 3);
+        accumulateHourlyTick(svc, 3);
+      }
       svc.status      = 'maintenance';
       svc.lastChecked = new Date().toISOString();
     }
@@ -838,11 +842,13 @@ async function checkAll() {
     if (!isReportStale(svc, now, staleThreshold)) continue;
     staleCount++;
     const prevStatus = svc.status;
-    svc.history = pushHistory(svc.history, 0);
+    if (recordHistory) {
+      svc.history = pushHistory(svc.history, 0);
+      svc.uptime  = calcUptime(svc.history);
+      accumulateDailyTick(svc, 0);
+      accumulateHourlyTick(svc, 0);
+    }
     svc.status  = 'offline';
-    svc.uptime  = calcUptime(svc.history);
-    accumulateDailyTick(svc, 0);
-    accumulateHourlyTick(svc, 0);
     if (prevStatus !== 'offline') {
       const note = svc.lastChecked
         ? `No report received in over ${staleThreshold}s`
@@ -1065,7 +1071,12 @@ app.post('/api/services/:id/pin', (req, res) => {
 });
 
 app.post('/api/check-all', async (req, res) => {
-  await checkAll();
+  // Manual refresh from the UI: re-pings all services to update live status
+  // and response times, but does NOT append to svc.history / dailyHistory /
+  // hourlyHistory. Those are reserved for the scheduled poll so history bars
+  // track real-time cadence regardless of how often users click refresh.
+  const recordHistory = req.query.recordHistory === 'true';
+  await checkAll({ recordHistory });
   res.json({ ok: true });
 });
 
