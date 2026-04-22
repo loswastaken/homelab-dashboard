@@ -171,6 +171,18 @@ async function notifyPush(svc, type, note = '') {
   if (stale.size) saveSubs(subs.filter(s => !stale.has(s.endpoint)));
 }
 
+function normalizeIftttKey(v) {
+  let k = String(v || '').trim();
+  const m = k.match(/\/(?:use|trigger\/[^/]+\/(?:json\/)?with\/key)\/([^/?#\s]+)/);
+  if (m) k = m[1];
+  return k;
+}
+
+function normalizeIftttEvent(v) {
+  const e = String(v || '').trim().replace(/\s+/g, '_');
+  return e || 'homelab_alert';
+}
+
 async function notifyIfttt(svc, type, note = '') {
   const s = load().settings;
   if (!s.iftttWebhookKey || !s.iftttEventName) return;
@@ -1139,8 +1151,8 @@ app.put('/api/config', (req, res) => {
     if (incoming.weatherUnits !== undefined) incoming.weatherUnits = incoming.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
     if (incoming.weatherEnabled !== undefined) incoming.weatherEnabled = !!incoming.weatherEnabled;
     if (incoming.iftttEnabled    !== undefined) incoming.iftttEnabled    = !!incoming.iftttEnabled;
-    if (incoming.iftttWebhookKey !== undefined) incoming.iftttWebhookKey = String(incoming.iftttWebhookKey || '').trim();
-    if (incoming.iftttEventName  !== undefined) incoming.iftttEventName  = String(incoming.iftttEventName  || '').trim() || 'homelab_alert';
+    if (incoming.iftttWebhookKey !== undefined) incoming.iftttWebhookKey = normalizeIftttKey(incoming.iftttWebhookKey);
+    if (incoming.iftttEventName  !== undefined) incoming.iftttEventName  = normalizeIftttEvent(incoming.iftttEventName);
     d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
   }
@@ -1202,8 +1214,8 @@ app.post('/api/push/test', async (req, res) => {
 
 app.post('/api/ifttt/test', async (req, res) => {
   const s = load().settings;
-  const key   = String((req.body && req.body.webhookKey) || s.iftttWebhookKey || '').trim();
-  const event = String((req.body && req.body.eventName)  || s.iftttEventName  || '').trim();
+  const key   = normalizeIftttKey((req.body && req.body.webhookKey) || s.iftttWebhookKey || '');
+  const event = normalizeIftttEvent((req.body && req.body.eventName)  || s.iftttEventName  || '');
   console.log(`[ifttt] test requested: event=${event || '(empty)'} keyLen=${key.length}`);
   if (!key || !event) {
     console.log('[ifttt] test rejected: missing key or event');
