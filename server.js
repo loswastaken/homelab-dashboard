@@ -710,8 +710,36 @@ async function checkAll() {
     if (!svc) continue;
     const prevStatus = svc.status;
     const tick   = r.serverError ? 2 : r.ok ? 1 : 0;
+    const now = Date.now();
+
+    if (r.serverError) {
+      // Track consecutive degraded checks with a 5-minute window.
+      // Three degraded checks within 5 minutes escalates to offline.
+      if (!svc.degradedSince) svc.degradedSince = now;
+      svc.degradedStreak = (svc.degradedStreak || 0) + 1;
+      const windowExpired = (now - svc.degradedSince) > 5 * 60 * 1000;
+      if (svc.degradedStreak >= 3 && !windowExpired) {
+        svc.status = 'offline';
+      } else if (windowExpired) {
+        // Window elapsed — reset streak and stay degraded
+        svc.degradedSince  = now;
+        svc.degradedStreak = 1;
+        svc.status = 'degraded';
+      } else {
+        svc.status = 'degraded';
+      }
+    } else if (r.ok) {
+      svc.status = 'online';
+      svc.degradedSince  = null;
+      svc.degradedStreak = 0;
+    } else {
+      // Connection error / timeout
+      svc.degradedSince  = null;
+      svc.degradedStreak = 0;
+      svc.status = 'offline';
+    }
+
     svc.history  = pushHistory(svc.history, tick);
-    svc.status   = r.serverError ? 'degraded' : r.ok ? 'online' : (svc.status === 'degraded' ? 'degraded' : 'offline');
     svc.response = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
     svc.uptime   = calcUptime(svc.history);
     svc.lastChecked = new Date().toISOString();
