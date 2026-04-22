@@ -1204,10 +1204,13 @@ app.post('/api/ifttt/test', async (req, res) => {
   const s = load().settings;
   const key   = String((req.body && req.body.webhookKey) || s.iftttWebhookKey || '').trim();
   const event = String((req.body && req.body.eventName)  || s.iftttEventName  || '').trim();
+  console.log(`[ifttt] test requested: event=${event || '(empty)'} keyLen=${key.length}`);
   if (!key || !event) {
+    console.log('[ifttt] test rejected: missing key or event');
     return res.status(400).json({ ok: false, error: 'IFTTT webhook key and event name are required' });
   }
   const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(event)}/with/key/${encodeURIComponent(key)}`;
+  console.log(`[ifttt] POST ${url.replace(key, '***')}`);
   try {
     const r = await fetch(url, {
       method: 'POST',
@@ -1215,13 +1218,15 @@ app.post('/api/ifttt/test', async (req, res) => {
       body: JSON.stringify({ value1: 'Homelab Dashboard', value2: 'Test', value3: 'IFTTT integration is working.' }),
       signal: AbortSignal.timeout(8000),
     });
+    const text = await r.text().catch(() => '');
+    console.log(`[ifttt] response ${r.status}: ${text.slice(0, 300)}`);
     if (!r.ok) {
-      const text = await r.text().catch(() => '');
-      return res.status(502).json({ ok: false, error: `IFTTT returned ${r.status}: ${text}` });
+      return res.status(502).json({ ok: false, error: `IFTTT returned ${r.status}: ${text.slice(0, 300)}` });
     }
     res.json({ ok: true });
   } catch (e) {
-    res.status(502).json({ ok: false, error: e.message });
+    console.error('[ifttt] fetch failed:', e.name, e.message);
+    res.status(502).json({ ok: false, error: `${e.name}: ${e.message}` });
   }
 });
 
