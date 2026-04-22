@@ -174,7 +174,7 @@ async function notifyPush(svc, type, note = '') {
 async function notifyIfttt(svc, type, note = '') {
   const s = load().settings;
   if (!s.iftttWebhookKey || !s.iftttEventName) return;
-  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/json/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
+  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
   try {
     await fetch(url, {
       method: 'POST',
@@ -1205,7 +1205,7 @@ app.post('/api/ifttt/test', async (req, res) => {
   if (!s.iftttWebhookKey || !s.iftttEventName) {
     return res.status(400).json({ ok: false, error: 'IFTTT webhook key and event name are required' });
   }
-  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/json/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
+  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
   try {
     const r = await fetch(url, {
       method: 'POST',
