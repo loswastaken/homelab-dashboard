@@ -591,6 +591,11 @@
         <input class="form-inp" id="f-url" placeholder="http://10.24.4.26:32400">
       </div>
 
+      <div class="form-group when-url">
+        <label class="form-lbl">Slow Response Threshold <span>(ms, optional — overrides global. Leave blank to inherit, 0 to disable.)</span></label>
+        <input class="form-inp" id="f-slow-ms" type="number" min="0" max="600000" placeholder="inherits global">
+      </div>
+
       <div class="form-group when-pm2" style="display:none">
         <label class="form-lbl">PM2 Host</label>
         <select class="form-inp" id="f-pm2-agent" onchange="onAgentSelect('pm2')"></select>
@@ -703,6 +708,24 @@
         <div class="form-group">
           <label class="form-lbl">Stale Report Threshold <span>(seconds, for push-reported services)</span></label>
           <input class="form-inp" id="cfg-stale" type="number" min="10" max="3600" placeholder="120">
+        </div>
+
+        <div class="modal-sec" style="margin-top:16px">Alert Thresholds</div>
+
+        <div class="form-row">
+          <div>
+            <label class="form-lbl">Escalate to Offline After <span>(consecutive degraded checks)</span></label>
+            <input class="form-inp" id="cfg-esc-count" type="number" min="1" max="100" placeholder="3">
+          </div>
+          <div>
+            <label class="form-lbl">Escalation Window <span>(minutes)</span></label>
+            <input class="form-inp" id="cfg-esc-window" type="number" min="1" max="1440" placeholder="5">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-lbl">Slow Response Threshold <span>(ms, 0 = disabled. Per-service override available on each service.)</span></label>
+          <input class="form-inp" id="cfg-slow-ms" type="number" min="0" max="600000" placeholder="0">
         </div>
 
         <div class="modal-sec" style="margin-top:16px">Connected Agents</div>
@@ -1440,6 +1463,7 @@ function openAddModal() {
   document.getElementById('f-desc').value  = '';
   document.getElementById('f-url').value   = '';
   document.getElementById('f-port').value  = '';
+  document.getElementById('f-slow-ms').value = '';
   document.getElementById('f-hasui').checked    = true;
   document.getElementById('f-check').checked    = true;
   document.getElementById('f-maint').checked    = false;
@@ -1461,6 +1485,7 @@ function openEditModal(id) {
   document.getElementById('f-desc').value  = s.desc||'';
   document.getElementById('f-url').value   = s.url||'';
   document.getElementById('f-port').value  = s.port||'';
+  document.getElementById('f-slow-ms').value = (s.slowThresholdMs ?? '') === '' ? '' : s.slowThresholdMs;
   document.getElementById('f-hasui').checked    = !!s.hasUI;
   document.getElementById('f-check').checked    = !!s.checkEnabled;
   document.getElementById('f-maint').checked    = !!s.maintenance;
@@ -1615,6 +1640,11 @@ async function submitSvc() {
     ? document.getElementById('f-docker-container-manual').value
     : document.getElementById('f-docker-container').value).trim();
 
+  const slowMsRaw = document.getElementById('f-slow-ms').value.trim();
+  const slowMsValue = (checkType === 'url' && slowMsRaw !== '')
+    ? Math.max(0, parseInt(slowMsRaw, 10) || 0)
+    : null;
+
   const body = {
     name:         document.getElementById('f-name').value.trim(),
     abbr:         document.getElementById('f-abbr').value.trim().toUpperCase().slice(0,4),
@@ -1630,7 +1660,8 @@ async function submitSvc() {
     hasUI:        document.getElementById('f-hasui').checked,
     checkEnabled: document.getElementById('f-check').checked,
     maintenance:  document.getElementById('f-maint').checked,
-    disabled:     document.getElementById('f-disabled').checked
+    disabled:     document.getElementById('f-disabled').checked,
+    slowThresholdMs: slowMsValue
   };
   if (!body.name || !body.abbr || !body.cat) {
     alert('Name, abbreviation, and category are required.');
@@ -1799,6 +1830,9 @@ function openSettings() {
   document.getElementById('cfg-ip').value          = s.nasIp         || '';
   document.getElementById('cfg-interval').value    = s.checkInterval || 60;
   document.getElementById('cfg-stale').value       = s.reportStaleAfter || 120;
+  document.getElementById('cfg-esc-count').value   = s.degradedEscalateCount ?? 3;
+  document.getElementById('cfg-esc-window').value  = s.degradedEscalateWindowMinutes ?? 5;
+  document.getElementById('cfg-slow-ms').value     = s.slowThresholdMs ?? 0;
   document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
   document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
   document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
@@ -2048,6 +2082,9 @@ function onHexInput(val) {
 async function saveSettings() {
   const interval = parseInt(document.getElementById('cfg-interval').value, 10);
   const stale    = parseInt(document.getElementById('cfg-stale').value, 10);
+  const escCount  = parseInt(document.getElementById('cfg-esc-count').value, 10);
+  const escWindow = parseInt(document.getElementById('cfg-esc-window').value, 10);
+  const slowMs    = parseInt(document.getElementById('cfg-slow-ms').value, 10);
   await fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -2059,6 +2096,9 @@ async function saveSettings() {
         nasIp:         document.getElementById('cfg-ip').value.trim(),
         checkInterval: Math.max(10, isNaN(interval) ? 60 : interval),
         reportStaleAfter: Math.max(10, isNaN(stale) ? 120 : stale),
+        degradedEscalateCount:         Math.max(1, isNaN(escCount)  ? 3 : escCount),
+        degradedEscalateWindowMinutes: Math.max(1, isNaN(escWindow) ? 5 : escWindow),
+        slowThresholdMs:               Math.max(0, isNaN(slowMs)    ? 0 : slowMs),
         weatherEnabled: document.getElementById('cfg-weather-enabled').checked,
         weatherLocation: document.getElementById('cfg-weather-location').value.trim(),
         weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),

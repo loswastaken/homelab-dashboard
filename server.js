@@ -58,6 +58,9 @@ function defaults() {
       ntfyEnabled: false,
       ntfyTopic: '',
       reportStaleAfter: 120,
+      degradedEscalateCount: 3,
+      degradedEscalateWindowMinutes: 5,
+      slowThresholdMs: 0,
     },
     categories:  [],
     services:    [],
@@ -76,6 +79,7 @@ function migrateData(data) {
   if (!Array.isArray(data.statusPages)) data.statusPages = [];
   if (!Array.isArray(data.pm2Agents))    data.pm2Agents    = [];
   if (!Array.isArray(data.dockerAgents)) data.dockerAgents = [];
+  data.settings = { ...defaults().settings, ...(data.settings || {}) };
   for (const svc of data.services) {
     if (!svc.checkType) {
       svc.checkType = svc.url ? 'url' : 'pm2';
@@ -741,20 +745,29 @@ async function checkAll() {
   );
 
   const fresh = load();
+  const escCount   = Math.max(1, fresh.settings.degradedEscalateCount || 3);
+  const escWindow  = Math.max(1, fresh.settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
+  const globalSlow = Math.max(0, fresh.settings.slowThresholdMs || 0);
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
     if (!svc) continue;
     const prevStatus = svc.status;
-    const tick   = r.serverError ? 2 : r.ok ? 1 : 0;
     const now = Date.now();
 
-    if (r.serverError) {
-      // Track consecutive degraded checks with a 5-minute window.
-      // Three degraded checks within 5 minutes escalates to offline.
+    const slowMs = (svc.slowThresholdMs ?? globalSlow) | 0;
+    const isSlow = r.ok && slowMs > 0 && r.elapsed > slowMs;
+    const tick   = (r.serverError || isSlow) ? 2 : r.ok ? 1 : 0;
+    const degradedCause = r.serverError
+      ? 'Service returned 5xx response'
+      : isSlow ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms)` : null;
+
+    if (r.serverError || isSlow) {
+      // Track consecutive degraded checks within the configured window.
+      // Once the streak reaches the configured count, escalate to offline.
       if (!svc.degradedSince) svc.degradedSince = now;
       svc.degradedStreak = (svc.degradedStreak || 0) + 1;
-      const windowExpired = (now - svc.degradedSince) > 5 * 60 * 1000;
-      if (svc.degradedStreak >= 3 && !windowExpired) {
+      const windowExpired = (now - svc.degradedSince) > escWindow;
+      if (svc.degradedStreak >= escCount && !windowExpired) {
         svc.status = 'offline';
       } else if (windowExpired) {
         // Window elapsed — reset streak and stay degraded
@@ -784,7 +797,11 @@ async function checkAll() {
     // event log: record transitions
     if (prevStatus !== svc.status) {
       if (svc.status === 'offline')  { pushEvent(svc, 'offline',  'Service became unreachable'); maybeNotify(svc, 'offline',  'Service became unreachable'); }
-      if (svc.status === 'degraded') { pushEvent(svc, 'degraded', 'Service returned 5xx response'); maybeNotify(svc, 'degraded', 'Service returned 5xx response'); }
+      if (svc.status === 'degraded') {
+        const note = degradedCause || 'Service degraded';
+        pushEvent(svc, 'degraded', note);
+        maybeNotify(svc, 'degraded', note);
+      }
       if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
         pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
         maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
@@ -872,10 +889,17 @@ function applyCheckTypeFields(svc) {
     svc.pm2ProcessName = '';
     svc.dockerAgentId = '';
     svc.dockerContainerName = '';
+    if (svc.slowThresholdMs !== undefined && svc.slowThresholdMs !== null && svc.slowThresholdMs !== '') {
+      const n = parseInt(svc.slowThresholdMs, 10);
+      svc.slowThresholdMs = Math.max(0, isNaN(n) ? 0 : n);
+    } else {
+      delete svc.slowThresholdMs;
+    }
   } else if (svc.checkType === 'pm2') {
     svc.url = '';
     svc.dockerAgentId = '';
     svc.dockerContainerName = '';
+    delete svc.slowThresholdMs;
     if (!svc.pm2AgentId || !svc.pm2ProcessName) {
       return { ok: false, error: 'Select a PM2 host and process' };
     }
@@ -883,6 +907,7 @@ function applyCheckTypeFields(svc) {
     svc.url = '';
     svc.pm2AgentId = '';
     svc.pm2ProcessName = '';
+    delete svc.slowThresholdMs;
     if (!svc.dockerAgentId || !svc.dockerContainerName) {
       return { ok: false, error: 'Select a Docker host and container' };
     }
@@ -1219,6 +1244,18 @@ app.put('/api/config', (req, res) => {
     if (incoming.iftttEventName  !== undefined) incoming.iftttEventName  = normalizeIftttEvent(incoming.iftttEventName);
     if (incoming.ntfyEnabled     !== undefined) incoming.ntfyEnabled     = !!incoming.ntfyEnabled;
     if (incoming.ntfyTopic       !== undefined) incoming.ntfyTopic       = normalizeNtfyTopic(incoming.ntfyTopic);
+    if (incoming.degradedEscalateCount !== undefined) {
+      const n = parseInt(incoming.degradedEscalateCount, 10);
+      incoming.degradedEscalateCount = Math.max(1, isNaN(n) ? 3 : n);
+    }
+    if (incoming.degradedEscalateWindowMinutes !== undefined) {
+      const n = parseInt(incoming.degradedEscalateWindowMinutes, 10);
+      incoming.degradedEscalateWindowMinutes = Math.max(1, isNaN(n) ? 5 : n);
+    }
+    if (incoming.slowThresholdMs !== undefined) {
+      const n = parseInt(incoming.slowThresholdMs, 10);
+      incoming.slowThresholdMs = Math.max(0, isNaN(n) ? 0 : n);
+    }
     d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
   }

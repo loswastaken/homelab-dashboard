@@ -141,6 +141,13 @@ sudo docker compose up -d
 - Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`
 - HTTP 5xx response = degraded; connection error/timeout = offline; anything else = online
 - If a service is already `degraded` and a new connection error arrives, it stays `degraded` rather than flipping to `offline`
+- **Degraded → offline escalation** is user-configurable in Settings → General:
+  - `settings.degradedEscalateCount` (default 3, min 1) — consecutive degraded checks that trigger escalation
+  - `settings.degradedEscalateWindowMinutes` (default 5, min 1) — window the streak must fit inside; otherwise the streak resets
+  - State is persisted per-service on `svc.degradedSince` (ms timestamp) and `svc.degradedStreak` (counter)
+- **Slow-response threshold:** when a URL service returns 2xx but `r.elapsed > slowMs`, it's treated exactly like a 5xx — tick value 2, feeds the same `degradedStreak` counter, same escalation path, same `maybeNotify(svc, 'degraded', ...)` call. Event/notification note is `Slow response: Xms (threshold Yms)` to distinguish from 5xx.
+  - `settings.slowThresholdMs` (default 0 = globally disabled) — global default in Settings → General
+  - `svc.slowThresholdMs` (optional, URL services only) — per-service override. Unset/`null` inherits global; `0` explicitly disables for that service. Resolution: `svc.slowThresholdMs ?? settings.slowThresholdMs`. `applyCheckTypeFields()` strips the field for non-URL services so stale data can't leak across check-type changes.
 - **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
 ### Report Staleness Watchdog
