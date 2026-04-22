@@ -2133,7 +2133,14 @@ async function sendTestIfttt(btn) {
   msg.textContent = 'Sending…';
   msg.style.color = 'var(--ts)';
   try {
-    const r = await fetch('/api/ifttt/test', { method: 'POST' });
+    const r = await fetch('/api/ifttt/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookKey: document.getElementById('cfg-ifttt-key').value.trim(),
+        eventName:  document.getElementById('cfg-ifttt-event').value.trim(),
+      }),
+    });
     const j = await r.json().catch(() => ({}));
     if (r.ok) {
       msg.textContent = 'Test event sent!';

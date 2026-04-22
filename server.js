@@ -1202,10 +1202,12 @@ app.post('/api/push/test', async (req, res) => {
 
 app.post('/api/ifttt/test', async (req, res) => {
   const s = load().settings;
-  if (!s.iftttWebhookKey || !s.iftttEventName) {
+  const key   = String((req.body && req.body.webhookKey) || s.iftttWebhookKey || '').trim();
+  const event = String((req.body && req.body.eventName)  || s.iftttEventName  || '').trim();
+  if (!key || !event) {
     return res.status(400).json({ ok: false, error: 'IFTTT webhook key and event name are required' });
   }
-  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
+  const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(event)}/with/key/${encodeURIComponent(key)}`;
   try {
     const r = await fetch(url, {
       method: 'POST',
