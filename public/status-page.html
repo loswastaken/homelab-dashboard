@@ -589,8 +589,17 @@
     if (bm) bm.textContent = label;
   }, 10000);
 
+  const PUBLIC_INTERVAL_MS = 60000;
+  let autoLoadTimeout = null;
+  function scheduleNextLoad() {
+    clearTimeout(autoLoadTimeout);
+    const nextFire = Math.ceil(Date.now() / PUBLIC_INTERVAL_MS) * PUBLIC_INTERVAL_MS;
+    autoLoadTimeout = setTimeout(async () => {
+      try { await load(false); } finally { scheduleNextLoad(); }
+    }, Math.max(0, nextFire - Date.now()));
+  }
   load();
-  setInterval(() => load(false), 60000);
+  scheduleNextLoad();
 </script>
 </body>
 </html>

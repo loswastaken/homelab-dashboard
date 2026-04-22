@@ -915,7 +915,9 @@
 ═══════════════════════════════════════════════════ */
 let APP   = { services: [], categories: [], settings: {} };
 let filter = 'all';
-let countdownTimer, countdownSecs = 60;
+let pollTimeout = null;
+let countdownTicker = null;
+let nextFireAt = null;
 let weatherTimer = null;
 let weatherState = { text: 'Weather disabled', error: false };
 let pendingCats = [];
@@ -950,11 +952,9 @@ async function doRefreshAll() {
   const btn  = document.getElementById('refresh-btn');
   const icon = document.getElementById('refresh-icon');
   if (btn) { btn.disabled = true; icon.classList.add('spinning'); }
-  clearPoll();
   document.getElementById('ring').classList.add('active');
   try { await fetch('/api/check-all', { method: 'POST' }); } catch(e) {}
   await fetchData(true);
-  startPoll();
   if (btn) { btn.disabled = false; icon.classList.remove('spinning'); }
 }
 
@@ -977,19 +977,22 @@ async function fetchData(fresh = false) {
   }
 }
 
-function startPoll() {
-  clearPoll();
-  countdownSecs = APP.settings?.checkInterval || 60;
+function scheduleNextPoll() {
+  clearTimeout(pollTimeout);
+  const intervalMs = Math.max(10, APP.settings?.checkInterval || 60) * 1000;
+  nextFireAt = Math.ceil(Date.now() / intervalMs) * intervalMs;
   updateCountdown();
-  countdownTimer = setInterval(() => {
-    countdownSecs--;
-    updateCountdown();
-    if (countdownSecs <= 0) { doRefreshAll(); }
-  }, 1000);
+  pollTimeout = setTimeout(onPollFire, Math.max(0, nextFireAt - Date.now()));
 }
 
-function clearPoll() {
-  clearInterval(countdownTimer);
+async function onPollFire() {
+  try { await doRefreshAll(); }
+  finally { scheduleNextPoll(); }
+}
+
+function startCountdownTicker() {
+  clearInterval(countdownTicker);
+  countdownTicker = setInterval(updateCountdown, 1000);
 }
 
 function clearWeatherPoll() {
@@ -1086,8 +1089,10 @@ function startWeatherPoll() {
 }
 
 function updateCountdown() {
-  document.getElementById('countdown').textContent =
-    countdownSecs > 0 ? `· ${countdownSecs}s` : '';
+  const el = document.getElementById('countdown');
+  if (!el) return;
+  const secs = nextFireAt ? Math.max(0, Math.ceil((nextFireAt - Date.now()) / 1000)) : 0;
+  el.textContent = secs > 0 ? `· ${secs}s` : '';
 }
 
 /* ═══════════════════════════════════════════════════
@@ -2128,6 +2133,7 @@ async function saveSettings() {
   });
   closeCfgModal();
   await doRefreshAll();
+  scheduleNextPoll();
   await fetchWeather(true);
   startWeatherPoll();
 }
@@ -2445,7 +2451,8 @@ function closeSidebar() {
 tick();
 setInterval(tick, 30000);
 fetchData().then(() => {
-  startPoll();
+  scheduleNextPoll();
+  startCountdownTicker();
   startWeatherPoll();
 });
 </script>

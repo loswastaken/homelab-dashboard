@@ -851,13 +851,21 @@ async function checkAll() {
 // ─── Scheduling ──────────────────────────────────────────────────────────────
 
 let checkTimer = null;
+let lastLoggedIntervalMs = null;
 
 function scheduleChecks() {
-  if (checkTimer) clearInterval(checkTimer);
-  const interval = Math.max(10, (load().settings?.checkInterval || 60)) * 1000;
-  checkTimer = setInterval(checkAll, interval);
-  console.log(`[scheduler] Checks every ${interval / 1000}s`);
-  checkAll();
+  if (checkTimer) clearTimeout(checkTimer);
+  const intervalMs = Math.max(10, (load().settings?.checkInterval || 60)) * 1000;
+  const nextFire   = Math.ceil(Date.now() / intervalMs) * intervalMs;
+  const delay      = Math.max(0, nextFire - Date.now());
+  if (intervalMs !== lastLoggedIntervalMs) {
+    console.log(`[scheduler] Checks every ${intervalMs / 1000}s (wall-clock aligned)`);
+    lastLoggedIntervalMs = intervalMs;
+  }
+  checkTimer = setTimeout(async () => {
+    try { await checkAll(); }
+    finally { scheduleChecks(); }
+  }, delay);
 }
 
 // ─── API: Services ───────────────────────────────────────────────────────────
@@ -1569,6 +1577,7 @@ function scheduleMidnightRollover() {
 
 app.listen(PORT, () => {
   console.log(`\n  🟢  Homelab Dashboard → http://localhost:${PORT}\n`);
+  checkAll();
   scheduleChecks();
   scheduleMidnightRollover();
 });
