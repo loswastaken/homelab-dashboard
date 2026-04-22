@@ -837,9 +837,20 @@
           degraded (same visual, same notification). Set to <strong>0</strong> to disable globally.
           Each URL service can override this from its edit modal.
         </div>
-        <div class="form-group">
-          <label class="form-lbl">Global Threshold <span>(ms, 0 = disabled)</span></label>
-          <input class="form-inp" id="cfg-slow-ms" type="number" min="0" max="600000" placeholder="0">
+        <div class="form-row">
+          <div>
+            <label class="form-lbl">Global Threshold <span>(ms, 0 = disabled)</span></label>
+            <input class="form-inp" id="cfg-slow-ms" type="number" min="0" max="600000" placeholder="0">
+          </div>
+          <div>
+            <label class="form-lbl">Mark Degraded After <span>(consecutive slow checks)</span></label>
+            <input class="form-inp" id="cfg-slow-streak" type="number" min="1" max="100" placeholder="1">
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--ts);margin-top:8px">
+          Requires this many consecutive slow responses before the service is marked degraded. A single
+          fast response resets the counter. Set to <strong>1</strong> for the original behavior (degrade
+          on the first slow check). Does not affect 5xx responses — those always degrade immediately.
         </div>
       </div>
 
@@ -1851,6 +1862,7 @@ function openSettings() {
   document.getElementById('cfg-esc-count').value   = s.degradedEscalateCount ?? 3;
   document.getElementById('cfg-esc-window').value  = s.degradedEscalateWindowMinutes ?? 5;
   document.getElementById('cfg-slow-ms').value     = s.slowThresholdMs ?? 0;
+  document.getElementById('cfg-slow-streak').value = s.slowStreakRequired ?? 1;
   document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
   document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
   document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
@@ -2103,6 +2115,7 @@ async function saveSettings() {
   const escCount  = parseInt(document.getElementById('cfg-esc-count').value, 10);
   const escWindow = parseInt(document.getElementById('cfg-esc-window').value, 10);
   const slowMs    = parseInt(document.getElementById('cfg-slow-ms').value, 10);
+  const slowStreak = parseInt(document.getElementById('cfg-slow-streak').value, 10);
   await fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -2117,6 +2130,7 @@ async function saveSettings() {
         degradedEscalateCount:         Math.max(1, isNaN(escCount)  ? 3 : escCount),
         degradedEscalateWindowMinutes: Math.max(1, isNaN(escWindow) ? 5 : escWindow),
         slowThresholdMs:               Math.max(0, isNaN(slowMs)    ? 0 : slowMs),
+        slowStreakRequired:            Math.max(1, isNaN(slowStreak) ? 1 : slowStreak),
         weatherEnabled: document.getElementById('cfg-weather-enabled').checked,
         weatherLocation: document.getElementById('cfg-weather-location').value.trim(),
         weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),

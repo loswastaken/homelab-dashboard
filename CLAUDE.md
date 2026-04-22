@@ -145,9 +145,10 @@ sudo docker compose up -d
   - `settings.degradedEscalateCount` (default 3, min 1) — consecutive degraded checks that trigger escalation
   - `settings.degradedEscalateWindowMinutes` (default 5, min 1) — window the streak must fit inside; otherwise the streak resets
   - State is persisted per-service on `svc.degradedSince` (ms timestamp) and `svc.degradedStreak` (counter)
-- **Slow-response threshold:** when a URL service returns 2xx but `r.elapsed > slowMs`, it's treated exactly like a 5xx — tick value 2, feeds the same `degradedStreak` counter, same escalation path, same `maybeNotify(svc, 'degraded', ...)` call. Event/notification note is `Slow response: Xms (threshold Yms)` to distinguish from 5xx.
-  - `settings.slowThresholdMs` (default 0 = globally disabled) — global default in Settings → General
+- **Slow-response threshold:** when a URL service returns 2xx but `r.elapsed > slowMs`, it's treated exactly like a 5xx — tick value 2, feeds the same `degradedStreak` counter, same escalation path, same `maybeNotify(svc, 'degraded', ...)` call. Event/notification note is `Slow response: Xms (threshold Yms, N in a row)` to distinguish from 5xx.
+  - `settings.slowThresholdMs` (default 0 = globally disabled) — global default in Settings → Alerts
   - `svc.slowThresholdMs` (optional, URL services only) — per-service override. Unset/`null` inherits global; `0` explicitly disables for that service. Resolution: `svc.slowThresholdMs ?? settings.slowThresholdMs`. `applyCheckTypeFields()` strips the field for non-URL services so stale data can't leak across check-type changes.
+  - `settings.slowStreakRequired` (default 1, min 1) — consecutive slow responses required before the service is actually marked degraded. Tracked per-service on `svc.slowStreak`, reset to 0 on any fast response or connection error. Only applies to the slow-response path; 5xx still degrades immediately. When set to 1, behavior matches the original (degrade on first slow check).
 - **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
 ### Report Staleness Watchdog

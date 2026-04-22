@@ -61,6 +61,7 @@ function defaults() {
       degradedEscalateCount: 3,
       degradedEscalateWindowMinutes: 5,
       slowThresholdMs: 0,
+      slowStreakRequired: 1,
     },
     categories:  [],
     services:    [],
@@ -748,6 +749,7 @@ async function checkAll() {
   const escCount   = Math.max(1, fresh.settings.degradedEscalateCount || 3);
   const escWindow  = Math.max(1, fresh.settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
   const globalSlow = Math.max(0, fresh.settings.slowThresholdMs || 0);
+  const slowStreakReq = Math.max(1, fresh.settings.slowStreakRequired || 1);
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
     if (!svc) continue;
@@ -755,11 +757,17 @@ async function checkAll() {
     const now = Date.now();
 
     const slowMs = (svc.slowThresholdMs ?? globalSlow) | 0;
-    const isSlow = r.ok && slowMs > 0 && r.elapsed > slowMs;
+    const isSlowRaw = r.ok && slowMs > 0 && r.elapsed > slowMs;
+    if (isSlowRaw) {
+      svc.slowStreak = (svc.slowStreak || 0) + 1;
+    } else {
+      svc.slowStreak = 0;
+    }
+    const isSlow = isSlowRaw && svc.slowStreak >= slowStreakReq;
     const tick   = (r.serverError || isSlow) ? 2 : r.ok ? 1 : 0;
     const degradedCause = r.serverError
       ? 'Service returned 5xx response'
-      : isSlow ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms)` : null;
+      : isSlow ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.slowStreak} in a row)` : null;
 
     if (r.serverError || isSlow) {
       // Track consecutive degraded checks within the configured window.
@@ -785,6 +793,7 @@ async function checkAll() {
       // Connection error / timeout
       svc.degradedSince  = null;
       svc.degradedStreak = 0;
+      svc.slowStreak     = 0;
       svc.status = 'offline';
     }
 
@@ -1263,6 +1272,10 @@ app.put('/api/config', (req, res) => {
     if (incoming.slowThresholdMs !== undefined) {
       const n = parseInt(incoming.slowThresholdMs, 10);
       incoming.slowThresholdMs = Math.max(0, isNaN(n) ? 0 : n);
+    }
+    if (incoming.slowStreakRequired !== undefined) {
+      const n = parseInt(incoming.slowStreakRequired, 10);
+      incoming.slowStreakRequired = Math.max(1, isNaN(n) ? 1 : n);
     }
     d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
