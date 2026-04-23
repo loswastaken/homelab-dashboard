@@ -764,12 +764,10 @@ async function checkAll({ recordHistory = true } = {}) {
       svc.slowStreak = 0;
     }
     const isSlow = isSlowRaw && svc.slowStreak >= slowStreakReq;
-    const tick   = (r.serverError || isSlow) ? 2 : r.ok ? 1 : 0;
-    const degradedCause = r.serverError
-      ? 'Service returned 5xx response'
-      : isSlow ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.slowStreak} in a row)` : null;
+    const isConnError = !r.ok && !r.serverError;
+    const isDegradingResult = r.serverError || isSlow || isConnError;
 
-    if (r.serverError || isSlow) {
+    if (isDegradingResult) {
       // Track consecutive degraded checks within the configured window.
       // Once the streak reaches the configured count, escalate to offline.
       if (!svc.degradedSince) svc.degradedSince = now;
@@ -785,17 +783,22 @@ async function checkAll({ recordHistory = true } = {}) {
       } else {
         svc.status = 'degraded';
       }
-    } else if (r.ok) {
+    } else {
+      // r.ok — clean recovery
       svc.status = 'online';
       svc.degradedSince  = null;
       svc.degradedStreak = 0;
-    } else {
-      // Connection error / timeout
-      svc.degradedSince  = null;
-      svc.degradedStreak = 0;
-      svc.slowStreak     = 0;
-      svc.status = 'offline';
     }
+
+    const degradedCause = r.serverError
+      ? 'Service returned 5xx response'
+      : isSlow
+        ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.slowStreak} in a row)`
+        : isConnError
+          ? `Connection failed (${svc.degradedStreak} in a row)`
+          : null;
+
+    const tick = svc.status === 'offline' ? 0 : svc.status === 'degraded' ? 2 : 1;
 
     if (recordHistory) {
       svc.history = pushHistory(svc.history, tick);

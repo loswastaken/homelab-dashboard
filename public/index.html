@@ -816,9 +816,10 @@
       <div class="settings-panel" data-panel="alerts" data-footer="show">
         <div class="modal-sec">Degraded &rarr; Offline Escalation</div>
         <div style="font-size:12px;color:var(--ts);margin-bottom:10px">
-          A URL service that returns 5xx or exceeds the slow-response threshold is marked
-          <strong>degraded</strong>. If it stays degraded for this many consecutive checks within
-          the configured window, it escalates to <strong>offline</strong> and a notification fires.
+          A URL service that returns 5xx, exceeds the slow-response threshold, or fails to connect
+          (timeout / refused) is marked <strong>degraded</strong>. If it stays degraded for this many
+          consecutive checks within the configured window, it escalates to <strong>offline</strong>
+          and a notification fires.
         </div>
         <div class="form-row">
           <div>
