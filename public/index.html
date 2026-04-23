@@ -1025,10 +1025,6 @@ function startCountdownTicker() {
   countdownTicker = setInterval(updateCountdown, 1000);
 }
 
-function clearWeatherPoll() {
-  clearInterval(weatherTimer);
-}
-
 const US_STATES = { 'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
   'Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI',
   'Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY',
@@ -1113,7 +1109,7 @@ async function fetchWeather(force = false) {
 }
 
 function startWeatherPoll() {
-  clearWeatherPoll();
+  clearInterval(weatherTimer);
   fetchWeather();
   weatherTimer = setInterval(() => fetchWeather(), 10 * 60 * 1000);
 }
@@ -1776,22 +1772,22 @@ async function submitSvc() {
 async function deleteSvc(id, name) {
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
   await fetch(`/api/services/${id}`, { method: 'DELETE' });
-  doRefreshAll();
+  await doRefreshAll();
 }
 
 async function resolveService(id) {
   await fetch(`/api/services/${id}/resolve`, { method: 'POST' });
-  doRefreshAll();
+  await doRefreshAll();
 }
 
 async function toggleMaintenance(id) {
   await fetch(`/api/services/${id}/maintenance`, { method: 'POST' });
-  doRefreshAll();
+  await doRefreshAll();
 }
 
 async function togglePin(id) {
   await fetch(`/api/services/${id}/pin`, { method: 'POST' });
-  doRefreshAll();
+  await doRefreshAll();
 }
 
 /* ═══════════════════════════════════════════════════

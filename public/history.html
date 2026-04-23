@@ -383,7 +383,10 @@ async function loadData() {
     // Populate settings
     DATA.settings = sData.settings || {};
     const s = DATA.settings;
-    if (s.siteTitle)   document.querySelector('.brand-name').textContent = s.siteTitle.split('·')[0].trim() || 'los.dev';
+    if (s.siteTitle) {
+      const brand = (s.siteTitle || '').split('·')[0].trim() || 'los.dev';
+      document.querySelector('.brand-name').textContent = brand;
+    }
     if (s.serverLabel) document.getElementById('foot-label').textContent = s.serverLabel;
     if (s.nasIp)       document.getElementById('foot-ip').textContent    = s.nasIp;
 
@@ -585,6 +588,7 @@ function renderList(svcs) {
   const slots = rangeDays === 1 ? 24 : rangeDays;
 
   el.innerHTML = svcs.map(svc => {
+    const ic = countIncidents(svc);
     const hist    = sliceHistory(svc);
     const avg     = calcAvgUptime(hist);
     const colors  = getColors(svc.cat);
@@ -613,7 +617,7 @@ function renderList(svcs) {
       <div class="svc-abbr" style="background:${colors.card};color:${colors.icon}">${esc(svc.abbr || '?')}</div>
       <div class="svc-info">
         <div class="svc-name">${esc(svc.name || svc.id)}</div>
-        <div class="svc-meta">${hist.length} ${unit}${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(svc)} incident${countIncidents(svc) !== 1 ? 's' : ''}</div>
+        <div class="svc-meta">${hist.length} ${unit}${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${ic} incident${ic !== 1 ? 's' : ''}</div>
       </div>
       <div class="bar-strip">${bars.join('')}</div>
       <div class="status-pip ${sc}"></div>
@@ -646,7 +650,7 @@ function renderDetail(svc) {
   const events = filterEvents(svc.events);
 
   // Metrics: avg uptime, incidents, longest streak
-  let streak = 0, maxStreak = 0, cur = 0;
+  let maxStreak = 0, cur = 0;
   hist.forEach(e => {
     if (e.uptime !== null && e.uptime >= 99.9) { cur++; maxStreak = Math.max(maxStreak, cur); }
     else cur = 0;
