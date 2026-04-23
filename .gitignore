@@ -9,5 +9,13 @@ docker-agent/data/
 # If your seed contains sensitive URLs, uncomment the line below:
 # data/services.json
 
+# Secrets generated at runtime — never commit.
+data/auth.json
+data/vapid.json
+data/push-subscriptions.json
+
+# Local env overrides (Watchtower token, etc.) — see .env.example.
+.env
+
 .DS_Store
 *.log
