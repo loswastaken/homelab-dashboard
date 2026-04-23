@@ -135,7 +135,7 @@ function ensureVapid() {
     keys = webpush.generateVAPIDKeys();
     fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2));
   }
-  webpush.setVapidDetails('mailto:vasquezct02@protonmail.com', keys.publicKey, keys.privateKey);
+  webpush.setVapidDetails(process.env.VAPID_CONTACT || 'mailto:admin@example.com', keys.publicKey, keys.privateKey);
   return keys;
 }
 
@@ -256,8 +256,17 @@ function maybeNotify(svc, type, note) {
 const loginAttempts = new Map();
 const reportAttempts = new Map();
 
+// Amortized sweep so the Maps don't grow unbounded across months of uptime.
+// Runs ~1% of calls; cost is one Map iteration, entries are few dozen at most.
+function sweepExpired(map, now) {
+  for (const [key, entry] of map) {
+    if (now > entry.resetAt) map.delete(key);
+  }
+}
+
 function checkRateLimit(ip) {
   const now  = Date.now();
+  if (Math.random() < 0.01) sweepExpired(loginAttempts, now);
   let entry  = loginAttempts.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + 15 * 60 * 1000 };
@@ -268,6 +277,7 @@ function checkRateLimit(ip) {
 
 function checkReportLimit(ip) {
   const now = Date.now();
+  if (Math.random() < 0.01) sweepExpired(reportAttempts, now);
   let entry = reportAttempts.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + 15 * 60 * 1000 };
@@ -1615,25 +1625,10 @@ app.delete('/api/status-pages/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// ─── Midnight daily-history rollover ─────────────────────────────────────────
-
-function scheduleMidnightRollover() {
-  const now  = new Date();
-  const next = new Date(now);
-  next.setHours(24, 0, 5, 0); // 00:00:05 tomorrow
-  const msUntil = next - now;
-  setTimeout(() => {
-    // Seal today's entry (nothing to write — accumulateDailyTick already does it live)
-    console.log('[history] Daily rollover at', new Date().toISOString());
-    scheduleMidnightRollover(); // reschedule for tomorrow
-  }, msUntil);
-}
-
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`\n  🟢  Homelab Dashboard → http://localhost:${PORT}\n`);
   checkAll().catch(err => console.error('[boot] initial checkAll failed:', err));
   scheduleChecks();
-  scheduleMidnightRollover();
 });
