@@ -164,7 +164,8 @@
     .status-pip.ok    { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
     .status-pip.warn  { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
     .status-pip.bad   { background: var(--red);   box-shadow: 0 0 0 3px var(--red-bg); }
-    .status-pip.maint { background: var(--slate);  box-shadow: 0 0 0 3px var(--slate-bg); }
+    .status-pip.maint { background: var(--slate); box-shadow: 0 0 0 3px var(--slate-bg); }
+    .status-pip.pending { background: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
 
     /* ─── Detail panel (Downdetector-style) ─── */
     .detail-panel { background: var(--bg-surf); border: 1px solid var(--b1);
@@ -436,6 +437,7 @@ function statusClass(s) {
   if (s === 'online')      return 'ok';
   if (s === 'degraded')    return 'warn';
   if (s === 'maintenance') return 'maint';
+  if (s === 'pending')     return 'pending';
   return 'bad';
 }
 

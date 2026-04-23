@@ -180,12 +180,14 @@
     .badge.online       { background: var(--green-bg);  color: var(--green); }
     .badge.degraded     { background: var(--amber-bg);  color: var(--amber); }
     .badge.offline      { background: var(--red-bg);    color: var(--red);   }
+    .badge.pending      { background: var(--blue-bg);   color: var(--blue);  }
     .badge.unknown      { background: var(--b0);        color: var(--ts);    }
     .badge.maintenance  { background: var(--slate-bg);  color: var(--slate); }
     .badge.disabled     { background: rgba(237,232,213,.04); color: var(--tm); }
     .badge.online       .bdot { background: var(--green); }
     .badge.degraded     .bdot { background: var(--amber); animation: pulse 2s infinite; }
     .badge.offline      .bdot { background: var(--red); }
+    .badge.pending      .bdot { background: var(--blue);  animation: pulse 2s infinite; }
     .badge.unknown      .bdot { background: var(--ts); }
     .badge.maintenance  .bdot { background: var(--slate); }
     .badge.disabled     .bdot { background: var(--tm); }
@@ -1162,7 +1164,8 @@ function renderCard(s) {
   const lastChk = s.lastChecked
     ? new Date(s.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
     : '—';
-  const borderColor = isDisabled ? 'var(--tm)' : isMaint ? 'var(--slate)' : colors.card;
+  const isPending   = !isDisabled && !isMaint && s.status === 'pending';
+  const borderColor = isDisabled ? 'var(--tm)' : isMaint ? 'var(--slate)' : isPending ? 'var(--blue)' : colors.card;
   const badgeClass  = isDisabled ? 'disabled' : (s.status || 'unknown');
   const badgeLabel  = isDisabled ? 'disabled' : isMaint ? 'maintenance' : (s.status || 'unknown');
   const iconBg      = isDisabled ? 'var(--b0)' : isMaint ? 'var(--slate-bg)' : colors.icon;
@@ -1194,7 +1197,7 @@ function renderCard(s) {
       </div>
 
       <div class="uptime-bar">${ticks.length ? ticks : '<div class="tick unk" style="flex:1"></div>'}</div>
-      <div class="tick-lbl">${isDisabled ? 'Disabled · checks paused' : isMaint ? '🔧 in maintenance · history paused' : `${historyLabel()} · checked ${lastChk}`}</div>
+      <div class="tick-lbl">${isDisabled ? 'Disabled · checks paused' : isMaint ? '🔧 in maintenance · history paused' : isPending ? 'awaiting first check…' : `${historyLabel()} · checked ${lastChk}`}</div>
 
       <hr class="divider">
 

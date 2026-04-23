@@ -371,6 +371,10 @@ function findStatusPageBySlug(d, slug) {
 }
 
 function sanitizeServiceForPublic(svc, page, categoriesById) {
+  // Pending services haven't been checked yet — hide them from public pages
+  // until they have real data so they can't skew the overall banner or leak
+  // a "not yet checked" placeholder to public viewers.
+  if (svc.status === 'pending') return null;
   const includeCategory = page.includedCategoryIds && page.includedCategoryIds.includes(svc.cat);
   const cat = includeCategory && categoriesById[svc.cat] ? {
     id:    categoriesById[svc.cat].id,
@@ -435,6 +439,7 @@ app.get('/api/public/status/:slug', (req, res) => {
     .map(id => svcById[id])
     .filter(Boolean)
     .map(svc => sanitizeServiceForPublic(svc, page, catsById))
+    .filter(Boolean)
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
   res.json({
@@ -635,6 +640,10 @@ function isReportStale(svc, now, defaultThresholdSec) {
   if (svc.checkType !== 'pm2' && svc.checkType !== 'docker') return false;
   if (svc.checkEnabled === false) return false;
   if (svc.maintenance || svc.disabled) return false;
+  // Pending services haven't had a chance to check in yet — let them stay
+  // pending until the first real /report arrives. Staleness only applies
+  // once we've seen at least one report.
+  if (svc.status === 'pending') return false;
   const perSvc = Number(svc.reportInterval) > 0 ? Number(svc.reportInterval) * 4 : null;
   const thresholdMs = (perSvc || defaultThresholdSec) * 1000;
   if (!svc.lastChecked) return true;
@@ -818,6 +827,8 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
       pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
       maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
     }
+    // Leaving pending is not a recovery event — it's the first real baseline.
+    // Degraded/offline branches above still fire their own events/notifications.
   }
 }
 
@@ -975,7 +986,7 @@ app.post('/api/services', (req, res) => {
     hasUI:        true,
     checkEnabled: true,
     disabled:     false,
-    status:       'unknown',
+    status:       'pending',
     response:     '—',
     uptime:       '—',
     history:      [],

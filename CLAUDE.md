@@ -139,15 +139,14 @@ sudo docker compose up -d
 ### Health Check (`ping`)
 
 - Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`
-- HTTP 5xx response = degraded; connection error/timeout = offline; anything else = online
-- If a service is already `degraded` and a new connection error arrives, it stays `degraded` rather than flipping to `offline`
-- **Degraded → offline escalation** is user-configurable in Settings → General:
+- HTTP 5xx response, connection error, and timeout all feed the degraded-escalation gate (see below) — the immediate tick is degraded, not offline. Anything else = online.
+- **Degraded → offline escalation** is user-configurable in Settings → Alerts:
   - `settings.degradedEscalateCount` (default 3, min 1) — consecutive degraded checks that trigger escalation
   - `settings.degradedEscalateWindowMinutes` (default 5, min 1) — window the streak must fit inside; otherwise the streak resets
-  - State is persisted per-service on `svc.degradedSince` (ms timestamp) and `svc.degradedStreak` (counter)
+  - State is persisted per-service on `svc.degradedSince` (ms timestamp), `svc.degradedStreak`, and `svc.slowStreak`. All three are cleared by `resetDegradationState(svc)` — called on recovery ping, `/resolve`, `/report` recovery branch, maintenance/disabled toggles (both the dedicated endpoint and the PUT edit path), and the `checkAll()` maintenance pass.
 - **Slow-response threshold:** when a URL service returns 2xx but `r.elapsed > slowMs`, it's treated exactly like a 5xx — tick value 2, feeds the same `degradedStreak` counter, same escalation path, same `maybeNotify(svc, 'degraded', ...)` call. Event/notification note is `Slow response: Xms (threshold Yms, N in a row)` to distinguish from 5xx.
   - `settings.slowThresholdMs` (default 0 = globally disabled) — global default in Settings → Alerts
-  - `svc.slowThresholdMs` (optional, URL services only) — per-service override. Unset/`null` inherits global; `0` explicitly disables for that service. Resolution: `svc.slowThresholdMs ?? settings.slowThresholdMs`. `applyCheckTypeFields()` strips the field for non-URL services so stale data can't leak across check-type changes.
+  - `svc.slowThresholdMs` (optional, URL services only) — per-service override. Unset/`null` inherits global; `0` explicitly disables for that service. Resolution: `svc.slowThresholdMs ?? settings.slowThresholdMs`. `applyCheckTypeFields()` strips the field for non-URL services so stale data can't leak across check-type changes. Frontend: the service modal has a "Disable slow-response monitoring" toggle that hides the threshold input and saves `slowThresholdMs: 0` (commit `0c4ecf1`).
   - `settings.slowStreakRequired` (default 1, min 1) — consecutive slow responses required before the service is actually marked degraded. Tracked per-service on `svc.slowStreak`, reset to 0 on any fast response or connection error. Only applies to the slow-response path; 5xx still degrades immediately. When set to 1, behavior matches the original (degrade on first slow check).
 - **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
@@ -162,6 +161,17 @@ Values stored in `svc.history[]` (last 30 per-check ticks, used for the main das
 - `0` = offline
 - `2` = degraded (warn)
 - `3` = maintenance (excluded from uptime calculation)
+
+### Pending Status
+
+New services are created with `status: 'pending'` instead of flipping straight to `offline`. This covers the gap between "service added" and "first real health check / agent report":
+
+- **URL services:** transition out of pending on the next `checkAll()` cycle (up to `settings.checkInterval` seconds). `checkAll()` filters by `url + checkEnabled + !maintenance + !disabled` — there's no status filter, so pending URL services are picked up on the very next tick.
+- **pm2 / docker services:** transition out of pending on the first `/report` that arrives. The report-staleness watchdog (`isReportStale`) explicitly short-circuits on `status === 'pending'` so a silent agent doesn't flip a brand-new service to offline before it has a chance to report.
+- **No history tick is pushed while pending** — `svc.history[]` stays empty until the first real result, so pending services don't distort the 30-min bar or daily/hourly uptime. The first real ping/report does push a tick (it's a genuine data point).
+- **No notifications fire on entering or leaving pending.** `maybeNotify()` only fires for offline/degraded/recovery, and the recovery branches in both `evaluatePingResult()` and `/report` already gate on `prevStatus === 'offline' || 'degraded'` — so pending → online is silent. First pending → degraded / offline transitions *do* notify (that's genuine signal).
+- **Public status pages hide pending services** — `sanitizeServiceForPublic()` returns `null` for pending, and the caller in `/api/public/status/:slug` applies `.filter(Boolean)` after sanitization so pending services don't leak to `/status/<slug>` or affect `computeOverallStatus()` until they have real data.
+- **Frontend:** blue `--blue` badge + border in `index.html`; blue pip in `history.html` (`statusClass()` maps `'pending' → 'pending'`). Stats row counts pending in `Services` only — not under Online/Degraded/Offline/Maintenance/Disabled. No alert-bar entry, no favicon tint.
 
 ### Daily History & Event Log
 
@@ -233,6 +243,7 @@ Single-file vanilla JS app. No build step.
 - **Smart card updates:** Poll refreshes do NOT re-render the whole grid. Each service card has `data-id`. On poll, only cards whose `status` or `maintenance` flag changed get replaced (with an amber flash animation). Unchanged cards are silently patched in-place (history ticks, uptime, response, last-checked). Initial load and filter switches use a stagger `fadein` animation.
 - **`renderAll(fresh)`:** `fresh=true` = full re-render with animation (first load, filter switch, manual refresh). `fresh=false` = smart in-place patch.
 - **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete. The endpoint only records history ticks when `?recordHistory=true` is passed — manual clicks omit it, so the 30-min `svc.history` bar, `dailyHistory`, and `hourlyHistory` are driven solely by the scheduled poll (which calls `checkAll()` directly with the `recordHistory=true` function default). This keeps the bar cadence tied to the configured `checkInterval` regardless of how often users click refresh. `svc.status`, `svc.response`, and `svc.lastChecked` are always updated so the card still reflects the live ping.
+- **Wall-clock-anchored refresh (commit `c2483cd`):** the dashboard countdown, the public status page auto-refresh, and the server `checkAll()` loop all self-schedule via `setTimeout` with the next fire computed as `Math.ceil(Date.now() / intervalMs) * intervalMs`. Consequences: opening the dashboard mid-cycle shows the real seconds to the next boundary, manual refreshes don't reset the schedule, and saving settings doesn't silently shift cadence.
 - **`prevStates` Map:** Tracks `"status|maintenance|pinnedAt|disabled"` snapshot per service ID for change detection.
 - **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
 - **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location. Displays icon emoji, temperature in JetBrains Mono, city + abbreviated state (US state lookup map), condition text. Polls every 10 minutes. Hidden entirely on mobile (`≤640px`).
@@ -241,7 +252,7 @@ Single-file vanilla JS app. No build step.
 
 ### Settings Modal
 
-Tabbed layout with seven panels: **General · Account · Weather · Notifications · Categories · API Key · Updates**. Introduced in commit `40341a7`.
+Tabbed layout with eight panels: **General · Account · Weather · Notifications · Alerts · Categories · API Key · Updates**. Introduced in commit `40341a7`; the **Alerts** tab (commit `71f3efe`) holds degraded-escalation and slow-response thresholds that used to live under General.
 
 - Markup: `.settings-tab[data-tab="..."]` buttons in the header, `.settings-panel[data-panel="..."]` bodies. Tab strip scrolls horizontally on narrow screens.
 - `switchSettingsTab(tabId)` toggles the `.active` class on the matching tab/panel pair and shows/hides the shared footer based on the active panel's `data-footer` attribute.
@@ -259,7 +270,7 @@ Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pi
 
 ### Stats Row
 
-Six cards in a `repeat(6, 1fr)` grid: **Services · Online · Degraded · Offline · Maintenance · Disabled**. "Services" count excludes disabled services. Maintenance count = active services with `maintenance: true`. Disabled count = services with `disabled: true`.
+Six cards in a `repeat(6, 1fr)` grid: **Services · Online · Degraded · Offline · Maintenance · Disabled**. "Services" count excludes disabled services. Maintenance count = active services with `maintenance: true`. Disabled count = services with `disabled: true`. Pending services count in `Services` only — they are not included in Online, Degraded, Offline, Maintenance, or Disabled tallies (pending is an unknown state, not a classified one).
 
 ---
 

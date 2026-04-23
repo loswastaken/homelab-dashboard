@@ -103,6 +103,9 @@ Hover a card to reveal action buttons:
 - **Pin** — pins the service to the top of the grid
 - **Maintenance** — toggles maintenance mode
 
+### Pending State
+Newly added services start in a **pending** state (blue pill) until the first health check runs or the first `/report` arrives from the agent. No history ticks or notifications are generated during pending — it's just a "we haven't checked yet" placeholder. Pending services are also excluded from public status pages until they have real data.
+
 ### Maintenance Mode
 - Auto-check suspended; history fills with grey maintenance ticks
 - Excluded from the alert bar, live status dot, and favicon state
@@ -185,12 +188,25 @@ Shows a live weather pill in the dashboard header (hidden on mobile). Uses the O
 | Units | Fahrenheit or Celsius |
 
 ### Notifications
+
+The dashboard can fire alerts on `offline` / `degraded` / `recovery` transitions through three independent channels. Each has its own enable toggle and is silently skipped when disabled, even if its config is populated. Test buttons on each channel accept unsaved field values so you can verify config before saving.
+
+| Channel | Config | Notes |
+|---|---|---|
+| **Web Push** | Enable Notifications toggle + Test button | Browser push. Stored per-browser. Requires HTTPS (or localhost) for the permission prompt. |
+| **IFTTT Maker** | Event name + webhook key + Test button | POSTs `value1=service name`, `value2=event label`, `value3=note` to `https://maker.ifttt.com/trigger/<event>/with/key/<key>`. Pasted URLs are auto-normalized to just the key. |
+| **ntfy** | Topic + Test button | POSTs plain text to `https://ntfy.sh/<topic>` with priority (4=offline, 3=degraded, 2=recovery) and emoji tags. Subscribe via the official ntfy iOS/Android app. |
+
+### Alerts
+
+Thresholds that control when a flaky service actually flips to degraded/offline.
+
 | Setting | Notes |
 |---|---|
-| Enable Notifications | Toggle browser push notifications on/off (requires browser permission grant) |
-| Test Notification | Sends a test push to all registered subscribers |
-
-Push notifications fire on `offline`, `degraded`, and `recovery` transitions. Subscriptions are managed per-browser and stored server-side. Requires HTTPS (or localhost) for the browser permission prompt to work.
+| Degraded escalation count | Consecutive degraded checks (5xx, timeouts, slow responses, connection errors) before escalating to offline. Default 3. |
+| Degraded escalation window (min) | The streak must fit inside this rolling window; otherwise it resets. Default 5 minutes. |
+| Slow-response threshold (ms) | A 2xx response slower than this counts as degraded. Default 0 (disabled globally). Override or disable per-service from the service modal's "Disable slow-response monitoring" toggle. |
+| Slow-response streak required | Consecutive slow checks before a slow response actually marks a service degraded. Default 1. |
 
 ### API Key
 Used by external agents (PM2 agent, Docker agent, scripts) to push status updates and register themselves. Pass as the `X-Api-Key` header. The tab also embeds ready-to-run install snippets for both agents with your dashboard URL + key pre-filled.
@@ -339,7 +355,10 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | POST | `/api/push/subscribe` | Register a push subscription |
 | POST | `/api/push/unsubscribe` | Remove a push subscription |
 | POST | `/api/push/test` | Send a test push notification |
+| POST | `/api/ifttt/test` | Send a test event to the IFTTT Maker webhook (accepts unsaved key/event) |
+| POST | `/api/ntfy/test` | Send a test notification to the ntfy topic (accepts unsaved topic) |
 | GET | `/api/config` | Settings + categories + API key |
+| GET | `/api/auth/api-key` | Report API key — fetched on demand by the API Key tab |
 | PUT | `/api/config` | Update settings + categories |
 | GET | `/api/update/check` | Compare running SHA vs GitHub main |
 | POST | `/api/update/apply` | Trigger Watchtower to pull + redeploy |
