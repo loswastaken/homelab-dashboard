@@ -577,6 +577,16 @@ function pushEvent(svc, type, note = '') {
   if (svc.events.length > 500) svc.events = svc.events.slice(-500);
 }
 
+// Clear the degradation/slow-response streak counters. Called on every
+// recovery or state-reset path so a later degrading check always starts
+// counting from zero rather than picking up wherever a prior incident left
+// the service on disk.
+function resetDegradationState(svc) {
+  svc.degradedSince  = null;
+  svc.degradedStreak = 0;
+  svc.slowStreak     = 0;
+}
+
 function accumulateDailyTick(svc, tick) {
   if (!Array.isArray(svc.dailyHistory)) svc.dailyHistory = [];
   const today = TODAY_KEY();
@@ -736,6 +746,81 @@ async function getWeatherData(force = false) {
   return result;
 }
 
+// Evaluate a single ping result against the streak/escalation rules and
+// mutate the service in place. Shared by the scheduled checkAll() loop and
+// the manual /api/services/:id/check endpoint so both honor the same
+// slow-response and degraded-escalation gates.
+function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Date.now() } = {}) {
+  const escCount      = Math.max(1, settings.degradedEscalateCount || 3);
+  const escWindow     = Math.max(1, settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
+  const globalSlow    = Math.max(0, settings.slowThresholdMs || 0);
+  const slowStreakReq = Math.max(1, settings.slowStreakRequired || 1);
+  const prevStatus    = svc.status;
+
+  const slowMs = (svc.slowThresholdMs ?? globalSlow) | 0;
+  const isSlowRaw = r.ok && slowMs > 0 && r.elapsed > slowMs;
+  if (isSlowRaw) {
+    svc.slowStreak = (svc.slowStreak || 0) + 1;
+  } else {
+    svc.slowStreak = 0;
+  }
+  const isSlow = isSlowRaw && svc.slowStreak >= slowStreakReq;
+  const isConnError = !r.ok && !r.serverError;
+  const isDegradingResult = r.serverError || isSlow || isConnError;
+
+  if (isDegradingResult) {
+    // Track consecutive degraded checks within the configured window.
+    // Once the streak reaches the configured count, escalate to offline.
+    if (!svc.degradedSince) svc.degradedSince = now;
+    svc.degradedStreak = (svc.degradedStreak || 0) + 1;
+    const windowExpired = (now - svc.degradedSince) > escWindow;
+    if (svc.degradedStreak >= escCount && !windowExpired) {
+      svc.status = 'offline';
+    } else if (windowExpired) {
+      svc.degradedSince  = now;
+      svc.degradedStreak = 1;
+      svc.status = 'degraded';
+    } else {
+      svc.status = 'degraded';
+    }
+  } else {
+    svc.status = 'online';
+    resetDegradationState(svc);
+  }
+
+  const degradedCause = r.serverError
+    ? 'Service returned 5xx response'
+    : isSlow
+      ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.slowStreak} in a row)`
+      : isConnError
+        ? `Connection failed (${svc.degradedStreak} in a row)`
+        : null;
+
+  const tick = svc.status === 'offline' ? 0 : svc.status === 'degraded' ? 2 : 1;
+
+  if (recordHistory) {
+    svc.history = pushHistory(svc.history, tick);
+    svc.uptime  = calcUptime(svc.history);
+    accumulateDailyTick(svc, tick);
+    accumulateHourlyTick(svc, tick);
+  }
+  svc.response    = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
+  svc.lastChecked = new Date().toISOString();
+
+  if (prevStatus !== svc.status) {
+    if (svc.status === 'offline')  { pushEvent(svc, 'offline',  'Service became unreachable'); maybeNotify(svc, 'offline',  'Service became unreachable'); }
+    if (svc.status === 'degraded') {
+      const note = degradedCause || 'Service degraded';
+      pushEvent(svc, 'degraded', note);
+      maybeNotify(svc, 'degraded', note);
+    }
+    if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
+      pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
+      maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
+    }
+  }
+}
+
 async function checkAll({ recordHistory = true } = {}) {
   const toCheck = load().services
     .filter(s => s.url && s.checkEnabled && !s.maintenance && !s.disabled)
@@ -746,86 +831,17 @@ async function checkAll({ recordHistory = true } = {}) {
   );
 
   const fresh = load();
-  const escCount   = Math.max(1, fresh.settings.degradedEscalateCount || 3);
-  const escWindow  = Math.max(1, fresh.settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
-  const globalSlow = Math.max(0, fresh.settings.slowThresholdMs || 0);
-  const slowStreakReq = Math.max(1, fresh.settings.slowStreakRequired || 1);
+  const tickNow = Date.now();
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
     if (!svc) continue;
-    const prevStatus = svc.status;
-    const now = Date.now();
-
-    const slowMs = (svc.slowThresholdMs ?? globalSlow) | 0;
-    const isSlowRaw = r.ok && slowMs > 0 && r.elapsed > slowMs;
-    if (isSlowRaw) {
-      svc.slowStreak = (svc.slowStreak || 0) + 1;
-    } else {
-      svc.slowStreak = 0;
-    }
-    const isSlow = isSlowRaw && svc.slowStreak >= slowStreakReq;
-    const isConnError = !r.ok && !r.serverError;
-    const isDegradingResult = r.serverError || isSlow || isConnError;
-
-    if (isDegradingResult) {
-      // Track consecutive degraded checks within the configured window.
-      // Once the streak reaches the configured count, escalate to offline.
-      if (!svc.degradedSince) svc.degradedSince = now;
-      svc.degradedStreak = (svc.degradedStreak || 0) + 1;
-      const windowExpired = (now - svc.degradedSince) > escWindow;
-      if (svc.degradedStreak >= escCount && !windowExpired) {
-        svc.status = 'offline';
-      } else if (windowExpired) {
-        // Window elapsed — reset streak and stay degraded
-        svc.degradedSince  = now;
-        svc.degradedStreak = 1;
-        svc.status = 'degraded';
-      } else {
-        svc.status = 'degraded';
-      }
-    } else {
-      // r.ok — clean recovery
-      svc.status = 'online';
-      svc.degradedSince  = null;
-      svc.degradedStreak = 0;
-    }
-
-    const degradedCause = r.serverError
-      ? 'Service returned 5xx response'
-      : isSlow
-        ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.slowStreak} in a row)`
-        : isConnError
-          ? `Connection failed (${svc.degradedStreak} in a row)`
-          : null;
-
-    const tick = svc.status === 'offline' ? 0 : svc.status === 'degraded' ? 2 : 1;
-
-    if (recordHistory) {
-      svc.history = pushHistory(svc.history, tick);
-      svc.uptime  = calcUptime(svc.history);
-      accumulateDailyTick(svc, tick);
-      accumulateHourlyTick(svc, tick);
-    }
-    svc.response = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
-    svc.lastChecked = new Date().toISOString();
-    // event log: record transitions
-    if (prevStatus !== svc.status) {
-      if (svc.status === 'offline')  { pushEvent(svc, 'offline',  'Service became unreachable'); maybeNotify(svc, 'offline',  'Service became unreachable'); }
-      if (svc.status === 'degraded') {
-        const note = degradedCause || 'Service degraded';
-        pushEvent(svc, 'degraded', note);
-        maybeNotify(svc, 'degraded', note);
-      }
-      if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
-        pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
-        maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
-      }
-    }
+    evaluatePingResult(svc, r, fresh.settings, { recordHistory, now: tickNow });
   }
 
   for (const svc of fresh.services) {
     if (svc.disabled) continue;
     if (svc.maintenance) {
+      resetDegradationState(svc);
       if (recordHistory) {
         svc.history = pushHistory(svc.history, 3);
         accumulateDailyTick(svc, 3);
@@ -984,6 +1000,7 @@ app.put('/api/services/:id', (req, res) => {
   d.services[i] = next;
   if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
     d.services[i].status = req.body.maintenance ? 'maintenance' : 'unknown';
+    resetDegradationState(d.services[i]);
   }
   if (req.body.disabled !== undefined && !!req.body.disabled !== !!prev.disabled) {
     if (req.body.disabled) {
@@ -992,6 +1009,7 @@ app.put('/api/services/:id', (req, res) => {
     } else {
       d.services[i].status = 'unknown';
     }
+    resetDegradationState(d.services[i]);
   }
   save(d);
   res.json(d.services[i]);
@@ -1009,6 +1027,7 @@ app.post('/api/services/:id/resolve', (req, res) => {
   const svc = d.services.find(s => s.id === req.params.id);
   if (!svc) return res.status(404).json({ error: 'Not found' });
   svc.status  = 'online';
+  resetDegradationState(svc);
   svc.history = pushHistory(svc.history, 1);
   svc.uptime  = calcUptime(svc.history);
   save(d);
@@ -1043,6 +1062,7 @@ app.post('/api/services/:id/report', (req, res) => {
     maybeNotify(svc, 'offline', note);
   }
   if (status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
+    resetDegradationState(svc);
     const note = `Recovered from ${prevStatus}`;
     pushEvent(svc, 'recovery', note);
     maybeNotify(svc, 'recovery', note);
@@ -1058,6 +1078,7 @@ app.post('/api/services/:id/maintenance', (req, res) => {
   if (!svc) return res.status(404).json({ error: 'Not found' });
   svc.maintenance = !svc.maintenance;
   svc.status      = svc.maintenance ? 'maintenance' : 'unknown';
+  resetDegradationState(svc);
   pushEvent(svc, svc.maintenance ? 'maintenance' : 'recovery',
     svc.maintenance ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
   save(d);
@@ -1088,14 +1109,9 @@ app.post('/api/services/:id/check', async (req, res) => {
   const svc = d.services.find(s => s.id === req.params.id);
   if (!svc) return res.status(404).json({ error: 'Not found' });
 
-  if (svc.url && svc.checkEnabled) {
-    const r      = await ping(svc.url);
-    const tick   = r.serverError ? 2 : r.ok ? 1 : 0;
-    svc.history  = pushHistory(svc.history, tick);
-    svc.status   = r.serverError ? 'degraded' : r.ok ? 'online' : 'offline';
-    svc.response = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
-    svc.uptime       = calcUptime(svc.history);
-    svc.lastChecked  = new Date().toISOString();
+  if (svc.url && svc.checkEnabled && !svc.maintenance && !svc.disabled) {
+    const r = await ping(svc.url);
+    evaluatePingResult(svc, r, d.settings, { recordHistory: false });
     save(d);
   }
   res.json(svc);
