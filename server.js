@@ -198,8 +198,8 @@ function normalizeNtfyTopic(v) {
   return t.slice(0, 64);
 }
 
-async function notifyIfttt(svc, type, note = '') {
-  const s = load().settings;
+async function notifyIfttt(svc, type, note = '', settings) {
+  const s = settings || load().settings;
   if (!s.iftttWebhookKey || !s.iftttEventName) return;
   const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
   try {
@@ -214,8 +214,8 @@ async function notifyIfttt(svc, type, note = '') {
   }
 }
 
-async function notifyNtfy(svc, type, note = '') {
-  const s = load().settings;
+async function notifyNtfy(svc, type, note = '', settings) {
+  const s = settings || load().settings;
   if (!s.ntfyTopic) return;
   const url = `https://ntfy.sh/${encodeURIComponent(s.ntfyTopic)}`;
   const title = `${svc.name || svc.id}: ${eventLabel(type)}`;
@@ -244,8 +244,8 @@ function maybeNotify(svc, type, note) {
     if (!['offline','degraded','recovery'].includes(type)) return;
     const s = load().settings;
     if (s.pushEnabled)  notifyPush(svc, type, note);
-    if (s.iftttEnabled) notifyIfttt(svc, type, note);
-    if (s.ntfyEnabled)  notifyNtfy(svc, type, note);
+    if (s.iftttEnabled) notifyIfttt(svc, type, note, s);
+    if (s.ntfyEnabled)  notifyNtfy(svc, type, note, s);
   } catch (e) {
     console.error('[notify] maybeNotify error:', e.message);
   }
@@ -833,7 +833,8 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
 }
 
 async function checkAll({ recordHistory = true } = {}) {
-  const toCheck = load().services
+  const fresh = load();
+  const toCheck = fresh.services
     .filter(s => s.url && s.checkEnabled && !s.maintenance && !s.disabled)
     .map(s => ({ id: s.id, url: s.url }));
 
@@ -841,7 +842,6 @@ async function checkAll({ recordHistory = true } = {}) {
     toCheck.map(async ({ id, url }) => ({ id, r: await ping(url) }))
   );
 
-  const fresh = load();
   const tickNow = Date.now();
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
@@ -1010,7 +1010,7 @@ app.put('/api/services/:id', (req, res) => {
   if (!v.ok) return res.status(400).json({ error: v.error });
   d.services[i] = next;
   if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
-    d.services[i].status = req.body.maintenance ? 'maintenance' : 'unknown';
+    d.services[i].status = req.body.maintenance ? 'maintenance' : 'pending';
     resetDegradationState(d.services[i]);
   }
   if (req.body.disabled !== undefined && !!req.body.disabled !== !!prev.disabled) {
@@ -1018,7 +1018,7 @@ app.put('/api/services/:id', (req, res) => {
       d.services[i].maintenance = false;
       d.services[i].status = 'disabled';
     } else {
-      d.services[i].status = 'unknown';
+      d.services[i].status = 'pending';
     }
     resetDegradationState(d.services[i]);
   }
@@ -1041,6 +1041,8 @@ app.post('/api/services/:id/resolve', (req, res) => {
   resetDegradationState(svc);
   svc.history = pushHistory(svc.history, 1);
   svc.uptime  = calcUptime(svc.history);
+  accumulateDailyTick(svc, 1);
+  accumulateHourlyTick(svc, 1);
   save(d);
   res.json(svc);
 });
@@ -1631,7 +1633,7 @@ function scheduleMidnightRollover() {
 
 app.listen(PORT, () => {
   console.log(`\n  🟢  Homelab Dashboard → http://localhost:${PORT}\n`);
-  checkAll();
+  checkAll().catch(err => console.error('[boot] initial checkAll failed:', err));
   scheduleChecks();
   scheduleMidnightRollover();
 });
