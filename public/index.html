@@ -787,7 +787,7 @@
           <button class="btn-sm" type="button" onclick="sendTestPush(this)">Send test notification</button>
           <span id="push-message" style="font-size:12px;color:var(--ts)"></span>
         </div>
-        <hr style="margin:14px 0;border:none;border-top:1px solid var(--border)">
+        <hr style="margin:14px 0;border:none;border-top:1px solid var(--b0)">
         <div class="modal-sec" style="margin-bottom:8px">IFTTT</div>
         <div class="toggle-row">
           <div class="toggle-info">
@@ -797,8 +797,8 @@
           <label class="toggle"><input type="checkbox" id="cfg-ifttt-enabled"><span class="tslider"></span></label>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-          <input class="input-sm" id="cfg-ifttt-key"   type="password" placeholder="Webhook key (from ifttt.com/maker_webhooks/settings)" autocomplete="off">
-          <input class="input-sm" id="cfg-ifttt-event" type="text"     placeholder="Event name (default: homelab_alert)">
+          <input class="form-inp" id="cfg-ifttt-key"   type="password" placeholder="Webhook key (from ifttt.com/maker_webhooks/settings)" autocomplete="off">
+          <input class="form-inp" id="cfg-ifttt-event" type="text"     placeholder="Event name (default: homelab_alert)">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn-sm" type="button" onclick="sendTestIfttt(this)">Send test event</button>
             <span id="ifttt-message" style="font-size:12px;color:var(--ts)"></span>
@@ -814,7 +814,7 @@
           <label class="toggle"><input type="checkbox" id="cfg-ntfy-enabled"><span class="tslider"></span></label>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-          <input class="input-sm" id="cfg-ntfy-topic" type="text" placeholder="Topic (e.g. los-homelab-a8f3)" autocomplete="off">
+          <input class="form-inp" id="cfg-ntfy-topic" type="text" placeholder="Topic (e.g. los-homelab-a8f3)" autocomplete="off">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="btn-sm" type="button" onclick="sendTestNtfy(this)">Send test notification</button>
             <span id="ntfy-message" style="font-size:12px;color:var(--ts)"></span>
@@ -2133,14 +2133,14 @@ function renderSwatches() {
   document.getElementById('color-swatches').innerHTML = Object.entries(COLOR_CSS).map(([color,v])=>
     `<div class="swatch${selectedColor===color?' selected':''}"
       style="background:${v.pip}"
-      onclick="selectColor('${color}')"></div>`
+      onclick="selectColor('${color}', event)"></div>`
   ).join('');
 }
 
-function selectColor(c) {
+function selectColor(c, ev) {
   selectedColor = c;
   document.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
-  event.target.classList.add('selected');
+  if (ev && ev.currentTarget) ev.currentTarget.classList.add('selected');
   const pip = getColors(c).pip;
   const hex = document.getElementById('color-hex');
   if (hex) hex.value = pip;
@@ -2376,14 +2376,15 @@ function execCopy(text, cb) {
 ═══════════════════════════════════════════════════ */
 function updResult(msg, type) {
   const el = document.getElementById('upd-result');
-  const colors = {
+  const palette = {
     green: ['var(--green-bg)', 'rgba(90,158,114,.22)',  'var(--green)'],
     amber: ['var(--amber-bg)', 'rgba(196,136,74,.22)',  'var(--amber)'],
     red:   ['var(--red-bg)',   'rgba(184,85,85,.22)',   'var(--red)'],
-  }[type] || colors.amber;
+  };
+  const [bg, bd, fg] = palette[type] || palette.amber;
   el.style.cssText = `display:block;padding:10px 12px;border-radius:6px;font-size:12px;
-    line-height:1.5;margin-bottom:8px;background:${colors[0]};
-    border:1px solid ${colors[1]};color:${colors[2]}`;
+    line-height:1.5;margin-bottom:8px;background:${bg};
+    border:1px solid ${bd};color:${fg}`;
   el.textContent = msg;
   el.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
