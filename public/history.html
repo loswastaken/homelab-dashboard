@@ -355,6 +355,12 @@ let rangeDays = 30;
 let filterSvcId = '';
 let selectedSvcId = '';
 
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
@@ -603,10 +609,10 @@ function renderList(svcs) {
     }
 
     return `<div class="svc-row${selectedSvcId === svc.id ? ' selected' : ''}"
-        data-id="${svc.id}" onclick="selectService('${svc.id}')">
-      <div class="svc-abbr" style="background:${colors.card};color:${colors.icon}">${svc.abbr || '?'}</div>
+        data-id="${esc(svc.id)}" onclick="selectService('${esc(svc.id)}')">
+      <div class="svc-abbr" style="background:${colors.card};color:${colors.icon}">${esc(svc.abbr || '?')}</div>
       <div class="svc-info">
-        <div class="svc-name">${svc.name || svc.id}</div>
+        <div class="svc-name">${esc(svc.name || svc.id)}</div>
         <div class="svc-meta">${hist.length} ${unit}${hist.length !== 1 ? 's' : ''} of data &nbsp;·&nbsp; ${countIncidents(svc)} incident${countIncidents(svc) !== 1 ? 's' : ''}</div>
       </div>
       <div class="bar-strip">${bars.join('')}</div>
@@ -653,16 +659,16 @@ function renderDetail(svc) {
   panel.style.display = 'block';
   panel.innerHTML = `
     <div class="detail-hdr">
-      <div class="detail-abbr" style="background:${colors.card};color:${colors.icon}">${svc.abbr || '?'}</div>
+      <div class="detail-abbr" style="background:${colors.card};color:${colors.icon}">${esc(svc.abbr || '?')}</div>
       <div>
-        <div class="detail-title">${svc.name || svc.id}</div>
+        <div class="detail-title">${esc(svc.name || svc.id)}</div>
         <div class="detail-status">Current status: <span style="color:${
           svc.currentStatus === 'online' ? 'var(--green)' :
           svc.currentStatus === 'degraded' ? 'var(--amber)' :
           svc.currentStatus === 'maintenance' ? 'var(--slate)' : 'var(--red)'
         }">${statusLabel}</span></div>
       </div>
-      <button class="detail-close" onclick="selectService('${svc.id}')">✕ Close</button>
+      <button class="detail-close" onclick="selectService('${esc(svc.id)}')">✕ Close</button>
     </div>
 
     <div class="metric-row">
@@ -828,8 +834,8 @@ function renderEvents(el, events, showSvc = false) {
     return `<div class="event-item">
       <div class="event-icon ${ic.cls}">${ic.icon}</div>
       <div class="event-body">
-        <div class="event-title">${title}</div>
-        ${showSvc ? `<div class="event-svc">${e.svcName || e.svcId || ''}</div>` : ''}
+        <div class="event-title">${esc(title)}</div>
+        ${showSvc ? `<div class="event-svc">${esc(e.svcName || e.svcId || '')}</div>` : ''}
       </div>
       <div class="event-time">${fmtDate(e.ts)}</div>
     </div>`;

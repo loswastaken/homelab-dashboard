@@ -945,6 +945,12 @@ let pendingCats = [];
 let selectedColor = 'blue';
 let editingCatId = null;
 
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const COLOR_CSS = {
   blue:   { card: 'var(--blue)',   icon: 'var(--blue-bg)',   pip: '#5285b8' },
   purple: { card: 'var(--purple)', icon: 'var(--purple-bg)', pip: '#7a60b8' },
@@ -1176,9 +1182,9 @@ function renderCard(s) {
     <div class="card" data-id="${s.id}" style="border-left-color:${borderColor}${cardOpacity}">
       <div class="card-top">
         <div class="card-meta">
-          <div class="svc-icon" style="background:${iconBg};color:${iconColor}">${s.abbr||'?'}</div>
-          <div class="svc-name">${s.name}</div>
-          <div class="svc-desc">${s.desc||''}</div>
+          <div class="svc-icon" style="background:${iconBg};color:${iconColor}">${esc(s.abbr||'?')}</div>
+          <div class="svc-name">${esc(s.name)}</div>
+          <div class="svc-desc">${esc(s.desc||'')}</div>
         </div>
         <div class="card-right">
           ${s.pinnedAt && !isDisabled ? '<span class="pin-tag">pinned</span>' : ''}
@@ -1191,7 +1197,7 @@ function renderCard(s) {
             ${checked}
             ${pinBtn}
             <button class="act-btn" onclick="openEditModal('${s.id}')">✎</button>
-            <button class="act-btn del" onclick="deleteSvc('${s.id}','${s.name}')">×</button>
+            <button class="act-btn del" data-id="${esc(s.id)}" data-name="${esc(s.name)}" onclick="deleteSvc(this.dataset.id, this.dataset.name)">×</button>
           </div>
         </div>
       </div>
@@ -1208,7 +1214,7 @@ function renderCard(s) {
       </div>
 
       <div class="card-foot">
-        <span class="cat-tag" style="color:${isDisabled ? 'var(--tm)' : colors.card}">${cat.name}</span>
+        <span class="cat-tag" style="color:${isDisabled ? 'var(--tm)' : colors.card}">${esc(cat.name)}</span>
         ${linkHtml}
       </div>
     </div>`;
@@ -1293,14 +1299,14 @@ function buildGridHtml(svcs) {
   const direct = unpinned.filter(s => s.cat === filter);
   if (direct.length) {
     const pip = getColors(cat.color).pip;
-    html += `<div class="section-hdr" data-section="${filter}"><span class="section-pip" style="background:${pip}"></span>${cat.name}</div>`;
+    html += `<div class="section-hdr" data-section="${filter}"><span class="section-pip" style="background:${pip}"></span>${esc(cat.name)}</div>`;
     html += direct.map(renderCard).join('');
   }
   for (const sub of subs) {
     const subSvcs = unpinned.filter(s => s.cat === sub.id);
     if (!subSvcs.length) continue;
     const pip = getColors(sub.color).pip;
-    html += `<div class="section-hdr" data-section="${sub.id}"><span class="section-pip" style="background:${pip}"></span>${sub.name}</div>`;
+    html += `<div class="section-hdr" data-section="${sub.id}"><span class="section-pip" style="background:${pip}"></span>${esc(sub.name)}</div>`;
     html += subSvcs.map(renderCard).join('');
   }
   return html;
@@ -1441,13 +1447,13 @@ function renderNavCats() {
     const pip = getColors(cat.color).pip;
     const act = filter === cat.id ? ' active' : '';
     let html = `<div class="nav-item${act}" onclick="setFilter('${cat.id}',this)">
-      <span class="nav-pip" style="background:${pip}"></span>${cat.name}
+      <span class="nav-pip" style="background:${pip}"></span>${esc(cat.name)}
     </div>`;
     for (const sub of subCatsOf(cat.id)) {
       const subPip = getColors(sub.color).pip;
       const subAct = filter === sub.id ? ' active' : '';
       html += `<div class="nav-item nav-sub${subAct}" onclick="setFilter('${sub.id}',this)">
-        <span class="nav-pip" style="background:${subPip}"></span>${sub.name}
+        <span class="nav-pip" style="background:${subPip}"></span>${esc(sub.name)}
       </div>`;
     }
     return html;
@@ -1458,7 +1464,7 @@ function renderTabs() {
   const tabs  = document.getElementById('tabs');
   const extra = topLevelCats().map(c =>
     `<div class="tab${filter===c.id?' active':''}" data-filter="${c.id}"
-      onclick="setFilter('${c.id}',null,this)">${c.name}</div>`).join('');
+      onclick="setFilter('${c.id}',null,this)">${esc(c.name)}</div>`).join('');
   tabs.innerHTML =
     `<div class="tab${filter==='all'?' active':''}" data-filter="all"
       onclick="setFilter('all',null,this)">All</div>` + extra;
@@ -1484,7 +1490,7 @@ function tick() {
   const h    = now.getHours();
   const g    = h<12?'Good morning': h<17?'Good afternoon':'Good evening';
   const name = APP.settings?.displayName || '';
-  document.getElementById('greeting').innerHTML = name ? `${g}, <b>${name}.</b>` : `${g}.`;
+  document.getElementById('greeting').innerHTML = name ? `${g}, <b>${esc(name)}.</b>` : `${g}.`;
   document.getElementById('hdr-time').textContent =
     now.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   document.getElementById('hdr-date').textContent =
@@ -1609,8 +1615,8 @@ function populateAgentSelect(kind, selectedId) {
   }
   sel.disabled = false;
   sel.innerHTML = list.map(a => {
-    const label = a.stale ? `${a.name} · stale` : `${a.name}`;
-    return `<option value="${a.id}" ${a.id === selectedId ? 'selected' : ''}>${label}</option>`;
+    const label = a.stale ? `${esc(a.name)} · stale` : esc(a.name);
+    return `<option value="${esc(a.id)}" ${a.id === selectedId ? 'selected' : ''}>${label}</option>`;
   }).join('');
   if (!selectedId && list.length) sel.value = list[0].id;
 }
@@ -1634,12 +1640,12 @@ async function loadAgentItems(kind, agentId, selectedName) {
     }
     const hasPreselected = selectedName && items.some(i => i.name === selectedName);
     const customOption = selectedName && !hasPreselected
-      ? `<option value="${selectedName}" selected>${selectedName} (custom)</option>` : '';
+      ? `<option value="${esc(selectedName)}" selected>${esc(selectedName)} (custom)</option>` : '';
     itemSel.innerHTML = customOption + items.map(i => {
       const tag = kind === 'pm2'
         ? (i.status || 'unknown')
         : (i.state || (i.status || '').split(' ')[0] || 'unknown');
-      return `<option value="${i.name}" ${i.name === selectedName ? 'selected' : ''}>${i.name} (${tag})</option>`;
+      return `<option value="${esc(i.name)}" ${i.name === selectedName ? 'selected' : ''}>${esc(i.name)} (${esc(tag)})</option>`;
     }).join('');
   } catch {
     itemSel.innerHTML = `<option value="">Failed to load — try again</option>`;
@@ -1678,9 +1684,9 @@ function toggleDockerManual(e) {
 function populateCatSelect(selected) {
   const top = topLevelCats();
   document.getElementById('f-cat').innerHTML = top.map(cat => {
-    let html = `<option value="${cat.id}" ${cat.id===selected?'selected':''}>${cat.name}</option>`;
+    let html = `<option value="${esc(cat.id)}" ${cat.id===selected?'selected':''}>${esc(cat.name)}</option>`;
     for (const sub of subCatsOf(cat.id)) {
-      html += `<option value="${sub.id}" ${sub.id===selected?'selected':''}>\u00a0\u00a0\u21b3 ${sub.name}</option>`;
+      html += `<option value="${esc(sub.id)}" ${sub.id===selected?'selected':''}>\u00a0\u00a0\u21b3 ${esc(sub.name)}</option>`;
     }
     return html;
   }).join('');
@@ -1958,9 +1964,6 @@ async function renderConnectedAgents() {
     return;
   }
   box.innerHTML = '';
-  const esc = (s) => String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   for (const { kind, a } of rows) {
     const stale = a.stale ? ' stale' : '';
     const count = typeof a.items === 'number' ? a.items : (Array.isArray(a.items) ? a.items.length : 0);
@@ -2028,8 +2031,8 @@ function renderCfgCats() {
     const pip = getColors(cat.color).pip;
     rows.push(`<div class="cat-item">
       <span class="cat-pip" style="background:${pip}"></span>
-      <span class="cat-name">${cat.name}</span>
-      <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${cat.color}</span>
+      <span class="cat-name">${esc(cat.name)}</span>
+      <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${esc(cat.color)}</span>
       <button class="cat-edit" onclick="editCategory(${i})" title="Edit" style="margin-left:auto">\u270e</button>
       <button class="cat-del" onclick="removeCat(${i})" title="Delete">\u00d7</button>
     </div>`);
@@ -2038,8 +2041,8 @@ function renderCfgCats() {
       const subPip = getColors(sub.color).pip;
       rows.push(`<div class="cat-item cat-sub">
         <span class="cat-pip" style="background:${subPip}"></span>
-        <span class="cat-name" style="font-size:12px">\u21b3 ${sub.name}</span>
-        <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${sub.color}</span>
+        <span class="cat-name" style="font-size:12px">\u21b3 ${esc(sub.name)}</span>
+        <span style="font-size:10px;color:var(--tm);font-family:'JetBrains Mono',monospace">${esc(sub.color)}</span>
         <button class="cat-edit" onclick="editCategory(${si})" title="Edit" style="margin-left:auto">\u270e</button>
         <button class="cat-del" onclick="removeCat(${si})" title="Delete">\u00d7</button>
       </div>`);
@@ -2055,7 +2058,7 @@ function renderParentSelect(excludeId = null) {
   const sorted = [...pendingCats.filter(c => !c.parentId && c.id !== excludeId)]
     .sort((a, b) => a.name.localeCompare(b.name));
   sel.innerHTML = '<option value="">None (top-level)</option>'
-    + sorted.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    + sorted.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
 }
 
 function removeCat(i) {
