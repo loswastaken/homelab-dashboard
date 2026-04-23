@@ -592,8 +592,15 @@
       </div>
 
       <div class="form-group when-url">
-        <label class="form-lbl">Slow Response Threshold <span>(ms, optional — overrides global. Leave blank to inherit, 0 to disable.)</span></label>
-        <input class="form-inp" id="f-slow-ms" type="number" min="0" max="600000" placeholder="inherits global">
+        <label class="form-lbl">Slow Response Threshold <span>(ms, optional — overrides global. Leave blank to inherit the global default.)</span></label>
+        <div class="toggle-row" style="padding:8px 0;border-bottom:none">
+          <div class="toggle-info">
+            <div class="toggle-name">Disable slow-response monitoring</div>
+            <div class="toggle-desc">Skip the slow-response check for this service. Offline / degraded monitoring still runs.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="f-slow-disabled" onchange="onSlowDisabledToggle(this)"><span class="tslider"></span></label>
+        </div>
+        <input class="form-inp" id="f-slow-ms" type="number" min="1" max="600000" placeholder="inherits global">
       </div>
 
       <div class="form-group when-pm2" style="display:none">
@@ -1497,6 +1504,8 @@ function openAddModal() {
   document.getElementById('f-url').value   = '';
   document.getElementById('f-port').value  = '';
   document.getElementById('f-slow-ms').value = '';
+  document.getElementById('f-slow-disabled').checked = false;
+  onSlowDisabledToggle(document.getElementById('f-slow-disabled'));
   document.getElementById('f-hasui').checked    = true;
   document.getElementById('f-check').checked    = true;
   document.getElementById('f-maint').checked    = false;
@@ -1518,7 +1527,11 @@ function openEditModal(id) {
   document.getElementById('f-desc').value  = s.desc||'';
   document.getElementById('f-url').value   = s.url||'';
   document.getElementById('f-port').value  = s.port||'';
-  document.getElementById('f-slow-ms').value = (s.slowThresholdMs ?? '') === '' ? '' : s.slowThresholdMs;
+  const slowSaved = s.slowThresholdMs;
+  const slowDisabled = slowSaved === 0;
+  document.getElementById('f-slow-disabled').checked = slowDisabled;
+  document.getElementById('f-slow-ms').value = (slowSaved === 0 || slowSaved == null) ? '' : slowSaved;
+  onSlowDisabledToggle(document.getElementById('f-slow-disabled'));
   document.getElementById('f-hasui').checked    = !!s.hasUI;
   document.getElementById('f-check').checked    = !!s.checkEnabled;
   document.getElementById('f-maint').checked    = !!s.maintenance;
@@ -1541,9 +1554,26 @@ function setCheckType(t) {
   document.querySelectorAll('#f-check-type-strip .seg-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.checkType === valid);
   });
-  document.querySelector('.when-url').style.display    = valid === 'url'    ? '' : 'none';
-  document.querySelector('.when-pm2').style.display    = valid === 'pm2'    ? '' : 'none';
-  document.querySelector('.when-docker').style.display = valid === 'docker' ? '' : 'none';
+  const show = (sel, on) => document.querySelectorAll(sel).forEach(el => {
+    el.style.display = on ? '' : 'none';
+  });
+  show('.when-url',    valid === 'url');
+  show('.when-pm2',    valid === 'pm2');
+  show('.when-docker', valid === 'docker');
+}
+
+function onSlowDisabledToggle(cb) {
+  const input = document.getElementById('f-slow-ms');
+  if (cb.checked) {
+    input.value = '';
+    input.disabled = true;
+    input.style.opacity = '0.5';
+    input.placeholder = 'disabled for this service';
+  } else {
+    input.disabled = false;
+    input.style.opacity = '';
+    input.placeholder = 'inherits global';
+  }
 }
 
 async function hydrateAgentSelectors(preselect) {
@@ -1673,10 +1703,16 @@ async function submitSvc() {
     ? document.getElementById('f-docker-container-manual').value
     : document.getElementById('f-docker-container').value).trim();
 
+  const slowDisabled = document.getElementById('f-slow-disabled').checked;
   const slowMsRaw = document.getElementById('f-slow-ms').value.trim();
-  const slowMsValue = (checkType === 'url' && slowMsRaw !== '')
-    ? Math.max(0, parseInt(slowMsRaw, 10) || 0)
-    : null;
+  let slowMsValue = null;
+  if (checkType === 'url') {
+    if (slowDisabled) {
+      slowMsValue = 0;
+    } else if (slowMsRaw !== '') {
+      slowMsValue = Math.max(0, parseInt(slowMsRaw, 10) || 0);
+    }
+  }
 
   const body = {
     name:         document.getElementById('f-name').value.trim(),
