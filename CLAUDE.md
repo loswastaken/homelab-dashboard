@@ -103,7 +103,7 @@ sudo docker compose up -d
 | `POST` | `/api/services` | Add a new service |
 | `PUT` | `/api/services/:id` | Edit a service |
 | `DELETE` | `/api/services/:id` | Remove a service |
-| `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate) |
+| `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate). Body: `{ status, desc?, response? }` (response: number ms or short string) |
 | `POST` | `/api/services/:id/check` | Re-check a single service |
 | `POST` | `/api/services/:id/maintenance` | Toggle maintenance mode |
 | `POST` | `/api/services/:id/resolve` | Force status to online |

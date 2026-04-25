@@ -1063,12 +1063,19 @@ app.post('/api/services/:id/report', (req, res) => {
   const svc = d.services.find(s => s.id === req.params.id);
   if (!svc) return res.status(404).json({ error: 'Not found' });
 
-  const { status, desc } = req.body;
+  const { status, desc, response } = req.body;
   const prevStatus = svc.status;
   const tick = status === 'online' ? 1 : status === 'degraded' ? 2 : 0;
 
   if (status)             svc.status = status;
   if (desc !== undefined) svc.desc   = desc;
+  if (response !== undefined) {
+    if (typeof response === 'number' && Number.isFinite(response) && response >= 0) {
+      svc.response = Math.round(response) + 'ms';
+    } else if (typeof response === 'string' && response.trim()) {
+      svc.response = response.trim().slice(0, 32);
+    }
+  }
   svc.history     = pushHistory(svc.history, tick);
   svc.uptime      = calcUptime(svc.history);
   svc.lastChecked = new Date().toISOString();

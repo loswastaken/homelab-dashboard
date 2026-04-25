@@ -21,8 +21,10 @@ try { agentId = fs.readFileSync(ID_FILE, 'utf8').trim(); } catch {}
 // ─── PM2 ─────────────────────────────────────────────────────────────────────
 
 function pm2List() {
+  const t0 = Date.now();
   const raw = execSync('pm2 jlist', { encoding: 'utf8', timeout: 10000 });
-  return JSON.parse(raw);
+  const elapsed = Date.now() - t0;
+  return { items: JSON.parse(raw), elapsed };
 }
 
 function pm2ToDashboardStatus(pm2Status) {
@@ -97,9 +99,12 @@ async function poll() {
   if (!agentId) await register();
   if (!agentId) return;
 
-  let procs;
-  try { procs = pm2List(); }
-  catch (err) {
+  let procs, pm2Elapsed;
+  try {
+    const out = pm2List();
+    procs = out.items;
+    pm2Elapsed = out.elapsed;
+  } catch (err) {
     console.error(`[${ts()}] pm2 jlist failed: ${err.message}`);
     return;
   }
@@ -153,9 +158,10 @@ async function poll() {
           : `restarts: ${restarts} · ${env.status}`
       };
     }
+    body.response = pm2Elapsed;
     try {
       await httpJson('POST', `${DASHBOARD_URL}/api/services/${m.serviceId}/report`, body);
-      console.log(`[${ts()}] ${m.name} → ${body.status}`);
+      console.log(`[${ts()}] ${m.name} → ${body.status} (${pm2Elapsed}ms)`);
     } catch (err) {
       console.error(`[${ts()}] Report failed for ${m.name}: ${err.message}`);
     }

@@ -37,15 +37,17 @@ const BOOT_LOOP_THRESHOLD = 3;
 const PS_FMT = '{{.ID}}|{{.Names}}|{{.State}}|{{.Status}}';
 
 function dockerList() {
+  const t0 = Date.now();
   const r = spawnSync('docker', ['ps', '-a', '--format', PS_FMT], {
     encoding: 'utf8',
     timeout:  30000
   });
+  const elapsed = Date.now() - t0;
   if (r.error)  throw r.error;
   if (r.status !== 0) {
     throw new Error(`docker ps exited ${r.status}: ${(r.stderr || '').trim()}`);
   }
-  return (r.stdout || '')
+  const items = (r.stdout || '')
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
@@ -53,6 +55,7 @@ function dockerList() {
       const [ID, Names, State, Status] = l.split('|');
       return { ID, Names, State, Status };
     });
+  return { items, elapsed };
 }
 
 function parseHealth(statusText) {
@@ -165,9 +168,12 @@ async function poll() {
   if (!agentId) await register();
   if (!agentId) return;
 
-  let containers;
-  try { containers = dockerList(); }
-  catch (err) {
+  let containers, dockerElapsed;
+  try {
+    const out = dockerList();
+    containers = out.items;
+    dockerElapsed = out.elapsed;
+  } catch (err) {
     console.error(`[${ts()}] docker ps failed: ${err.message}`);
     return;
   }
@@ -217,9 +223,10 @@ async function poll() {
     } else {
       body = dockerToDashboard(match.raw);
     }
+    body.response = dockerElapsed;
     try {
       await httpJson('POST', `${DASHBOARD_URL}/api/services/${m.serviceId}/report`, body);
-      console.log(`[${ts()}] ${m.name} → ${body.status}`);
+      console.log(`[${ts()}] ${m.name} → ${body.status} (${dockerElapsed}ms)`);
     } catch (err) {
       console.error(`[${ts()}] Report failed for ${m.name}: ${err.message}`);
     }
