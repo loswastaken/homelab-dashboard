@@ -61,7 +61,6 @@ function defaults() {
       degradedEscalateCount: 3,
       degradedEscalateWindowMinutes: 5,
       slowThresholdMs: 0,
-      slowStreakRequired: 1,
     },
     categories:  [],
     services:    [],
@@ -81,6 +80,10 @@ function migrateData(data) {
   if (!Array.isArray(data.pm2Agents))    data.pm2Agents    = [];
   if (!Array.isArray(data.dockerAgents)) data.dockerAgents = [];
   data.settings = { ...defaults().settings, ...(data.settings || {}) };
+  // The slow-response path used to track its own streak with its own threshold.
+  // Both have been folded into the unified degradedStreak / degradedEscalateCount
+  // pair; drop the stale fields so they can't drift back into the saved file.
+  delete data.settings.slowStreakRequired;
   for (const svc of data.services) {
     if (!svc.checkType) {
       svc.checkType = svc.url ? 'url' : 'pm2';
@@ -89,6 +92,7 @@ function migrateData(data) {
     if (svc.pm2ProcessName     === undefined) svc.pm2ProcessName     = '';
     if (svc.dockerAgentId      === undefined) svc.dockerAgentId      = '';
     if (svc.dockerContainerName === undefined) svc.dockerContainerName = '';
+    if (svc.slowStreak !== undefined) delete svc.slowStreak;
   }
   return data;
 }
@@ -615,7 +619,6 @@ function pushEvent(svc, type, note = '') {
 function resetDegradationState(svc) {
   svc.degradedSince  = null;
   svc.degradedStreak = 0;
-  svc.slowStreak     = 0;
   // Clear the notification dedup marker so the next genuine offline/degraded
   // transition re-notifies. Called from every recovery / resolve / maintenance /
   // disabled / online-ping path, which is exactly when we want to "forgive"
@@ -791,47 +794,43 @@ async function getWeatherData(force = false) {
 // the manual /api/services/:id/check endpoint so both honor the same
 // slow-response and degraded-escalation gates.
 function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Date.now() } = {}) {
-  const escCount      = Math.max(1, settings.degradedEscalateCount || 3);
-  const escWindow     = Math.max(1, settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
-  const globalSlow    = Math.max(0, settings.slowThresholdMs || 0);
-  const slowStreakReq = Math.max(1, settings.slowStreakRequired || 1);
-  const prevStatus    = svc.status;
+  const escCount   = Math.max(1, settings.degradedEscalateCount || 3);
+  const escWindow  = Math.max(1, settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
+  const globalSlow = Math.max(0, settings.slowThresholdMs || 0);
+  const prevStatus = svc.status;
 
   const slowMs = (svc.slowThresholdMs ?? globalSlow) | 0;
-  const isSlowRaw = r.ok && slowMs > 0 && r.elapsed > slowMs;
-  if (isSlowRaw) {
-    svc.slowStreak = (svc.slowStreak || 0) + 1;
-  } else {
-    svc.slowStreak = 0;
-  }
-  const isSlow = isSlowRaw && svc.slowStreak >= slowStreakReq;
+  const isSlow      = r.ok && slowMs > 0 && r.elapsed > slowMs;
   const isConnError = !r.ok && !r.serverError;
   const isDegradingResult = r.serverError || isSlow || isConnError;
 
   if (isDegradingResult) {
-    // Track consecutive degraded checks within the configured window.
-    // Once the streak reaches the configured count, escalate to offline.
+    // Unified streak gate: a single bad tick doesn't change visible status or
+    // notify. The service stays online (or pending) until escCount consecutive
+    // bad checks within escWindow flip it to degraded; another escCount on top
+    // of that escalates to offline. Same threshold is reused for both hops.
     if (!svc.degradedSince) svc.degradedSince = now;
     svc.degradedStreak = (svc.degradedStreak || 0) + 1;
     const windowExpired = (now - svc.degradedSince) > escWindow;
-    if (svc.degradedStreak >= escCount && !windowExpired) {
-      svc.status = 'offline';
-    } else if (windowExpired) {
+    if (windowExpired) {
       svc.degradedSince  = now;
       svc.degradedStreak = 1;
-      svc.status = 'degraded';
-    } else {
+    }
+    if (svc.degradedStreak >= escCount * 2) {
+      svc.status = 'offline';
+    } else if (svc.degradedStreak >= escCount) {
       svc.status = 'degraded';
     }
+    // Streak below threshold: leave svc.status untouched.
   } else {
     svc.status = 'online';
     resetDegradationState(svc);
   }
 
   const degradedCause = r.serverError
-    ? 'Service returned 5xx response'
+    ? `Service returned 5xx response (${svc.degradedStreak} in a row)`
     : isSlow
-      ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.slowStreak} in a row)`
+      ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.degradedStreak} in a row)`
       : isConnError
         ? `Connection failed (${svc.degradedStreak} in a row)`
         : null;
@@ -848,7 +847,11 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
   svc.lastChecked = new Date().toISOString();
 
   if (prevStatus !== svc.status) {
-    if (svc.status === 'offline')  { pushEvent(svc, 'offline',  'Service became unreachable'); maybeNotify(svc, 'offline',  'Service became unreachable'); }
+    if (svc.status === 'offline') {
+      const note = degradedCause || 'Service became unreachable';
+      pushEvent(svc, 'offline', note);
+      maybeNotify(svc, 'offline', note);
+    }
     if (svc.status === 'degraded') {
       const note = degradedCause || 'Service degraded';
       pushEvent(svc, 'degraded', note);
@@ -1354,10 +1357,7 @@ app.put('/api/config', (req, res) => {
       const n = parseInt(incoming.slowThresholdMs, 10);
       incoming.slowThresholdMs = Math.max(0, isNaN(n) ? 0 : n);
     }
-    if (incoming.slowStreakRequired !== undefined) {
-      const n = parseInt(incoming.slowStreakRequired, 10);
-      incoming.slowStreakRequired = Math.max(1, isNaN(n) ? 1 : n);
-    }
+    delete incoming.slowStreakRequired;
     d.settings = { ...d.settings, ...incoming };
     scheduleChecks();
   }

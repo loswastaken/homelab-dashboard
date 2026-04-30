@@ -823,16 +823,17 @@
       </div>
 
       <div class="settings-panel" data-panel="alerts" data-footer="show">
-        <div class="modal-sec">Degraded &rarr; Offline Escalation</div>
+        <div class="modal-sec">Streak Threshold</div>
         <div style="font-size:12px;color:var(--ts);margin-bottom:10px">
           A URL service that returns 5xx, exceeds the slow-response threshold, or fails to connect
-          (timeout / refused) is marked <strong>degraded</strong>. If it stays degraded for this many
-          consecutive checks within the configured window, it escalates to <strong>offline</strong>
-          and a notification fires.
+          (timeout / refused) is tracked as a degrading check. It's marked <strong>degraded</strong>
+          (and a notification fires) once it hits this many consecutive bad checks within the window.
+          If it stays bad for the same count again, it escalates to <strong>offline</strong> and a
+          second notification fires. A single good check resets the streak.
         </div>
         <div class="form-row">
           <div>
-            <label class="form-lbl">Escalate to Offline After <span>(consecutive degraded checks)</span></label>
+            <label class="form-lbl">Streak Threshold <span>(consecutive bad checks)</span></label>
             <input class="form-inp" id="cfg-esc-count" type="number" min="1" max="100" placeholder="3">
           </div>
           <div>
@@ -843,24 +844,16 @@
 
         <div class="modal-sec" style="margin-top:16px">Slow Response Threshold</div>
         <div style="font-size:12px;color:var(--ts);margin-bottom:10px">
-          When a URL service returns 2xx but the response takes longer than this, it's treated as
-          degraded (same visual, same notification). Set to <strong>0</strong> to disable globally.
-          Each URL service can override this from its edit modal.
+          When a URL service returns 2xx but the response takes longer than this, it counts as a
+          degrading check and feeds the same streak as 5xx and connection errors above. Set to
+          <strong>0</strong> to disable globally. Each URL service can override this from its edit
+          modal.
         </div>
         <div class="form-row">
           <div>
             <label class="form-lbl">Global Threshold <span>(ms, 0 = disabled)</span></label>
             <input class="form-inp" id="cfg-slow-ms" type="number" min="0" max="600000" placeholder="0">
           </div>
-          <div>
-            <label class="form-lbl">Mark Degraded After <span>(consecutive slow checks)</span></label>
-            <input class="form-inp" id="cfg-slow-streak" type="number" min="1" max="100" placeholder="1">
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--ts);margin-top:8px">
-          Requires this many consecutive slow responses before the service is marked degraded. A single
-          fast response resets the counter. Set to <strong>1</strong> for the original behavior (degrade
-          on the first slow check). Does not affect 5xx responses — those always degrade immediately.
         </div>
       </div>
 
@@ -1907,7 +1900,6 @@ function openSettings() {
   document.getElementById('cfg-esc-count').value   = s.degradedEscalateCount ?? 3;
   document.getElementById('cfg-esc-window').value  = s.degradedEscalateWindowMinutes ?? 5;
   document.getElementById('cfg-slow-ms').value     = s.slowThresholdMs ?? 0;
-  document.getElementById('cfg-slow-streak').value = s.slowStreakRequired ?? 1;
   document.getElementById('cfg-weather-enabled').checked = !!s.weatherEnabled;
   document.getElementById('cfg-weather-location').value  = s.weatherLocation || '';
   document.getElementById('cfg-weather-country').value   = s.weatherCountryCode || '';
@@ -2157,7 +2149,6 @@ async function saveSettings() {
   const escCount  = parseInt(document.getElementById('cfg-esc-count').value, 10);
   const escWindow = parseInt(document.getElementById('cfg-esc-window').value, 10);
   const slowMs    = parseInt(document.getElementById('cfg-slow-ms').value, 10);
-  const slowStreak = parseInt(document.getElementById('cfg-slow-streak').value, 10);
   await fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -2172,7 +2163,6 @@ async function saveSettings() {
         degradedEscalateCount:         Math.max(1, isNaN(escCount)  ? 3 : escCount),
         degradedEscalateWindowMinutes: Math.max(1, isNaN(escWindow) ? 5 : escWindow),
         slowThresholdMs:               Math.max(0, isNaN(slowMs)    ? 0 : slowMs),
-        slowStreakRequired:            Math.max(1, isNaN(slowStreak) ? 1 : slowStreak),
         weatherEnabled: document.getElementById('cfg-weather-enabled').checked,
         weatherLocation: document.getElementById('cfg-weather-location').value.trim(),
         weatherCountryCode: document.getElementById('cfg-weather-country').value.trim().toUpperCase(),
