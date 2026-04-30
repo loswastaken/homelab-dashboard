@@ -242,7 +242,23 @@ async function notifyNtfy(svc, type, note = '', settings) {
 function maybeNotify(svc, type, note) {
   try {
     if (!['offline','degraded','recovery'].includes(type)) return;
-    const s = load().settings;
+
+    // Dedup: persist a per-service marker of the last status we announced so
+    // that any two code paths that race to detect the same transition (e.g.
+    // scheduled checkAll vs /report, watchdog vs /report, boot checkAll vs
+    // first scheduled tick) only produce one notification. Recovery announces
+    // 'online'; offline/degraded announce themselves.
+    const announceStatus = type === 'recovery' ? 'online' : type;
+    const d = load();
+    const persisted = d.services.find(s => s.id === svc.id);
+    if (persisted) {
+      if (persisted.lastNotifiedStatus === announceStatus) return;
+      persisted.lastNotifiedStatus = announceStatus;
+      save(d);
+    }
+    svc.lastNotifiedStatus = announceStatus;
+
+    const s = d.settings;
     if (s.pushEnabled)  notifyPush(svc, type, note);
     if (s.iftttEnabled) notifyIfttt(svc, type, note, s);
     if (s.ntfyEnabled)  notifyNtfy(svc, type, note, s);
@@ -600,6 +616,11 @@ function resetDegradationState(svc) {
   svc.degradedSince  = null;
   svc.degradedStreak = 0;
   svc.slowStreak     = 0;
+  // Clear the notification dedup marker so the next genuine offline/degraded
+  // transition re-notifies. Called from every recovery / resolve / maintenance /
+  // disabled / online-ping path, which is exactly when we want to "forgive"
+  // the previously-announced bad status.
+  svc.lastNotifiedStatus = null;
 }
 
 function accumulateDailyTick(svc, tick) {
