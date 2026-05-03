@@ -973,9 +973,12 @@ async function doRefreshAll() {
   const icon = document.getElementById('refresh-icon');
   if (btn) { btn.disabled = true; icon.classList.add('spinning'); }
   document.getElementById('ring').classList.add('active');
-  // Manual refresh: re-ping services to update live status + response times,
-  // but do NOT record a history tick. The 30-min history bar is driven solely
-  // by the scheduled poll so its cadence stays predictable.
+  // Manual refresh ("force a check now"): re-pings services so the user sees
+  // fresh response times, but the server treats this as a read-only preview —
+  // no history tick, no streak advance, no notifications. The scheduled
+  // server-side checkAll() is the sole driver of cadence and alerting.
+  // Called from the Refresh button and from post-mutation handlers (settings
+  // save, service edit, resolve, maintenance/pin toggle).
   try { await fetch('/api/check-all', { method: 'POST' }); } catch(e) {}
   await fetchData(true);
   if (btn) { btn.disabled = false; icon.classList.remove('spinning'); }
@@ -1009,7 +1012,12 @@ function scheduleNextPoll() {
 }
 
 async function onPollFire() {
-  try { await doRefreshAll(); }
+  // Auto-poll is read-only: just fetch the latest state the server has
+  // saved. The server's own scheduleChecks() loop is the sole driver of
+  // ping cadence — calling /api/check-all here would double the per-minute
+  // ping count and feed the alerting pipeline twice. The manual Refresh
+  // button still POSTs /api/check-all for "force a check now" semantics.
+  try { await fetchData(true); }
   finally { scheduleNextPoll(); }
 }
 

@@ -612,17 +612,19 @@ function pushEvent(svc, type, note = '') {
   if (svc.events.length > 500) svc.events = svc.events.slice(-500);
 }
 
-// Clear the degradation/slow-response streak counters. Called on every
-// recovery or state-reset path so a later degrading check always starts
-// counting from zero rather than picking up wherever a prior incident left
-// the service on disk.
-function resetDegradationState(svc) {
+// Clear the degradation/slow-response streak counters. Always safe to call
+// on any successful ping — does NOT touch the notification dedup marker so a
+// flaky service (good/bad/good/bad) doesn't re-notify on every transition.
+function resetStreakCounters(svc) {
   svc.degradedSince  = null;
   svc.degradedStreak = 0;
-  // Clear the notification dedup marker so the next genuine offline/degraded
-  // transition re-notifies. Called from every recovery / resolve / maintenance /
-  // disabled / online-ping path, which is exactly when we want to "forgive"
-  // the previously-announced bad status.
+}
+
+// Clear the notification dedup marker so the next genuine offline/degraded
+// transition re-notifies. Call ONLY on a confirmed transition into a "good"
+// state (real recovery, manual resolve, maintenance toggle, disabled toggle).
+// Calling this on every successful ping would defeat the dedup.
+function clearNotificationDedup(svc) {
   svc.lastNotifiedStatus = null;
 }
 
@@ -789,10 +791,14 @@ async function getWeatherData(force = false) {
   return result;
 }
 
-// Evaluate a single ping result against the streak/escalation rules and
-// mutate the service in place. Shared by the scheduled checkAll() loop and
-// the manual /api/services/:id/check endpoint so both honor the same
-// slow-response and degraded-escalation gates.
+// Evaluate a single ping result. Shared by the scheduled checkAll() loop
+// (recordHistory=true) and the manual /api/check-all and
+// /api/services/:id/check endpoints (recordHistory=false). The flag now
+// gates ALL alerting-pipeline side effects — streak counters, status flips
+// from streak escalation, history writes, events, and notifications — so
+// the manual paths are pure read-only previews and only the scheduled tick
+// drives cadence. svc.response and svc.lastChecked update in both modes
+// because they are the "show me current state" output every caller needs.
 function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Date.now() } = {}) {
   const escCount   = Math.max(1, settings.degradedEscalateCount || 3);
   const escWindow  = Math.max(1, settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
@@ -804,27 +810,35 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
   const isConnError = !r.ok && !r.serverError;
   const isDegradingResult = r.serverError || isSlow || isConnError;
 
-  if (isDegradingResult) {
-    // Unified streak gate: a single bad tick doesn't change visible status or
-    // notify. The service stays online (or pending) until escCount consecutive
-    // bad checks within escWindow flip it to degraded; another escCount on top
-    // of that escalates to offline. Same threshold is reused for both hops.
-    if (!svc.degradedSince) svc.degradedSince = now;
-    svc.degradedStreak = (svc.degradedStreak || 0) + 1;
-    const windowExpired = (now - svc.degradedSince) > escWindow;
-    if (windowExpired) {
-      svc.degradedSince  = now;
-      svc.degradedStreak = 1;
+  if (recordHistory) {
+    if (isDegradingResult) {
+      // Unified streak gate: a single bad tick doesn't change visible status or
+      // notify. The service stays online (or pending) until escCount consecutive
+      // bad checks within escWindow flip it to degraded; another escCount on top
+      // of that escalates to offline. Same threshold is reused for both hops.
+      if (!svc.degradedSince) svc.degradedSince = now;
+      svc.degradedStreak = (svc.degradedStreak || 0) + 1;
+      const windowExpired = (now - svc.degradedSince) > escWindow;
+      if (windowExpired) {
+        svc.degradedSince  = now;
+        svc.degradedStreak = 1;
+      }
+      if (svc.degradedStreak >= escCount * 2) {
+        svc.status = 'offline';
+      } else if (svc.degradedStreak >= escCount) {
+        svc.status = 'degraded';
+      }
+      // Streak below threshold: leave svc.status untouched.
+    } else {
+      svc.status = 'online';
+      resetStreakCounters(svc);
     }
-    if (svc.degradedStreak >= escCount * 2) {
-      svc.status = 'offline';
-    } else if (svc.degradedStreak >= escCount) {
-      svc.status = 'degraded';
-    }
-    // Streak below threshold: leave svc.status untouched.
   } else {
-    svc.status = 'online';
-    resetDegradationState(svc);
+    // Preview mode: a good ping reflects online so the UI shows fresh state,
+    // but a bad ping does NOT mutate status or streak. Leaving status alone
+    // here means a transient blip during a manual refresh can't visually
+    // demote a service the scheduler hasn't yet decided is degraded.
+    if (!isDegradingResult) svc.status = 'online';
   }
 
   const degradedCause = r.serverError
@@ -846,7 +860,11 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
   svc.response    = (r.ok || r.serverError) ? r.elapsed + 'ms' : '—';
   svc.lastChecked = new Date().toISOString();
 
-  if (prevStatus !== svc.status) {
+  // Notifications fire ONLY from the scheduled cadence (recordHistory=true).
+  // Manual /api/check-all and /api/services/:id/check are previews and must
+  // not feed the alerting pipeline — that was the source of the every-minute
+  // notification spam when the frontend auto-poll also POSTed /api/check-all.
+  if (recordHistory && prevStatus !== svc.status) {
     if (svc.status === 'offline') {
       const note = degradedCause || 'Service became unreachable';
       pushEvent(svc, 'offline', note);
@@ -858,6 +876,11 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
       maybeNotify(svc, 'degraded', note);
     }
     if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
+      // Real recovery transition: forgive the previously-announced bad status
+      // so a future genuine offline/degraded re-notifies. resetStreakCounters
+      // already ran in the good-ping branch above; only the dedup marker is
+      // cleared here, scoped to the actual transition.
+      clearNotificationDedup(svc);
       pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
       maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
     }
@@ -886,7 +909,8 @@ async function checkAll({ recordHistory = true } = {}) {
   for (const svc of fresh.services) {
     if (svc.disabled) continue;
     if (svc.maintenance) {
-      resetDegradationState(svc);
+      resetStreakCounters(svc);
+      clearNotificationDedup(svc);
       if (recordHistory) {
         svc.history = pushHistory(svc.history, 3);
         accumulateDailyTick(svc, 3);
@@ -1045,7 +1069,8 @@ app.put('/api/services/:id', (req, res) => {
   d.services[i] = next;
   if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
     d.services[i].status = req.body.maintenance ? 'maintenance' : 'pending';
-    resetDegradationState(d.services[i]);
+    resetStreakCounters(d.services[i]);
+    clearNotificationDedup(d.services[i]);
   }
   if (req.body.disabled !== undefined && !!req.body.disabled !== !!prev.disabled) {
     if (req.body.disabled) {
@@ -1054,7 +1079,8 @@ app.put('/api/services/:id', (req, res) => {
     } else {
       d.services[i].status = 'pending';
     }
-    resetDegradationState(d.services[i]);
+    resetStreakCounters(d.services[i]);
+    clearNotificationDedup(d.services[i]);
   }
   save(d);
   res.json(d.services[i]);
@@ -1072,7 +1098,8 @@ app.post('/api/services/:id/resolve', (req, res) => {
   const svc = d.services.find(s => s.id === req.params.id);
   if (!svc) return res.status(404).json({ error: 'Not found' });
   svc.status  = 'online';
-  resetDegradationState(svc);
+  resetStreakCounters(svc);
+  clearNotificationDedup(svc);
   svc.history = pushHistory(svc.history, 1);
   svc.uptime  = calcUptime(svc.history);
   accumulateDailyTick(svc, 1);
@@ -1116,7 +1143,8 @@ app.post('/api/services/:id/report', (req, res) => {
     maybeNotify(svc, 'offline', note);
   }
   if (status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
-    resetDegradationState(svc);
+    resetStreakCounters(svc);
+    clearNotificationDedup(svc);
     const note = `Recovered from ${prevStatus}`;
     pushEvent(svc, 'recovery', note);
     maybeNotify(svc, 'recovery', note);
@@ -1132,7 +1160,8 @@ app.post('/api/services/:id/maintenance', (req, res) => {
   if (!svc) return res.status(404).json({ error: 'Not found' });
   svc.maintenance = !svc.maintenance;
   svc.status      = svc.maintenance ? 'maintenance' : 'unknown';
-  resetDegradationState(svc);
+  resetStreakCounters(svc);
+  clearNotificationDedup(svc);
   pushEvent(svc, svc.maintenance ? 'maintenance' : 'recovery',
     svc.maintenance ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
   save(d);
