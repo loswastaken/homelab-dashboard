@@ -12,6 +12,7 @@ const webpush   = require('web-push');
 const app       = express();
 const PORT      = process.env.PORT || 55964;
 const BUILD_SHA = process.env.BUILD_SHA || 'dev';
+const SERVER_STARTED_AT = Date.now();
 const REPO      = 'loswastaken/homelab-dashboard';
 const DATA_DIR  = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'services.json');
@@ -682,9 +683,14 @@ function isReportStale(svc, now, defaultThresholdSec) {
   if (svc.status === 'pending') return false;
   const perSvc = Number(svc.reportInterval) > 0 ? Number(svc.reportInterval) * 4 : null;
   const thresholdMs = (perSvc || defaultThresholdSec) * 1000;
-  if (!svc.lastChecked) return true;
-  const last = Date.parse(svc.lastChecked);
-  if (Number.isNaN(last)) return true;
+  // Floor the last contact at server boot. Reports sent while the dashboard
+  // was down (Watchtower redeploy, NAS reboot) were lost, not skipped — the
+  // agent is likely fine and will report within its poll interval. Without
+  // this floor, the boot-time checkAll() mass-flips every push-reported
+  // service to offline and fires a notification storm, followed by a
+  // recovery storm seconds later when the agents check back in.
+  const reported = svc.lastChecked ? Date.parse(svc.lastChecked) : NaN;
+  const last = Math.max(Number.isNaN(reported) ? 0 : reported, SERVER_STARTED_AT);
   return (now - last) > thresholdMs;
 }
 
@@ -889,9 +895,27 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
   }
 }
 
-async function checkAll({ recordHistory = true } = {}) {
-  const fresh = load();
-  const toCheck = fresh.services
+// Serialize runs: boot, scheduled, and manual checks queue behind each other
+// instead of racing. Two concurrent runs would double-ping every service and
+// the later save() would erase whatever the earlier run wrote.
+let checkChain = Promise.resolve();
+
+function checkAll(opts = {}) {
+  const run = checkChain.then(() => runCheckAll(opts));
+  checkChain = run.catch(() => {});
+  return run;
+}
+
+async function runCheckAll({ recordHistory = true } = {}) {
+  // Phase 1 — ping against a read-only snapshot. Deliberately does NOT keep
+  // the loaded data around across the await: pings can take up to the 5s
+  // timeout, and any /report or UI write landing in that window would be
+  // erased wholesale by the save() below if we wrote back a pre-ping
+  // snapshot. That lost-update window is what randomly flipped every
+  // push-reported service to offline at once — agent report bursts kept
+  // being erased until the staleness watchdog declared them all dead, then
+  // a recovery storm followed when a burst finally survived.
+  const toCheck = load().services
     .filter(s => s.url && s.checkEnabled && !s.maintenance && !s.disabled)
     .map(s => ({ id: s.id, url: s.url }));
 
@@ -899,10 +923,18 @@ async function checkAll({ recordHistory = true } = {}) {
     toCheck.map(async ({ id, url }) => ({ id, r: await ping(url) }))
   );
 
+  // Phase 2 — reload, apply, save with no awaits in between. Node is
+  // single-threaded, so this whole block is atomic with respect to every
+  // other route handler: nothing can write services.json between this
+  // load() and the save() at the bottom.
+  const fresh = load();
   const tickNow = Date.now();
   for (const { id, r } of results) {
     const svc = fresh.services.find(s => s.id === id);
     if (!svc) continue;
+    // The service may have been edited while pings were in flight — skip
+    // results that no longer apply to it.
+    if (!svc.url || svc.checkEnabled === false || svc.maintenance || svc.disabled) continue;
     evaluatePingResult(svc, r, fresh.settings, { recordHistory, now: tickNow });
   }
 
@@ -1188,16 +1220,24 @@ app.post('/api/check-all', async (req, res) => {
 });
 
 app.post('/api/services/:id/check', async (req, res) => {
-  const d   = load();
-  const svc = d.services.find(s => s.id === req.params.id);
-  if (!svc) return res.status(404).json({ error: 'Not found' });
+  // Same two-phase shape as checkAll(): ping first, then reload + apply +
+  // save synchronously. Holding the loaded file across the ping await would
+  // erase any /report or UI write that lands while the ping is in flight.
+  const probe = load().services.find(s => s.id === req.params.id);
+  if (!probe) return res.status(404).json({ error: 'Not found' });
 
-  if (svc.url && svc.checkEnabled && !svc.maintenance && !svc.disabled) {
-    const r = await ping(svc.url);
-    evaluatePingResult(svc, r, d.settings, { recordHistory: false });
-    save(d);
+  if (probe.url && probe.checkEnabled && !probe.maintenance && !probe.disabled) {
+    const r = await ping(probe.url);
+    const d   = load();
+    const svc = d.services.find(s => s.id === req.params.id);
+    if (!svc) return res.status(404).json({ error: 'Not found' });
+    if (svc.url && svc.checkEnabled !== false && !svc.maintenance && !svc.disabled) {
+      evaluatePingResult(svc, r, d.settings, { recordHistory: false });
+      save(d);
+    }
+    return res.json(svc);
   }
-  res.json(svc);
+  res.json(probe);
 });
 
 // ─── API: Agent registration & discovery (PM2 + Docker) ─────────────────────

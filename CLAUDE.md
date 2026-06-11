@@ -154,6 +154,19 @@ sudo docker compose up -d
 
 Services without a `url` (pushed via PM2 agent or the `/report` API) have no active check, so a silent agent would leave `status`, `history`, and `dailyHistory` frozen and inflate the public status page's uptime. To prevent this, `checkAll()` runs a watchdog pass on every cycle: if a push-reported service hasn't sent a report within `settings.reportStaleAfter` seconds (default 120s, configurable in Settings → General), it's treated as offline — an offline tick is pushed to `history`, `dailyHistory`, and `hourlyHistory`; `status` flips to `offline`; and a single `offline` event + push notification fires on the transition. `lastChecked` is NOT touched by the watchdog so it accurately reflects the time of the last real contact. Per-service override: `svc.reportInterval` (seconds) — when set, the threshold becomes `reportInterval * 4`. When a real `/report` arrives, the existing recovery-event path flips status back to online.
 
+**Boot grace:** `isReportStale()` floors the last-contact time at `SERVER_STARTED_AT`. Reports sent while the dashboard was down (Watchtower redeploy, NAS reboot) were lost, not skipped, so agents get one full stale threshold after startup to check in before being declared stale. Without this, the boot-time `checkAll()` mass-flipped every push-reported service to offline (one notification each) and a recovery storm followed seconds later when the agents' next poll landed.
+
+### checkAll() Write Atomicity
+
+`checkAll()` is structured in two phases specifically to avoid a lost-update race on `data/services.json`:
+
+1. **Ping phase** — loads only a read-only `{ id, url }` snapshot and awaits all pings (up to the 5s timeout). No loaded data object is held across this await.
+2. **Apply phase** — re-`load()`s the file, applies ping results / maintenance pass / staleness watchdog, and `save()`s, with **no awaits in between**. Node is single-threaded, so this block is atomic with respect to every other route handler.
+
+Do NOT refactor it back to "load once at the top, save at the bottom": holding the pre-ping snapshot across the await and writing it back wholesale erased any `/report` or UI write that landed during the ping window. Because agents send reports for all their services in one burst every 30s, and the burst's phase slowly drifts relative to the wall-aligned check loop, bursts got erased for minutes at a time — until the staleness watchdog flipped **all** push-reported services offline at once (notification storm), followed by a recovery storm when a burst finally survived. The apply phase also re-validates each service (`url`/`checkEnabled`/`maintenance`/`disabled` may have changed mid-ping) before applying its result. `/api/services/:id/check` follows the same two-phase shape.
+
+Runs are also **serialized** through a promise chain (`checkAll()` queues `runCheckAll()` behind any in-flight run), so boot, scheduled, and manual checks never race each other's load/save.
+
 ### History Ticks
 
 Values stored in `svc.history[]` (last 30 per-check ticks, used for the main dashboard bar):
