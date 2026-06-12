@@ -174,9 +174,21 @@ function ts() {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
+// Reentrancy guard: a poll that runs long (slow pm2 jlist, slow dashboard)
+// must not stack with the next interval tick — overlapping polls would
+// double-report every service.
+let polling = false;
+async function safePoll() {
+  if (polling) return;
+  polling = true;
+  try { await poll(); }
+  catch (err) { console.error(`[${ts()}] poll failed: ${err.message}`); }
+  finally { polling = false; }
+}
+
 console.log(`[${ts()}] pm2-agent starting — polling every ${POLL_MS / 1000}s → ${DASHBOARD_URL}`);
 (async () => {
   await register();
-  await poll();
-  setInterval(poll, POLL_MS);
+  await safePoll();
+  setInterval(safePoll, POLL_MS);
 })();

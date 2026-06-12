@@ -339,17 +339,17 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/services` | Full data object + `version` (7-char SHA) |
+| GET | `/healthz` | Liveness probe for the container healthcheck (no auth) |
+| GET | `/api/services` | Data object + `version` (7-char SHA); heavy history arrays are served by `/api/history` instead |
 | GET | `/api/history` | Daily history + hourly history + events per service |
 | GET | `/api/weather` | Current weather for configured location |
 | POST | `/api/services` | Add service |
 | PUT | `/api/services/:id` | Edit service |
 | DELETE | `/api/services/:id` | Remove service |
 | POST | `/api/services/:id/resolve` | Clear degraded/offline → online |
-| POST | `/api/services/:id/check` | Force health check now |
-| POST | `/api/services/:id/maintenance` | Toggle maintenance mode |
+| POST | `/api/services/:id/check` | Re-check a single service (preview — does not change status) |
 | POST | `/api/services/:id/pin` | Toggle pin to top of grid |
-| POST | `/api/services/:id/report` | External status push (API key auth) |
+| POST | `/api/services/:id/report` | External status push (API key auth); status must be `online`/`degraded`/`offline` |
 | POST | `/api/check-all` | Run health checks on all services |
 | GET | `/api/push/vapid-public-key` | VAPID public key for push subscription |
 | POST | `/api/push/subscribe` | Register a push subscription |

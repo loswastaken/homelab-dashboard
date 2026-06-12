@@ -22,7 +22,9 @@ services:
 
   homelab-dashboard:
     # Pull pre-built image from GitHub Container Registry.
-    # Run update.sh on the NAS to pull the latest and redeploy.
+    # Watchtower (above) auto-pulls and redeploys new images every 5 minutes;
+    # one-click updates from the dashboard UI trigger the same thing via the
+    # Watchtower HTTP API.
     image: ghcr.io/loswastaken/homelab-dashboard:latest
 
     # Uncomment `build` to build locally instead of pulling from GHCR.
@@ -55,7 +57,10 @@ services:
       - "com.centurylinklabs.watchtower.scope=homelab"  # opt this container into watchtower
 
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:55964/api/services"]
+      # /healthz is registered before the auth gate. The previous target
+      # (/api/services) required a session, always returned 4xx, and left the
+      # container permanently "(unhealthy)" in docker ps.
+      test: ["CMD", "wget", "-qO-", "http://localhost:55964/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

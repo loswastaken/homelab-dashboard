@@ -88,7 +88,7 @@ function dockerToDashboard(container) {
   const state = (container.State || '').toLowerCase();
   const statusText = container.Status || '';
   const health = parseHealth(statusText);
-  const containerId = container.ID || container.Id || container.Names || container.Name;
+  const containerId = container.ID;
 
   recordStartingIfRising(containerId, health);
   const startingCount = pruneStarting(containerId).length;
@@ -180,10 +180,15 @@ async function poll() {
 
   // Extract the container name from `Names` (comma-sep) — take the first one.
   const normalized = containers.map(c => {
-    const rawNames = c.Names || c.Name || '';
-    const name = String(rawNames).split(',')[0].trim().replace(/^\//, '');
+    const name = String(c.Names || '').split(',')[0].trim().replace(/^\//, '');
     return { raw: c, name, id: (c.ID || '').slice(0, 12) };
   });
+
+  // Drop boot-loop tracking state for containers that no longer exist so the
+  // maps don't grow forever as containers are recreated with new ids.
+  const liveIds = new Set(normalized.map(n => n.raw.ID));
+  for (const id of prevHealth.keys())      if (!liveIds.has(id)) prevHealth.delete(id);
+  for (const id of startingHistory.keys()) if (!liveIds.has(id)) startingHistory.delete(id);
 
   const discovery = normalized.map(n => ({
     name:   n.name,
@@ -239,9 +244,21 @@ function ts() {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
+// Reentrancy guard: a poll that runs long (e.g. `docker ps` hanging against
+// a wedged daemon) must not stack with the next interval tick — overlapping
+// polls would double-report every service.
+let polling = false;
+async function safePoll() {
+  if (polling) return;
+  polling = true;
+  try { await poll(); }
+  catch (err) { console.error(`[${ts()}] poll failed: ${err.message}`); }
+  finally { polling = false; }
+}
+
 console.log(`[${ts()}] docker-agent starting — polling every ${POLL_MS / 1000}s → ${DASHBOARD_URL}`);
 (async () => {
   await register();
-  await poll();
-  setInterval(poll, POLL_MS);
+  await safePoll();
+  setInterval(safePoll, POLL_MS);
 })();

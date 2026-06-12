@@ -1781,11 +1781,6 @@ async function resolveService(id) {
   await doRefreshAll();
 }
 
-async function toggleMaintenance(id) {
-  await fetch(`/api/services/${id}/maintenance`, { method: 'POST' });
-  await doRefreshAll();
-}
-
 async function togglePin(id) {
   await fetch(`/api/services/${id}/pin`, { method: 'POST' });
   await doRefreshAll();

@@ -29,15 +29,33 @@ app.use(express.json());
 
 // ─── Data helpers ────────────────────────────────────────────────────────────
 
+// Write-temp-then-rename so a crash or power loss mid-write can never leave
+// a torn file. rename(2) is atomic on the same filesystem, so readers see
+// either the old content or the new content, never a partial write.
+function writeFileAtomic(file, content) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, file);
+}
+
 function load() {
-  let data;
-  try   { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
-  catch { data = defaults(); }
-  return migrateData(data);
+  let raw;
+  try { raw = fs.readFileSync(DATA_FILE, 'utf8'); }
+  catch { return migrateData(defaults()); } // first run — no file yet
+  try { return migrateData(JSON.parse(raw)); }
+  catch (e) {
+    // An existing file that no longer parses is preserved, not discarded.
+    // Falling back to defaults() and letting the next save() run would
+    // silently overwrite every service, category, and history entry.
+    const backup = DATA_FILE + '.corrupt-' + new Date().toISOString().replace(/[:.]/g, '-');
+    try { fs.copyFileSync(DATA_FILE, backup); } catch {}
+    console.error(`[data] services.json failed to parse (${e.message}) — original preserved at ${backup}`);
+    return migrateData(defaults());
+  }
 }
 
 function save(d) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2));
+  writeFileAtomic(DATA_FILE, JSON.stringify(d, null, 2));
 }
 
 function defaults() {
@@ -94,6 +112,9 @@ function migrateData(data) {
     if (svc.dockerAgentId      === undefined) svc.dockerAgentId      = '';
     if (svc.dockerContainerName === undefined) svc.dockerContainerName = '';
     if (svc.slowStreak !== undefined) delete svc.slowStreak;
+    // 'unknown' was only written by the removed POST /:id/maintenance
+    // endpoint; map it to the pending state the live toggle path uses.
+    if (svc.status === 'unknown') svc.status = 'pending';
   }
   return data;
 }
@@ -106,7 +127,7 @@ function loadAuth() {
 }
 
 function saveAuth(data) {
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(data, null, 2));
+  writeFileAtomic(AUTH_FILE, JSON.stringify(data, null, 2));
 }
 
 function isSetupDone() {
@@ -138,7 +159,7 @@ function ensureVapid() {
   let keys = loadVapid();
   if (!keys || !keys.publicKey || !keys.privateKey) {
     keys = webpush.generateVAPIDKeys();
-    fs.writeFileSync(VAPID_FILE, JSON.stringify(keys, null, 2));
+    writeFileAtomic(VAPID_FILE, JSON.stringify(keys, null, 2));
   }
   webpush.setVapidDetails(process.env.VAPID_CONTACT || 'mailto:admin@example.com', keys.publicKey, keys.privateKey);
   return keys;
@@ -150,7 +171,7 @@ function loadSubs() {
 }
 
 function saveSubs(list) {
-  fs.writeFileSync(SUBS_FILE, JSON.stringify(list, null, 2));
+  writeFileAtomic(SUBS_FILE, JSON.stringify(list, null, 2));
 }
 
 const vapidKeys = ensureVapid();
@@ -204,7 +225,7 @@ function normalizeNtfyTopic(v) {
 }
 
 async function notifyIfttt(svc, type, note = '', settings) {
-  const s = settings || load().settings;
+  const s = settings || {};
   if (!s.iftttWebhookKey || !s.iftttEventName) return;
   const url = `https://maker.ifttt.com/trigger/${encodeURIComponent(s.iftttEventName)}/with/key/${encodeURIComponent(s.iftttWebhookKey)}`;
   try {
@@ -220,7 +241,7 @@ async function notifyIfttt(svc, type, note = '', settings) {
 }
 
 async function notifyNtfy(svc, type, note = '', settings) {
-  const s = settings || load().settings;
+  const s = settings || {};
   if (!s.ntfyTopic) return;
   const url = `https://ntfy.sh/${encodeURIComponent(s.ntfyTopic)}`;
   const title = `${svc.name || svc.id}: ${eventLabel(type)}`;
@@ -244,26 +265,25 @@ async function notifyNtfy(svc, type, note = '', settings) {
   }
 }
 
-function maybeNotify(svc, type, note) {
+// Gate + fan-out for a status-transition notification. Dedup: a per-service
+// marker of the last status we announced (recovery announces 'online';
+// offline/degraded announce themselves) so two code paths detecting the same
+// transition only produce one notification.
+//
+// Pure in-memory: the marker is set on the caller's svc object and the
+// caller is responsible for save()-ing afterwards — both call sites
+// (checkAll's synchronous apply phase and /report) already do. Do NOT
+// load()/save() a second copy of the data file in here: two divergent
+// copies in flight is exactly the lost-update shape that caused the
+// mass-offline bug.
+function maybeNotify(svc, type, note, settings) {
   try {
     if (!['offline','degraded','recovery'].includes(type)) return;
-
-    // Dedup: persist a per-service marker of the last status we announced so
-    // that any two code paths that race to detect the same transition (e.g.
-    // scheduled checkAll vs /report, watchdog vs /report, boot checkAll vs
-    // first scheduled tick) only produce one notification. Recovery announces
-    // 'online'; offline/degraded announce themselves.
     const announceStatus = type === 'recovery' ? 'online' : type;
-    const d = load();
-    const persisted = d.services.find(s => s.id === svc.id);
-    if (persisted) {
-      if (persisted.lastNotifiedStatus === announceStatus) return;
-      persisted.lastNotifiedStatus = announceStatus;
-      save(d);
-    }
+    if (svc.lastNotifiedStatus === announceStatus) return;
     svc.lastNotifiedStatus = announceStatus;
 
-    const s = d.settings;
+    const s = settings || {};
     if (s.pushEnabled)  notifyPush(svc, type, note);
     if (s.iftttEnabled) notifyIfttt(svc, type, note, s);
     if (s.ntfyEnabled)  notifyNtfy(svc, type, note, s);
@@ -285,24 +305,16 @@ function sweepExpired(map, now) {
   }
 }
 
-function checkRateLimit(ip) {
-  const now  = Date.now();
-  if (Math.random() < 0.01) sweepExpired(loginAttempts, now);
-  let entry  = loginAttempts.get(ip);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + 15 * 60 * 1000 };
-    loginAttempts.set(ip, entry);
-  }
-  return entry;
-}
-
-function checkReportLimit(ip) {
+// Fixed-window rate limit: returns the live { count, resetAt } entry for
+// this ip in the given map, creating or rotating the 15-minute window as
+// needed. Shared by the login limiter and the agent/report limiter.
+function rateEntry(map, ip) {
   const now = Date.now();
-  if (Math.random() < 0.01) sweepExpired(reportAttempts, now);
-  let entry = reportAttempts.get(ip);
+  if (Math.random() < 0.01) sweepExpired(map, now);
+  let entry = map.get(ip);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + 15 * 60 * 1000 };
-    reportAttempts.set(ip, entry);
+    map.set(ip, entry);
   }
   return entry;
 }
@@ -356,7 +368,7 @@ app.get('/login', (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   const ip    = req.ip || req.socket.remoteAddress || 'unknown';
-  const entry = checkRateLimit(ip);
+  const entry = rateEntry(loginAttempts, ip);
   if (entry.count >= 5) {
     const mins = Math.ceil((entry.resetAt - Date.now()) / 60000);
     return res.status(429).json({ error: `Too many attempts — try again in ${mins} min` });
@@ -486,6 +498,14 @@ app.get('/api/public/status/:slug', (req, res) => {
   });
 });
 
+// Liveness probe for the container healthcheck. Registered before the auth
+// gate on purpose: the docker-compose healthcheck used to probe the
+// auth-gated /api/services, which always returned 4xx, so the container sat
+// permanently "(unhealthy)" in docker ps (and anything reading container
+// health — including a Docker agent monitoring this container — saw it as
+// degraded).
+app.get('/healthz', (_, res) => res.json({ ok: true }));
+
 // ─── Auth gate ────────────────────────────────────────────────────────────────
 
 app.use((req, res, next) => {
@@ -496,7 +516,7 @@ app.use((req, res, next) => {
     && (req.method === 'POST' || req.method === 'GET');
   if (isReport || isAgentApi) {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const limit = checkReportLimit(ip);
+    const limit = rateEntry(reportAttempts, ip);
     if (limit.count >= 50) {
       const mins = Math.ceil((limit.resetAt - Date.now()) / 60000);
       return res.status(429).json({ error: `Too many report attempts — try again in ${mins} min` });
@@ -818,20 +838,29 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
 
   if (recordHistory) {
     if (isDegradingResult) {
-      // Unified streak gate: a single bad tick doesn't change visible status or
-      // notify. The service stays online (or pending) until escCount consecutive
-      // bad checks within escWindow flip it to degraded; another escCount on top
+      // Unified streak gate: a single bad tick doesn't change visible status
+      // or notify. The service stays online (or pending) until escCount
+      // consecutive bad checks flip it to degraded; another escCount on top
       // of that escalates to offline. Same threshold is reused for both hops.
-      if (!svc.degradedSince) svc.degradedSince = now;
-      svc.degradedStreak = (svc.degradedStreak || 0) + 1;
-      const windowExpired = (now - svc.degradedSince) > escWindow;
-      if (windowExpired) {
-        svc.degradedSince  = now;
-        svc.degradedStreak = 1;
-      }
+      //
+      // escWindow is a staleness guard on the streak, measured from the
+      // PREVIOUS bad check (degradedSince holds the most recent bad-check
+      // time): if more than escWindow passed since the last bad check, the
+      // streak belongs to an old incident (server restart, sparse manual-era
+      // data) and restarts at 1. It is deliberately NOT measured from the
+      // first bad check of the streak — that made offline unreachable at
+      // default settings, because the 2×escCount-th consecutive check always
+      // landed outside the window (6 × 60s interval > 5 min) and reset the
+      // streak, leaving dead services parked at degraded forever.
+      const stale = svc.degradedSince && (now - svc.degradedSince) > escWindow;
+      svc.degradedStreak = stale ? 1 : (svc.degradedStreak || 0) + 1;
+      svc.degradedSince  = now;
       if (svc.degradedStreak >= escCount * 2) {
         svc.status = 'offline';
-      } else if (svc.degradedStreak >= escCount) {
+      } else if (svc.degradedStreak >= escCount && svc.status !== 'offline') {
+        // The status guard keeps an already-offline service (e.g. restored
+        // from disk with a reset streak) from being demoted to degraded —
+        // and re-notifying — while it stays dead.
         svc.status = 'degraded';
       }
       // Streak below threshold: leave svc.status untouched.
@@ -840,11 +869,12 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
       resetStreakCounters(svc);
     }
   } else {
-    // Preview mode: a good ping reflects online so the UI shows fresh state,
-    // but a bad ping does NOT mutate status or streak. Leaving status alone
-    // here means a transient blip during a manual refresh can't visually
-    // demote a service the scheduler hasn't yet decided is degraded.
-    if (!isDegradingResult) svc.status = 'online';
+    // Preview mode (manual /api/check-all and /:id/check): never mutate
+    // status, in either direction. A preview that flipped a recovered
+    // service back to online masked the real recovery transition from the
+    // scheduled loop — no recovery event was logged, and the armed
+    // lastNotifiedStatus dedup marker then swallowed the notification for
+    // the NEXT genuine incident. Previews only refresh response/lastChecked.
   }
 
   const degradedCause = r.serverError
@@ -874,12 +904,12 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
     if (svc.status === 'offline') {
       const note = degradedCause || 'Service became unreachable';
       pushEvent(svc, 'offline', note);
-      maybeNotify(svc, 'offline', note);
+      maybeNotify(svc, 'offline', note, settings);
     }
     if (svc.status === 'degraded') {
       const note = degradedCause || 'Service degraded';
       pushEvent(svc, 'degraded', note);
-      maybeNotify(svc, 'degraded', note);
+      maybeNotify(svc, 'degraded', note, settings);
     }
     if (svc.status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
       // Real recovery transition: forgive the previously-announced bad status
@@ -888,7 +918,7 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
       // cleared here, scoped to the actual transition.
       clearNotificationDedup(svc);
       pushEvent(svc, 'recovery', `Recovered from ${prevStatus}`);
-      maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`);
+      maybeNotify(svc, 'recovery', `Recovered from ${prevStatus}`, settings);
     }
     // Leaving pending is not a recovery event — it's the first real baseline.
     // Degraded/offline branches above still fire their own events/notifications.
@@ -938,43 +968,61 @@ async function runCheckAll({ recordHistory = true } = {}) {
     evaluatePingResult(svc, r, fresh.settings, { recordHistory, now: tickNow });
   }
 
+  // Maintenance pass: record a maintenance tick each cycle. Streak counters,
+  // the notification dedup marker, and lastChecked are owned by the toggle
+  // path (PUT /api/services/:id) — resetting them here every cycle was
+  // redundant, and rewriting lastChecked broke its "time of last real
+  // contact" meaning for push-reported services.
   for (const svc of fresh.services) {
     if (svc.disabled) continue;
     if (svc.maintenance) {
-      resetStreakCounters(svc);
-      clearNotificationDedup(svc);
       if (recordHistory) {
         svc.history = pushHistory(svc.history, 3);
         accumulateDailyTick(svc, 3);
         accumulateHourlyTick(svc, 3);
       }
-      svc.status      = 'maintenance';
-      svc.lastChecked = new Date().toISOString();
+      svc.status = 'maintenance';
     }
   }
 
-  // Watchdog for report-based services (no URL). If the last /report is older
-  // than the threshold, accumulate an offline tick so uptime reflects reality.
+  // Push-reported (pm2/docker) services: status transitions are applied by
+  // /report the moment a report arrives, but history ticks are recorded
+  // HERE, on the same scheduled cadence as URL pings. Recording a tick per
+  // report (every agent poll, 30s) made the 30-slot history bar span half
+  // the time and weighted push services 2x in uptime math versus URL
+  // services. The stale branch is the watchdog: a service whose agent has
+  // gone silent past the threshold is flipped offline so a dead agent can't
+  // leave a frozen "online" on the public status page.
   const staleThreshold = Math.max(10, fresh.settings?.reportStaleAfter || 120);
   const now = Date.now();
   let staleCount = 0;
   for (const svc of fresh.services) {
-    if (!isReportStale(svc, now, staleThreshold)) continue;
-    staleCount++;
-    const prevStatus = svc.status;
-    if (recordHistory) {
-      svc.history = pushHistory(svc.history, 0);
+    if (svc.checkType !== 'pm2' && svc.checkType !== 'docker') continue;
+    if (svc.disabled || svc.maintenance || svc.checkEnabled === false) continue;
+    if (svc.status === 'pending') continue;
+    if (isReportStale(svc, now, staleThreshold)) {
+      staleCount++;
+      const prevStatus = svc.status;
+      if (recordHistory) {
+        svc.history = pushHistory(svc.history, 0);
+        svc.uptime  = calcUptime(svc.history);
+        accumulateDailyTick(svc, 0);
+        accumulateHourlyTick(svc, 0);
+      }
+      svc.status = 'offline';
+      if (prevStatus !== 'offline') {
+        const note = svc.lastChecked
+          ? `No report received in over ${staleThreshold}s`
+          : 'No report ever received from agent';
+        pushEvent(svc, 'offline', note);
+        maybeNotify(svc, 'offline', note, fresh.settings);
+      }
+    } else if (recordHistory) {
+      const tick = svc.status === 'offline' ? 0 : svc.status === 'degraded' ? 2 : 1;
+      svc.history = pushHistory(svc.history, tick);
       svc.uptime  = calcUptime(svc.history);
-      accumulateDailyTick(svc, 0);
-      accumulateHourlyTick(svc, 0);
-    }
-    svc.status  = 'offline';
-    if (prevStatus !== 'offline') {
-      const note = svc.lastChecked
-        ? `No report received in over ${staleThreshold}s`
-        : 'No report ever received from agent';
-      pushEvent(svc, 'offline', note);
-      maybeNotify(svc, 'offline', note);
+      accumulateDailyTick(svc, tick);
+      accumulateHourlyTick(svc, tick);
     }
   }
 
@@ -1005,8 +1053,20 @@ function scheduleChecks() {
 
 // ─── API: Services ───────────────────────────────────────────────────────────
 
+// Strip per-service fields the dashboard never reads from this endpoint:
+// the heavy history arrays (events can be 500 entries per service — the
+// uptime page gets them from /api/history instead) and internal alerting
+// state. This endpoint is polled every checkInterval by every open tab, so
+// the payload size matters.
+function serviceForClient(svc) {
+  const { events, dailyHistory, hourlyHistory,
+          degradedSince, degradedStreak, lastNotifiedStatus, ...rest } = svc;
+  return rest;
+}
+
 app.get('/api/services', (_, res) => {
-  res.json({ ...load(), version: BUILD_SHA.slice(0, 7) });
+  const d = load();
+  res.json({ ...d, services: d.services.map(serviceForClient), version: BUILD_SHA.slice(0, 7) });
 });
 
 app.get('/api/weather', async (req, res) => {
@@ -1058,6 +1118,26 @@ function applyCheckTypeFields(svc) {
   return { ok: true };
 }
 
+// Fields a client may set on a service via POST/PUT. Everything else on the
+// service object — id, status, history, events, daily/hourly accumulators,
+// streak counters, the notification dedup marker, timestamps — is
+// server-owned. Spreading req.body wholesale let a request (or a future
+// frontend field) silently overwrite any of it.
+const SERVICE_EDITABLE_FIELDS = [
+  'name', 'desc', 'abbr', 'cat', 'checkType', 'url', 'port',
+  'pm2AgentId', 'pm2ProcessName', 'dockerAgentId', 'dockerContainerName',
+  'hasUI', 'checkEnabled', 'maintenance', 'disabled',
+  'slowThresholdMs', 'reportInterval'
+];
+
+function pickServiceFields(body) {
+  const out = {};
+  for (const k of SERVICE_EDITABLE_FIELDS) {
+    if (body && body[k] !== undefined) out[k] = body[k];
+  }
+  return out;
+}
+
 app.post('/api/services', (req, res) => {
   const d   = load();
   const svc = {
@@ -1081,7 +1161,7 @@ app.post('/api/services', (req, res) => {
     uptime:       '—',
     history:      [],
     lastChecked:  null,
-    ...req.body
+    ...pickServiceFields(req.body)
   };
   const v = applyCheckTypeFields(svc);
   if (!v.ok) return res.status(400).json({ error: v.error });
@@ -1095,7 +1175,7 @@ app.put('/api/services/:id', (req, res) => {
   const i    = d.services.findIndex(s => s.id === req.params.id);
   if (i < 0) return res.status(404).json({ error: 'Not found' });
   const prev = d.services[i];
-  const next = { ...prev, ...req.body };
+  const next = { ...prev, ...pickServiceFields(req.body) };
   const v = applyCheckTypeFields(next);
   if (!v.ok) return res.status(400).json({ error: v.error });
   d.services[i] = next;
@@ -1103,6 +1183,8 @@ app.put('/api/services/:id', (req, res) => {
     d.services[i].status = req.body.maintenance ? 'maintenance' : 'pending';
     resetStreakCounters(d.services[i]);
     clearNotificationDedup(d.services[i]);
+    pushEvent(d.services[i], 'maintenance',
+      req.body.maintenance ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
   }
   if (req.body.disabled !== undefined && !!req.body.disabled !== !!prev.disabled) {
     if (req.body.disabled) {
@@ -1141,14 +1223,25 @@ app.post('/api/services/:id/resolve', (req, res) => {
 });
 
 // External status report — accepts session auth OR X-Api-Key header (for PM2 agent, etc.)
+// Applies status/desc/response immediately and fires transition events, but
+// does NOT record history ticks — those are recorded on the scheduled
+// checkAll() cadence (see the push-service pass in runCheckAll) so push and
+// URL services tick at the same rate.
 app.post('/api/services/:id/report', (req, res) => {
   const d   = load();
   const svc = d.services.find(s => s.id === req.params.id);
   if (!svc) return res.status(404).json({ error: 'Not found' });
 
+  // Acknowledge but ignore reports for services in maintenance or disabled:
+  // agents keep polling through a maintenance window, and letting a report
+  // flip status back made it flap maintenance ↔ online on every agent poll.
+  if (svc.maintenance || svc.disabled) return res.json(svc);
+
   const { status, desc, response } = req.body;
+  if (status !== undefined && !['online', 'degraded', 'offline'].includes(status)) {
+    return res.status(400).json({ error: 'status must be online, degraded, or offline' });
+  }
   const prevStatus = svc.status;
-  const tick = status === 'online' ? 1 : status === 'degraded' ? 2 : 0;
 
   if (status)             svc.status = status;
   if (desc !== undefined) svc.desc   = desc;
@@ -1159,43 +1252,25 @@ app.post('/api/services/:id/report', (req, res) => {
       svc.response = response.trim().slice(0, 32);
     }
   }
-  svc.history     = pushHistory(svc.history, tick);
-  svc.uptime      = calcUptime(svc.history);
   svc.lastChecked = new Date().toISOString();
-  accumulateDailyTick(svc, tick);
-  accumulateHourlyTick(svc, tick);
   if (status === 'degraded' && prevStatus !== 'degraded') {
     const note = desc || 'Service reported degraded';
     pushEvent(svc, 'degraded', note);
-    maybeNotify(svc, 'degraded', note);
+    maybeNotify(svc, 'degraded', note, d.settings);
   }
   if (status === 'offline' && prevStatus !== 'offline') {
     const note = desc || 'Service reported offline';
     pushEvent(svc, 'offline', note);
-    maybeNotify(svc, 'offline', note);
+    maybeNotify(svc, 'offline', note, d.settings);
   }
   if (status === 'online' && (prevStatus === 'offline' || prevStatus === 'degraded')) {
     resetStreakCounters(svc);
     clearNotificationDedup(svc);
     const note = `Recovered from ${prevStatus}`;
     pushEvent(svc, 'recovery', note);
-    maybeNotify(svc, 'recovery', note);
+    maybeNotify(svc, 'recovery', note, d.settings);
   }
 
-  save(d);
-  res.json(svc);
-});
-
-app.post('/api/services/:id/maintenance', (req, res) => {
-  const d   = load();
-  const svc = d.services.find(s => s.id === req.params.id);
-  if (!svc) return res.status(404).json({ error: 'Not found' });
-  svc.maintenance = !svc.maintenance;
-  svc.status      = svc.maintenance ? 'maintenance' : 'unknown';
-  resetStreakCounters(svc);
-  clearNotificationDedup(svc);
-  pushEvent(svc, svc.maintenance ? 'maintenance' : 'recovery',
-    svc.maintenance ? 'Maintenance mode enabled' : 'Maintenance mode disabled');
   save(d);
   res.json(svc);
 });
@@ -1305,8 +1380,12 @@ function mountAgentRoutes(kind) {
     const d = load();
     const agent = findAgent(agentListFor(d, kind), req.params.id);
     if (!agent) return res.status(404).json({ error: 'Agent not registered' });
+    // Maintenance services are excluded along with disabled ones: reports
+    // for them are ignored anyway (see /report), so the agent shouldn't
+    // spend a request per poll on them.
     const monitored = (d.services || [])
-      .filter(s => s[matchField] === agent.id && s.checkType === kind && !s.disabled && s[nameField])
+      .filter(s => s[matchField] === agent.id && s.checkType === kind
+        && !s.disabled && !s.maintenance && s[nameField])
       .map(s => ({ serviceId: s.id, name: s[nameField] }));
     res.json({ monitored });
   });

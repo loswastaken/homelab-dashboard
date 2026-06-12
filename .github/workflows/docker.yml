@@ -3,6 +3,14 @@ name: Build & Push Docker Image
 on:
   push:
     branches: [main]
+    # Skip dashboard image rebuilds (and the Watchtower redeploy each one
+    # triggers) for pushes that can't change the image: agent-only changes
+    # (docker-agent has its own workflow; the pm2 agent deploys via git pull)
+    # and documentation.
+    paths-ignore:
+      - 'pm2-agent/**'
+      - 'docker-agent/**'
+      - '**.md'
   workflow_dispatch:  # allow manual trigger from GitHub UI
 
 env:

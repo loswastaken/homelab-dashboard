@@ -52,7 +52,7 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 
 ### GitHub Actions
 
-`.github/workflows/docker.yml` — triggers on push to `main` and `workflow_dispatch`. Uses `docker/setup-buildx-action@v3` (required for GHA cache backend). Pushes `latest` and `sha-*` tags.
+`.github/workflows/docker.yml` — triggers on push to `main` and `workflow_dispatch`, with `paths-ignore` for `pm2-agent/**`, `docker-agent/**`, and `**.md` so agent-only or docs-only pushes don't rebuild (and Watchtower-redeploy) the dashboard image. Uses `docker/setup-buildx-action@v3` (required for GHA cache backend). Pushes `latest` and `sha-*` tags. The Docker agent image is built separately by `docker-agent.yml` (path-filtered to `docker-agent/**`).
 
 ### Updating the compose file on the host
 
@@ -94,7 +94,8 @@ sudo docker compose up -d
 
 | Method | Path | Notes |
 |--------|------|-------|
-| `GET` | `/api/services` | Returns all data + `version` (7-char SHA). Does **not** include `apiKey` — fetch that via `/api/auth/api-key` on demand. |
+| `GET` | `/healthz` | Liveness probe for the container healthcheck (**no auth** — registered before the gate) |
+| `GET` | `/api/services` | Returns all data + `version` (7-char SHA). Service objects are trimmed by `serviceForClient()`: no `events`/`dailyHistory`/`hourlyHistory` (use `/api/history`) and no internal alerting state. Does **not** include `apiKey` — fetch that via `/api/auth/api-key` on demand. |
 | `GET` | `/api/history` | Returns `dailyHistory` + `hourlyHistory` + `events` per service for uptime page |
 | `GET` | `/api/weather` | Returns current weather for configured location |
 | `GET` | `/api/config` | Returns settings + categories (no API key) |
@@ -103,9 +104,8 @@ sudo docker compose up -d
 | `POST` | `/api/services` | Add a new service |
 | `PUT` | `/api/services/:id` | Edit a service |
 | `DELETE` | `/api/services/:id` | Remove a service |
-| `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate). Body: `{ status, desc?, response? }` (response: number ms or short string) |
-| `POST` | `/api/services/:id/check` | Re-check a single service |
-| `POST` | `/api/services/:id/maintenance` | Toggle maintenance mode |
+| `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate). Body: `{ status?, desc?, response? }` — `status` must be `online`/`degraded`/`offline` (400 otherwise; omitted = metadata-only update). No history tick (recorded on the scheduled cadence). Ignored (200) while the service is in maintenance or disabled. |
+| `POST` | `/api/services/:id/check` | Re-check a single service (read-only preview — updates response/lastChecked only) |
 | `POST` | `/api/services/:id/resolve` | Force status to online |
 | `POST` | `/api/services/:id/pin` | Toggle pin to top of grid (`pinnedAt` = timestamp or null) |
 | `PUT` | `/api/auth` | Change username/password (requires current password) |
@@ -141,18 +141,22 @@ sudo docker compose up -d
 - Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`
 - HTTP 5xx response, connection error, and timeout all feed the degraded-escalation gate (see below) — the immediate tick is degraded, not offline. Anything else = online.
 - **Degraded → offline escalation** is user-configurable in Settings → Alerts:
-  - `settings.degradedEscalateCount` (default 3, min 1) — consecutive degraded checks that trigger escalation
-  - `settings.degradedEscalateWindowMinutes` (default 5, min 1) — window the streak must fit inside; otherwise the streak resets
-  - State is persisted per-service on `svc.degradedSince` (ms timestamp), `svc.degradedStreak`, and `svc.slowStreak`. All three are cleared by `resetDegradationState(svc)` — called on recovery ping, `/resolve`, `/report` recovery branch, maintenance/disabled toggles (both the dedicated endpoint and the PUT edit path), and the `checkAll()` maintenance pass.
+  - `settings.degradedEscalateCount` (default 3, min 1) — consecutive bad checks that flip the service to degraded; the same count again (2× total) escalates to offline.
+  - `settings.degradedEscalateWindowMinutes` (default 5, min 1) — a staleness guard on the streak, measured from the **previous** bad check, NOT from the first of the streak: if more than the window passes between consecutive bad checks (server restart, old persisted state), the streak restarts at 1. Do not change it back to first-of-streak: that made offline unreachable at default settings (the 6th consecutive 60s check always landed outside the 5-min window and reset the streak), parking dead services at degraded forever.
+  - State is persisted per-service on `svc.degradedSince` (ms timestamp of the most recent bad check) and `svc.degradedStreak`. Both are cleared by `resetStreakCounters(svc)` — called on every good scheduled ping, `/resolve`, `/report` recovery branch, and the maintenance/disabled toggles in the PUT edit path. The notification dedup marker is separate: `clearNotificationDedup(svc)` clears `svc.lastNotifiedStatus` and runs ONLY on confirmed transitions into a good state (real recovery, resolve, maintenance/disabled toggle) — never on a routine good ping, or a flaky service would re-notify on every flap.
+  - An already-offline service is never demoted back to degraded by streak math (guard in `evaluatePingResult`); only a real recovery or `/resolve` brings it out of offline.
+  - Manual checks (`POST /api/check-all`, `POST /api/services/:id/check`) are **pure previews**: they refresh `svc.response`/`svc.lastChecked` only and never mutate `status` in either direction. An earlier version flipped recovered services to online from the preview path, which masked the recovery transition from the scheduled loop and left the armed dedup marker swallowing the *next* genuine incident's notification.
 - **Slow-response threshold:** when a URL service returns 2xx but `r.elapsed > slowMs`, it's treated exactly like a 5xx — tick value 2, feeds the same `degradedStreak` counter, same escalation path, same `maybeNotify(svc, 'degraded', ...)` call. Event/notification note is `Slow response: Xms (threshold Yms, N in a row)` to distinguish from 5xx.
   - `settings.slowThresholdMs` (default 0 = globally disabled) — global default in Settings → Alerts
   - `svc.slowThresholdMs` (optional, URL services only) — per-service override. Unset/`null` inherits global; `0` explicitly disables for that service. Resolution: `svc.slowThresholdMs ?? settings.slowThresholdMs`. `applyCheckTypeFields()` strips the field for non-URL services so stale data can't leak across check-type changes. Frontend: the service modal has a "Disable slow-response monitoring" toggle that hides the threshold input and saves `slowThresholdMs: 0` (commit `0c4ecf1`).
-  - `settings.slowStreakRequired` (default 1, min 1) — consecutive slow responses required before the service is actually marked degraded. Tracked per-service on `svc.slowStreak`, reset to 0 on any fast response or connection error. Only applies to the slow-response path; 5xx still degrades immediately. When set to 1, behavior matches the original (degrade on first slow check).
 - **Known limitation:** checks run server-side from the host running the container. Services on different VLANs/subnets the host can't reach will always show offline even if the user's browser can reach them. Diagnostic: `curl -I <url>` from the host via SSH.
 
-### Report Staleness Watchdog
+### Push-Reported Services & Staleness Watchdog
 
-Services without a `url` (pushed via PM2 agent or the `/report` API) have no active check, so a silent agent would leave `status`, `history`, and `dailyHistory` frozen and inflate the public status page's uptime. To prevent this, `checkAll()` runs a watchdog pass on every cycle: if a push-reported service hasn't sent a report within `settings.reportStaleAfter` seconds (default 120s, configurable in Settings → General), it's treated as offline — an offline tick is pushed to `history`, `dailyHistory`, and `hourlyHistory`; `status` flips to `offline`; and a single `offline` event + push notification fires on the transition. `lastChecked` is NOT touched by the watchdog so it accurately reflects the time of the last real contact. Per-service override: `svc.reportInterval` (seconds) — when set, the threshold becomes `reportInterval * 4`. When a real `/report` arrives, the existing recovery-event path flips status back to online.
+Services with `checkType: 'pm2' | 'docker'` are driven by `/report` calls instead of pings. Responsibilities are split:
+
+- **`/report` applies state immediately:** status (validated — must be `online`/`degraded`/`offline`, else 400; a body with no `status` updates desc/response/lastChecked only), transition events, and notifications. It does **NOT** record history ticks. Reports for services in maintenance or disabled are acknowledged (200) but ignored — agents poll straight through a maintenance window, and applying their reports made status flap maintenance ↔ online every 30s with double ticks. The `monitored` endpoint also excludes maintenance/disabled services so agents don't waste a request per poll on them.
+- **`runCheckAll()`'s push-service pass records history:** one tick per scheduled cycle, derived from the service's current status. This keeps push and URL services on the same cadence — recording a tick per report (every 30s agent poll) made the 30-slot bar span half the time and weighted push services 2× in uptime math. The stale branch of the same pass is the watchdog: if no report has arrived within `settings.reportStaleAfter` seconds (default 120s, Settings → General; per-service override `svc.reportInterval` × 4), the service flips offline with an offline tick and a single `offline` event + notification on the transition. `lastChecked` is only ever set by a real report, so it reflects the time of last contact.
 
 **Boot grace:** `isReportStale()` floors the last-contact time at `SERVER_STARTED_AT`. Reports sent while the dashboard was down (Watchtower redeploy, NAS reboot) were lost, not skipped, so agents get one full stale threshold after startup to check in before being declared stale. Without this, the boot-time `checkAll()` mass-flipped every push-reported service to offline (one notification each) and a recovery storm followed seconds later when the agents' next poll landed.
 
@@ -181,7 +185,7 @@ New services are created with `status: 'pending'` instead of flipping straight t
 
 - **URL services:** transition out of pending on the next `checkAll()` cycle (up to `settings.checkInterval` seconds). `checkAll()` filters by `url + checkEnabled + !maintenance + !disabled` — there's no status filter, so pending URL services are picked up on the very next tick.
 - **pm2 / docker services:** transition out of pending on the first `/report` that arrives. The report-staleness watchdog (`isReportStale`) explicitly short-circuits on `status === 'pending'` so a silent agent doesn't flip a brand-new service to offline before it has a chance to report.
-- **No history tick is pushed while pending** — `svc.history[]` stays empty until the first real result, so pending services don't distort the 30-min bar or daily/hourly uptime. The first real ping/report does push a tick (it's a genuine data point).
+- **No history tick is pushed while pending** — `svc.history[]` stays empty until the first real result, so pending services don't distort the 30-min bar or daily/hourly uptime. For URL services the first real ping pushes a tick; for pm2/docker services the first `/report` flips status out of pending and the first tick lands on the next scheduled `checkAll()` cycle (ticks for push services are always recorded on the scheduled cadence, never per report).
 - **No notifications fire on entering or leaving pending.** `maybeNotify()` only fires for offline/degraded/recovery, and the recovery branches in both `evaluatePingResult()` and `/report` already gate on `prevStatus === 'offline' || 'degraded'` — so pending → online is silent. First pending → degraded / offline transitions *do* notify (that's genuine signal).
 - **Public status pages hide pending services** — `sanitizeServiceForPublic()` returns `null` for pending, and the caller in `/api/public/status/:slug` applies `.filter(Boolean)` after sanitization so pending services don't leak to `/status/<slug>` or affect `computeOverallStatus()` until they have real data.
 - **Frontend:** blue `--blue` badge + border in `index.html`; blue pip in `history.html` (`statusClass()` maps `'pending' → 'pending'`). Stats row counts pending in `Services` only — not under Online/Degraded/Offline/Maintenance/Disabled. No alert-bar entry, no favicon tint.
@@ -195,7 +199,7 @@ Added to each service object for the uptime history page:
 
 - **`svc.events[]`** — max 500 entries, appended by `pushEvent()` on status transitions:
   `{ ts: ISO, type: 'offline'|'degraded'|'recovery'|'maintenance', note: string }`
-  Triggered by: `checkAll()` (offline/recovery), `/report` (offline/degraded/recovery), `/maintenance` toggle.
+  Triggered by: `checkAll()` (offline/degraded/recovery), `/report` (offline/degraded/recovery), and maintenance toggles via `PUT /api/services/:id` (type `maintenance`, note says enabled/disabled).
 
 ### Hourly History
 
@@ -208,8 +212,8 @@ Added to each service object for the uptime history page:
 - **VAPID keys:** auto-generated on first start, stored in `data/vapid.json`. `ensureVapid()` generates and persists them if absent.
 - **Subscriptions:** stored in `data/push-subscriptions.json` as an array of Web Push subscription objects. Stale endpoints (HTTP 404/410) are pruned automatically after a failed send.
 - **`notifyPush(svc, type, note)`** — sends to all subscribers via `webpush.sendNotification`. Payload: `{ title, body, tag, url }`.
-- **`maybeNotify(svc, type, note)`** — gate function; only fires for `offline`, `degraded`, `recovery` types. Fans out to three independent channels, each with its own enable toggle: Web Push (`settings.pushEnabled`), IFTTT (`settings.iftttEnabled`), and ntfy (`settings.ntfyEnabled`). Called by `checkAll()` and `/api/services/:id/report` on status transitions.
-- **Per-service dedup (`svc.lastNotifiedStatus`):** `maybeNotify()` persists the last announced status (`'offline' | 'degraded' | 'online'`, where recovery announces `'online'`) on the service object and bails out if the same status is being announced again. Cleared by `resetDegradationState(svc)` (which runs on every recovery/resolve/maintenance/disabled/online-ping path), so the next genuine bad transition re-notifies. This dedup exists because seven different code paths can detect the same transition independently (boot `checkAll` racing the first scheduled tick, watchdog racing a delayed `/report`, manual `/api/check-all` overlapping the scheduled run, etc.) — without it those races send 2x notifications within ~1s.
+- **`maybeNotify(svc, type, note, settings)`** — gate function; only fires for `offline`, `degraded`, `recovery` types. Fans out to three independent channels, each with its own enable toggle: Web Push (`settings.pushEnabled`), IFTTT (`settings.iftttEnabled`), and ntfy (`settings.ntfyEnabled`). Called by `checkAll()` and `/api/services/:id/report` on status transitions. **Pure in-memory:** it sets the dedup marker on the caller's `svc` object and the caller is responsible for `save()`-ing afterwards (both call sites sit in synchronous load→mutate→save blocks). It must NOT `load()`/`save()` its own copy of the data file — a second divergent copy in flight is the lost-update shape that caused the mass-offline bug.
+- **Per-service dedup (`svc.lastNotifiedStatus`):** `maybeNotify()` records the last announced status (`'offline' | 'degraded' | 'online'`, where recovery announces `'online'`) and bails out if the same status is being announced again. Cleared by `clearNotificationDedup(svc)` — only on confirmed transitions into a good state (real recovery, `/resolve`, maintenance/disabled toggle) — so the next genuine bad transition re-notifies while a flaky service doesn't re-notify on every flap.
 - **Frontend:** `public/push-client.js` (window.Push API — register, unregister, test, state) + `public/sw.js` (service worker — handles `push` events and `notificationclick`).
 - **Settings toggles:** `pushEnabled`, `iftttEnabled`, `ntfyEnabled` (all default `false`). Each channel is silently skipped when disabled, even if its config is populated.
 
@@ -240,6 +244,8 @@ Public-facing, unauthenticated uptime pages (Uptime Kuma style) served at `/stat
 
 ### Data Files
 
+All JSON data files are written via `writeFileAtomic()` (write `.tmp`, then `rename(2)`) so a crash or power loss mid-write can't leave a torn file. If `services.json` ever fails to parse anyway, `load()` copies the broken file to `services.json.corrupt-<timestamp>` before falling back to defaults — never silently overwrite or delete one of those backups.
+
 - `data/services.json` — all services, categories, settings, history, dailyHistory, hourlyHistory, events, **statusPages** (persisted)
 - `data/auth.json` — credentials, session secret, API key
 - `data/vapid.json` — VAPID public/private keys for Web Push (auto-generated on first start)
@@ -256,13 +262,13 @@ Single-file vanilla JS app. No build step.
 
 - **Smart card updates:** Poll refreshes do NOT re-render the whole grid. Each service card has `data-id`. On poll, only cards whose `status` or `maintenance` flag changed get replaced (with an amber flash animation). Unchanged cards are silently patched in-place (history ticks, uptime, response, last-checked). Initial load and filter switches use a stagger `fadein` animation.
 - **`renderAll(fresh)`:** `fresh=true` = full re-render with animation (first load, filter switch, manual refresh). `fresh=false` = smart in-place patch.
-- **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete. The endpoint only records history ticks when `?recordHistory=true` is passed — manual clicks omit it, so the 30-min `svc.history` bar, `dailyHistory`, and `hourlyHistory` are driven solely by the scheduled poll (which calls `checkAll()` directly with the `recordHistory=true` function default). This keeps the bar cadence tied to the configured `checkInterval` regardless of how often users click refresh. `svc.status`, `svc.response`, and `svc.lastChecked` are always updated so the card still reflects the live ping.
+- **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete. The endpoint only records history ticks when `?recordHistory=true` is passed — manual clicks omit it, so the 30-min `svc.history` bar, `dailyHistory`, and `hourlyHistory` are driven solely by the scheduled poll (which calls `checkAll()` directly with the `recordHistory=true` function default). This keeps the bar cadence tied to the configured `checkInterval` regardless of how often users click refresh. Only `svc.response` and `svc.lastChecked` update from manual checks — **status never does** (see the preview-mode note under degraded escalation; a status-mutating preview swallowed real recovery transitions and their notifications).
 - **Wall-clock-anchored refresh (commit `c2483cd`):** the dashboard countdown, the public status page auto-refresh, and the server `checkAll()` loop all self-schedule via `setTimeout` with the next fire computed as `Math.ceil(Date.now() / intervalMs) * intervalMs`. Consequences: opening the dashboard mid-cycle shows the real seconds to the next boundary, manual refreshes don't reset the schedule, and saving settings doesn't silently shift cadence.
 - **`prevStates` Map:** Tracks `"status|maintenance|pinnedAt|disabled"` snapshot per service ID for change detection.
 - **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
 - **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location. Displays icon emoji, temperature in JetBrains Mono, city + abbreviated state (US state lookup map), condition text. Polls every 10 minutes. Hidden entirely on mobile (`≤640px`).
 - **Dynamic favicon:** `updateFavicon()` called on every poll. Swaps among `favicon.svg` (green), `favicon-degraded.svg` (amber), `favicon-offline.svg` (red), `favicon-maintenance.svg` (grey) based on service states. Maintenance-mode services excluded from offline/degraded check.
-- **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 3-minute safety timeout.
+- **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 90s safety timeout.
 
 ### Settings Modal
 
@@ -272,7 +278,7 @@ Tabbed layout with eight panels: **General · Account · Weather · Notification
 - `switchSettingsTab(tabId)` toggles the `.active` class on the matching tab/panel pair and shows/hides the shared footer based on the active panel's `data-footer` attribute.
 - `data-footer="hide"` on a panel hides the shared Cancel / Save Settings footer (used for tabs whose primary action lives inside the panel). Use sparingly: hiding the footer also hides Save for any pending changes made on other tabs before switching, which is why the Updates panel no longer uses it.
 - `openSettings()` resets to the General tab on every open.
-- A symmetrical (non-tabbed) settings modal markup still exists in `public/history.html` but is no longer reachable from the UI (the sidebar button now routes to `/`). Treat it as dead code — do NOT re-sync settings changes into it.
+- The settings modal exists ONLY in `index.html`. `history.html` once carried a duplicated copy; it has been fully removed — do not reintroduce one there.
 
 ### Categories Tab
 
@@ -290,7 +296,7 @@ Six cards in a `repeat(6, 1fr)` grid: **Services · Online · Degraded · Offlin
 
 ## Uptime History Page (`public/history.html`)
 
-Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). Links from the sidebar "Uptime History" nav item. The sidebar's former Settings button was replaced with a **Back to Dashboard** link (routes to `/`) because the duplicated settings modal kept drifting from the dashboard's. The modal markup/JS is still in the file as dead code — prefer editing the dashboard's settings modal in `index.html` and deleting the stale copy here, rather than re-syncing it.
+Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). Links from the sidebar "Uptime History" nav item. The sidebar's former Settings button was replaced with a **Back to Dashboard** link (routes to `/`) because a duplicated settings modal kept drifting from the dashboard's; that dead modal markup has since been deleted entirely. All settings editing lives in `index.html`.
 
 ### List View (Atlassian-style)
 
