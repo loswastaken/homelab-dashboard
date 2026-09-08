@@ -677,7 +677,7 @@ function ping(url, timeoutMs = 5000) {
       res.resume();
     });
 
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, serverError: false, elapsed: null }); });
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, serverError: false, timedOut: true, timeoutMs, elapsed: null }); });
     req.on('error',   () => resolve({ ok: false, serverError: false, elapsed: null }));
     req.end();
   });
@@ -899,7 +899,16 @@ async function getWeatherData(force = false) {
 // because they are the "show me current state" output every caller needs.
 function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Date.now() } = {}) {
   const escCount   = Math.max(1, settings.degradedEscalateCount || 3);
-  const escWindow  = Math.max(1, settings.degradedEscalateWindowMinutes || 5) * 60 * 1000;
+  // Consecutive scheduled checks are checkInterval apart, so a window shorter
+  // than the interval would reset the streak on every bad check and make
+  // degraded / offline unreachable — no alert would ever fire. Floor the
+  // effective window at two intervals: one missed tick is tolerated, two
+  // restart the streak. The configured value still applies when larger.
+  const intervalMs = Math.max(10, settings.checkInterval || 60) * 1000;
+  const escWindow  = Math.max(
+    Math.max(1, settings.degradedEscalateWindowMinutes || 5) * 60 * 1000,
+    intervalMs * 2
+  );
   const globalSlow = Math.max(0, settings.slowThresholdMs || 0);
   const prevStatus = svc.status;
 
@@ -954,7 +963,7 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
     : isSlow
       ? `Slow response: ${r.elapsed}ms (threshold ${slowMs}ms, ${svc.degradedStreak} in a row)`
       : isConnError
-        ? `Connection failed (${svc.degradedStreak} in a row)`
+        ? `${r.timedOut ? `No response within ${Math.round(r.timeoutMs / 1000)}s` : 'Connection failed'} (${svc.degradedStreak} in a row)`
         : null;
 
   const tick = svc.status === 'offline' ? 0 : svc.status === 'degraded' ? 2 : 1;

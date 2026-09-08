@@ -271,7 +271,8 @@
     if (!btn || !window.Push) return;
     if (!window.Push.supported()) { setPushMsg('Push notifications are not supported in this browser.', 'err'); return; }
     const state = await window.Push.currentState();
-    if (!state.subscribed && draft.settings.pushEnabled) setPushMsg('Enabled globally, but this browser is not subscribed — turn it off and on again to subscribe here.', 'warn');
+    if (state.keyMismatch) setPushMsg('This browser is subscribed with an outdated server key and cannot receive alerts — turn Web Push off and on again to re-subscribe.', 'err');
+    else if (!state.subscribed && draft.settings.pushEnabled) setPushMsg('Enabled globally, but this browser is not subscribed — turn it off and on again to subscribe here.', 'warn');
     else if (state.subscribed && !draft.settings.pushEnabled) setPushMsg('This browser is subscribed, but alerts are muted globally.', '');
   }
   async function onPushToggle(on, btn) {
@@ -317,7 +318,7 @@
         ${text('degradedEscalateWindowMinutes', 'Escalation window', '(minutes)', { type: 'number', min: 1, max: 1440, placeholder: '5' })}
         ${text('slowThresholdMs', 'Slow response threshold', '(ms, 0 = disabled)', { type: 'number', min: 0, max: 600000, placeholder: '0' })}
       </div>
-      <div class="note">A URL service that returns 5xx, exceeds the slow-response threshold, or fails to connect counts as a bad check. After the streak threshold it is marked <b>degraded</b> and a notification fires; the same count again escalates it to <b>offline</b>. One good check resets the streak, and a gap longer than the window between bad checks restarts it. Each URL service can override the slow-response threshold from its own edit dialog.</div>`;
+      <div class="note">A URL service that returns 5xx, exceeds the slow-response threshold, or fails to connect counts as a bad check. After the streak threshold it is marked <b>degraded</b> and a notification fires; the same count again escalates it to <b>offline</b>. One good check resets the streak, and a gap longer than the window between bad checks restarts it (the window is never shorter than two check intervals, so a scheduled streak always counts). Each URL service can override the slow-response threshold from its own edit dialog.</div>`;
   }
 
   /* ─── Folders ────────────────────────────────────────────────────────── */

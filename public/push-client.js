@@ -27,6 +27,27 @@
     } catch { return null; }
   }
 
+  // The VAPID key a subscription was created with, base64url like the server
+  // reports it. A subscription made against an old key (data/vapid.json
+  // regenerated or restored) still looks "subscribed" to the browser, but
+  // every send from the server is rejected by the push service with 401/403
+  // — silently, from the user's point of view. Returns null when the browser
+  // does not expose the key, in which case we cannot tell.
+  function keyOf(sub) {
+    try {
+      const k = sub && sub.options && sub.options.applicationServerKey;
+      if (!k) return null;
+      const bytes = new Uint8Array(k);
+      let s = '';
+      for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    } catch { return null; }
+  }
+  function keyMismatch(sub, serverKey) {
+    const local = keyOf(sub);
+    return !!local && local !== String(serverKey || '').replace(/=+$/, '');
+  }
+
   async function fetchPublicKey() {
     const r = await fetch('/api/push/vapid-public-key', { credentials: 'same-origin' });
     if (!r.ok) throw new Error('Could not fetch VAPID key');
@@ -40,9 +61,15 @@
     if (perm !== 'granted') throw new Error('Notification permission denied');
     const reg = await getRegistration();
     await navigator.serviceWorker.ready;
+    const publicKey = await fetchPublicKey();
     let sub = await reg.pushManager.getSubscription();
+    if (sub && keyMismatch(sub, publicKey)) {
+      // Stale subscription from a previous server key: drop it and subscribe
+      // fresh so the server can actually deliver to this browser.
+      try { await sub.unsubscribe(); } catch {}
+      sub = null;
+    }
     if (!sub) {
-      const publicKey = await fetchPublicKey();
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlB64ToUint8(publicKey)
@@ -91,11 +118,14 @@
   }
 
   async function currentState() {
-    const state = { supported: supported(), permission: 'default', subscribed: false };
+    const state = { supported: supported(), permission: 'default', subscribed: false, keyMismatch: false };
     if (!state.supported) return state;
     state.permission = Notification.permission;
     const sub = await getSubscription();
     state.subscribed = !!sub;
+    if (sub) {
+      try { state.keyMismatch = keyMismatch(sub, await fetchPublicKey()); } catch {}
+    }
     return state;
   }
 
