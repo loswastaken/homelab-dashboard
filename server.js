@@ -27,6 +27,12 @@ if (!fs.existsSync(SESS_DIR))  fs.mkdirSync(SESS_DIR,  { recursive: true });
 app.set('trust proxy', 1); // required when behind Cloudflare / any reverse proxy
 app.use(express.json());
 
+// Express 4 does not catch a rejected promise from an async handler: the
+// request hangs and Node treats the rejection as fatal. Handlers that await
+// (bcrypt, pings) are wrapped so failures reach the JSON error handler at
+// the bottom of the file instead.
+const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // ─── Data helpers ────────────────────────────────────────────────────────────
 
 // Write-temp-then-rename so a crash or power loss mid-write can never leave
@@ -111,6 +117,9 @@ function migrateData(data) {
     if (svc.pm2ProcessName     === undefined) svc.pm2ProcessName     = '';
     if (svc.dockerAgentId      === undefined) svc.dockerAgentId      = '';
     if (svc.dockerContainerName === undefined) svc.dockerContainerName = '';
+    // Services that predate the checkEnabled flag: every pinger treats a
+    // missing flag as "skip", so make the default explicit.
+    if (svc.checkEnabled === undefined) svc.checkEnabled = true;
     if (svc.slowStreak !== undefined) delete svc.slowStreak;
     // 'unknown' was only written by the removed POST /:id/maintenance
     // endpoint; map it to the pending state the live toggle path uses.
@@ -342,23 +351,25 @@ app.get('/setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
-app.post('/api/setup', async (req, res) => {
+app.post('/api/setup', asyncRoute(async (req, res) => {
   if (isSetupDone()) return res.status(403).json({ error: 'Already configured' });
-  const { username, password, displayName } = req.body;
-  if (!username || !password || password.length < 8)
+  const username    = typeof req.body?.username    === 'string' ? req.body.username.trim()    : '';
+  const password    = typeof req.body?.password    === 'string' ? req.body.password           : '';
+  const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
+  if (!username || password.length < 8)
     return res.status(400).json({ error: 'Username required; password must be at least 8 characters' });
   const passwordHash = await bcrypt.hash(password, 12);
   const auth = loadAuth() || {};
   saveAuth({ ...auth, username, passwordHash });
   if (displayName) {
     const d = load();
-    d.settings.displayName = displayName.trim();
+    d.settings.displayName = displayName;
     save(d);
   }
   req.session.authenticated = true;
   req.session.username = username;
   res.json({ ok: true });
-});
+}));
 
 app.get('/login', (req, res) => {
   if (req.session.authenticated) return res.redirect('/');
@@ -366,16 +377,19 @@ app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', asyncRoute(async (req, res) => {
   const ip    = req.ip || req.socket.remoteAddress || 'unknown';
   const entry = rateEntry(loginAttempts, ip);
   if (entry.count >= 5) {
     const mins = Math.ceil((entry.resetAt - Date.now()) / 60000);
     return res.status(429).json({ error: `Too many attempts — try again in ${mins} min` });
   }
-  const { username, password } = req.body;
+  // bcrypt throws on non-string input; a numeric password in the body must
+  // be an ordinary failed login, not a crashed process.
+  const username = typeof req.body?.username === 'string' ? req.body.username : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
   const auth  = loadAuth();
-  const valid = auth && username === auth.username && await bcrypt.compare(password, auth.passwordHash);
+  const valid = !!auth && username === auth.username && await bcrypt.compare(password, auth.passwordHash);
   if (!valid) {
     entry.count++;
     return res.status(401).json({ error: 'Invalid username or password' });
@@ -384,7 +398,7 @@ app.post('/api/login', async (req, res) => {
   req.session.authenticated = true;
   req.session.username = username;
   res.json({ ok: true });
-});
+}));
 
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
@@ -416,8 +430,10 @@ function findStatusPageBySlug(d, slug) {
 function sanitizeServiceForPublic(svc, page, categoriesById) {
   // Pending services haven't been checked yet — hide them from public pages
   // until they have real data so they can't skew the overall banner or leak
-  // a "not yet checked" placeholder to public viewers.
-  if (svc.status === 'pending') return null;
+  // a "not yet checked" placeholder to public viewers. Disabled services are
+  // not monitored at all: computeOverallStatus() already ignores them, and
+  // listing them rendered a red "offline" row under an "operational" banner.
+  if (svc.status === 'pending' || svc.disabled) return null;
   const includeCategory = page.includedCategoryIds && page.includedCategoryIds.includes(svc.cat);
   const cat = includeCategory && categoriesById[svc.cat] ? {
     id:    categoriesById[svc.cat].id,
@@ -429,7 +445,6 @@ function sanitizeServiceForPublic(svc, page, categoriesById) {
     name:         svc.name,
     abbr:         svc.abbr || '',
     status:       svc.status || 'unknown',
-    disabled:     !!svc.disabled,
     maintenance:  !!svc.maintenance,
     uptime:       svc.uptime || '—',
     category:      cat,
@@ -594,7 +609,7 @@ function ping(url, timeoutMs = 5000) {
     const req = mod.request({
       hostname: parsed.hostname,
       port:     parsed.port || (isHttps ? 443 : 80),
-      path:     parsed.pathname || '/',
+      path:     (parsed.pathname || '/') + (parsed.search || ''),
       method:   'HEAD',
       timeout:  timeoutMs,
       rejectUnauthorized: false
@@ -887,7 +902,11 @@ function evaluatePingResult(svc, r, settings, { recordHistory = false, now = Dat
 
   const tick = svc.status === 'offline' ? 0 : svc.status === 'degraded' ? 2 : 1;
 
-  if (recordHistory) {
+  // A service still parked at pending (its first checks failed but the
+  // streak hasn't reached the degraded threshold yet) has no classified
+  // state to record: the tick above would land as "online" and misreport
+  // the bar. History stays empty until the status is real.
+  if (recordHistory && svc.status !== 'pending') {
     svc.history = pushHistory(svc.history, tick);
     svc.uptime  = calcUptime(svc.history);
     accumulateDailyTick(svc, tick);
@@ -1047,6 +1066,7 @@ function scheduleChecks() {
   }
   checkTimer = setTimeout(async () => {
     try { await checkAll(); }
+    catch (err) { console.error('[scheduler] checkAll failed:', err); }
     finally { scheduleChecks(); }
   }, delay);
 }
@@ -1130,10 +1150,28 @@ const SERVICE_EDITABLE_FIELDS = [
   'slowThresholdMs', 'reportInterval'
 ];
 
+const SERVICE_STRING_FIELDS = [
+  'name', 'desc', 'abbr', 'cat', 'checkType', 'url', 'port',
+  'pm2AgentId', 'pm2ProcessName', 'dockerAgentId', 'dockerContainerName'
+];
+const SERVICE_BOOL_FIELDS = ['hasUI', 'checkEnabled', 'maintenance', 'disabled'];
+
 function pickServiceFields(body) {
   const out = {};
   for (const k of SERVICE_EDITABLE_FIELDS) {
     if (body && body[k] !== undefined) out[k] = body[k];
+  }
+  // Coerce to the types the rest of the server assumes so a malformed body
+  // can't persist an object where a string is expected.
+  for (const k of SERVICE_STRING_FIELDS) {
+    if (out[k] !== undefined) out[k] = String(out[k] ?? '').trim();
+  }
+  for (const k of SERVICE_BOOL_FIELDS) {
+    if (out[k] !== undefined) out[k] = !!out[k];
+  }
+  if (out.reportInterval !== undefined) {
+    const n = parseInt(out.reportInterval, 10);
+    out.reportInterval = n > 0 ? n : null;
   }
   return out;
 }
@@ -1179,7 +1217,7 @@ app.put('/api/services/:id', (req, res) => {
   const v = applyCheckTypeFields(next);
   if (!v.ok) return res.status(400).json({ error: v.error });
   d.services[i] = next;
-  if (req.body.maintenance !== undefined && req.body.maintenance !== prev.maintenance) {
+  if (req.body.maintenance !== undefined && !!req.body.maintenance !== !!prev.maintenance) {
     d.services[i].status = req.body.maintenance ? 'maintenance' : 'pending';
     resetStreakCounters(d.services[i]);
     clearNotificationDedup(d.services[i]);
@@ -1202,7 +1240,14 @@ app.put('/api/services/:id', (req, res) => {
 
 app.delete('/api/services/:id', (req, res) => {
   const d = load();
+  const before = d.services.length;
   d.services = d.services.filter(s => s.id !== req.params.id);
+  if (d.services.length === before) return res.status(404).json({ error: 'Not found' });
+  // Drop the id from any status page that listed it so pages don't carry a
+  // dangling reference forever.
+  for (const page of d.statusPages) {
+    if (Array.isArray(page.serviceIds)) page.serviceIds = page.serviceIds.filter(id => id !== req.params.id);
+  }
   save(d);
   res.json({ ok: true });
 });
@@ -1244,7 +1289,7 @@ app.post('/api/services/:id/report', (req, res) => {
   const prevStatus = svc.status;
 
   if (status)             svc.status = status;
-  if (desc !== undefined) svc.desc   = desc;
+  if (desc !== undefined) svc.desc   = String(desc ?? '').slice(0, 500);
   if (response !== undefined) {
     if (typeof response === 'number' && Number.isFinite(response) && response >= 0) {
       svc.response = Math.round(response) + 'ms';
@@ -1284,7 +1329,7 @@ app.post('/api/services/:id/pin', (req, res) => {
   res.json(svc);
 });
 
-app.post('/api/check-all', async (req, res) => {
+app.post('/api/check-all', asyncRoute(async (req, res) => {
   // Manual refresh from the UI: re-pings all services to update live status
   // and response times, but does NOT append to svc.history / dailyHistory /
   // hourlyHistory. Those are reserved for the scheduled poll so history bars
@@ -1292,9 +1337,9 @@ app.post('/api/check-all', async (req, res) => {
   const recordHistory = req.query.recordHistory === 'true';
   await checkAll({ recordHistory });
   res.json({ ok: true });
-});
+}));
 
-app.post('/api/services/:id/check', async (req, res) => {
+app.post('/api/services/:id/check', asyncRoute(async (req, res) => {
   // Same two-phase shape as checkAll(): ping first, then reload + apply +
   // save synchronously. Holding the loaded file across the ping await would
   // erase any /report or UI write that lands while the ping is in flight.
@@ -1313,7 +1358,7 @@ app.post('/api/services/:id/check', async (req, res) => {
     return res.json(svc);
   }
   res.json(probe);
-});
+}));
 
 // ─── API: Agent registration & discovery (PM2 + Docker) ─────────────────────
 //
@@ -1452,8 +1497,10 @@ app.get('/api/auth/api-key', (_, res) => {
   res.json({ apiKey: auth.apiKey || '' });
 });
 
-app.put('/api/auth', async (req, res) => {
-  const { currentPassword, newUsername, newPassword } = req.body;
+app.put('/api/auth', asyncRoute(async (req, res) => {
+  const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword    : '';
+  const newUsername     = typeof req.body?.newUsername     === 'string' ? req.body.newUsername.trim() : '';
+  const newPassword     = typeof req.body?.newPassword     === 'string' ? req.body.newPassword        : '';
   const auth = loadAuth();
   if (!auth) return res.status(400).json({ error: 'No account configured' });
   if (!currentPassword) return res.status(400).json({ error: 'Current password required' });
@@ -1461,7 +1508,7 @@ app.put('/api/auth', async (req, res) => {
   const valid = await bcrypt.compare(currentPassword, auth.passwordHash);
   if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
 
-  if (newUsername) auth.username = newUsername.trim();
+  if (newUsername) auth.username = newUsername;
   if (newPassword) {
     if (newPassword.length < 8)
       return res.status(400).json({ error: 'New password must be at least 8 characters' });
@@ -1469,9 +1516,9 @@ app.put('/api/auth', async (req, res) => {
   }
 
   saveAuth(auth);
-  if (newUsername) req.session.username = newUsername.trim();
+  if (newUsername) req.session.username = newUsername;
   res.json({ ok: true });
-});
+}));
 
 // ─── API: Config ─────────────────────────────────────────────────────────────
 
@@ -1480,37 +1527,53 @@ app.get('/api/config', (_, res) => {
   res.json({ settings: d.settings, categories: d.categories });
 });
 
+// Settings a client may write. Anything outside this list is dropped so a
+// stray field can't be persisted into services.json and re-served forever.
+const SETTINGS_EDITABLE_FIELDS = Object.keys(defaults().settings);
+const SETTINGS_STRING_FIELDS   = ['siteTitle', 'displayName', 'serverLabel', 'nasIp'];
+
+function intSetting(v, fallback, min) {
+  const n = parseInt(v, 10);
+  return Math.max(min, isNaN(n) ? fallback : n);
+}
+
 app.put('/api/config', (req, res) => {
   const d = load();
-  if (req.body.settings) {
-    const incoming = { ...req.body.settings };
+  const body = req.body || {};
+  if (body.settings && typeof body.settings === 'object') {
+    const incoming = {};
+    for (const k of SETTINGS_EDITABLE_FIELDS) {
+      if (body.settings[k] !== undefined) incoming[k] = body.settings[k];
+    }
+    for (const k of SETTINGS_STRING_FIELDS) {
+      if (incoming[k] !== undefined) incoming[k] = String(incoming[k] ?? '').trim();
+    }
+    // checkInterval and reportStaleAfter feed setTimeout / stale math
+    // directly: a non-numeric value would make the scheduler fire in a tight
+    // loop or disable the watchdog, so they are clamped here, not trusted.
+    if (incoming.checkInterval    !== undefined) incoming.checkInterval    = intSetting(incoming.checkInterval, 60, 10);
+    if (incoming.reportStaleAfter !== undefined) incoming.reportStaleAfter = intSetting(incoming.reportStaleAfter, 120, 10);
     if (incoming.weatherCountryCode !== undefined) incoming.weatherCountryCode = String(incoming.weatherCountryCode || '').trim().toUpperCase();
     if (incoming.weatherLocation !== undefined) incoming.weatherLocation = String(incoming.weatherLocation || '').trim();
     if (incoming.weatherUnits !== undefined) incoming.weatherUnits = incoming.weatherUnits === 'celsius' ? 'celsius' : 'fahrenheit';
     if (incoming.weatherEnabled !== undefined) incoming.weatherEnabled = !!incoming.weatherEnabled;
+    if (incoming.pushEnabled     !== undefined) incoming.pushEnabled     = !!incoming.pushEnabled;
     if (incoming.iftttEnabled    !== undefined) incoming.iftttEnabled    = !!incoming.iftttEnabled;
     if (incoming.iftttWebhookKey !== undefined) incoming.iftttWebhookKey = normalizeIftttKey(incoming.iftttWebhookKey);
     if (incoming.iftttEventName  !== undefined) incoming.iftttEventName  = normalizeIftttEvent(incoming.iftttEventName);
     if (incoming.ntfyEnabled     !== undefined) incoming.ntfyEnabled     = !!incoming.ntfyEnabled;
     if (incoming.ntfyTopic       !== undefined) incoming.ntfyTopic       = normalizeNtfyTopic(incoming.ntfyTopic);
-    if (incoming.degradedEscalateCount !== undefined) {
-      const n = parseInt(incoming.degradedEscalateCount, 10);
-      incoming.degradedEscalateCount = Math.max(1, isNaN(n) ? 3 : n);
-    }
-    if (incoming.degradedEscalateWindowMinutes !== undefined) {
-      const n = parseInt(incoming.degradedEscalateWindowMinutes, 10);
-      incoming.degradedEscalateWindowMinutes = Math.max(1, isNaN(n) ? 5 : n);
-    }
-    if (incoming.slowThresholdMs !== undefined) {
-      const n = parseInt(incoming.slowThresholdMs, 10);
-      incoming.slowThresholdMs = Math.max(0, isNaN(n) ? 0 : n);
-    }
-    delete incoming.slowStreakRequired;
+    if (incoming.degradedEscalateCount         !== undefined) incoming.degradedEscalateCount         = intSetting(incoming.degradedEscalateCount, 3, 1);
+    if (incoming.degradedEscalateWindowMinutes !== undefined) incoming.degradedEscalateWindowMinutes = intSetting(incoming.degradedEscalateWindowMinutes, 5, 1);
+    if (incoming.slowThresholdMs !== undefined) incoming.slowThresholdMs = intSetting(incoming.slowThresholdMs, 0, 0);
     d.settings = { ...d.settings, ...incoming };
-    scheduleChecks();
   }
-  if (req.body.categories) d.categories = req.body.categories;
+  if (Array.isArray(body.categories)) d.categories = body.categories;
   save(d);
+  // Reschedule AFTER the save: scheduleChecks() reads checkInterval from
+  // disk, so calling it before save() re-armed the timer with the old value
+  // and a new interval only took effect one full cycle later.
+  if (body.settings) scheduleChecks();
   res.json({ settings: d.settings, categories: d.categories });
 });
 
@@ -1799,6 +1862,16 @@ app.delete('/api/status-pages/:id', (req, res) => {
   if (d.statusPages.length === before) return res.status(404).json({ error: 'Status page not found' });
   save(d);
   res.json({ ok: true });
+});
+
+// ─── Error handler ───────────────────────────────────────────────────────────
+
+// Catches malformed JSON bodies from express.json(), synchronous throws, and
+// rejections forwarded by asyncRoute(). Must keep the 4-arg signature.
+app.use((err, req, res, _next) => {
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error('[http]', req.method, req.path, err);
+  res.status(status).json({ error: status >= 500 ? 'Internal server error' : (err.message || 'Bad request') });
 });
 
 // ─── Start ───────────────────────────────────────────────────────────────────

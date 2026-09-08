@@ -152,6 +152,8 @@
       color: var(--ts); background: var(--bg-surf); border: 1px solid var(--b0);
       border-radius: 6px; padding: 6px 14px; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .btn-sm:hover { color: var(--tp); border-color: var(--b2); }
+    .btn-sm.btn-danger { color: var(--red); }
+    .btn-sm.btn-danger:hover { border-color: var(--red); background: var(--red-bg); }
     .btn-sm.primary { color: var(--tp); border-color: var(--b1); background: var(--bg-hi); }
     .btn-sm.primary:hover { border-color: var(--b2); }
 
@@ -340,12 +342,6 @@
       border: 2px solid transparent; transition: border-color .15s; }
     .swatch.selected { border-color: var(--tp); }
 
-    /* category sort buttons */
-    .cat-move { font-size: 13px; color: var(--tm); cursor: pointer; transition: color .15s;
-      line-height: 1; background: none; border: none; padding: 0 2px; }
-    .cat-move:hover { color: var(--tp); }
-    .cat-move:disabled { opacity: .2; cursor: default; }
-
     /* btn variants */
     .btn-prim { font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 500;
       color: var(--tp); background: var(--bg-hi); border: 1px solid var(--b2);
@@ -386,10 +382,6 @@
     /* ─── Subcategory sidebar items ─── */
     .nav-item.nav-sub { padding-left: 34px; font-size: 12.5px; color: var(--ts); }
     .nav-item.nav-sub .nav-pip { width: 5px; height: 5px; }
-
-    /* ─── Subcategory rows in settings ─── */
-    .cat-item.cat-sub { margin-left: 20px; border-left: 2px solid var(--b0);
-      background: var(--bg-base); }
 
     /* ─── Responsive ─── */
     .sidebar-backdrop { display: none; position: fixed; inset: 0;
@@ -529,7 +521,7 @@
 
     <div class="filter-row">
       <div class="tabs" id="tabs">
-        <div class="tab active" data-filter="all" onclick="setFilter('all',null,this)">All</div>
+        <div class="tab active" data-filter="all" onclick="setFilter('all')">All</div>
       </div>
       <div class="row-right">
         <button class="btn-sm" id="refresh-btn" onclick="doRefreshAll()"><span id="refresh-icon">↺</span> Refresh</button>
@@ -557,7 +549,7 @@
           <input class="form-inp" id="f-name" placeholder="Plex">
         </div>
         <div>
-          <label class="form-lbl">Abbreviation * <span>(3 chars)</span></label>
+          <label class="form-lbl">Abbreviation * <span>(up to 4 chars)</span></label>
           <input class="form-inp" id="f-abbr" placeholder="PLX" maxlength="4">
         </div>
       </div>
@@ -912,7 +904,6 @@
           <button class="btn-sm" id="upd-check-btn" onclick="checkForUpdates()">Check for Updates</button>
         </div>
         <div id="upd-result" style="display:none;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;margin-bottom:8px"></div>
-        <button id="upd-apply-btn" style="display:none"></button>
       </div>
 
     </div>
@@ -950,7 +941,8 @@ const COLOR_CSS = {
   amber:  { card: 'var(--amber)',  icon: 'var(--amber-bg)',  pip: '#c4884a' },
   green:  { card: 'var(--green)',  icon: 'var(--green-bg)',  pip: '#5a9e72' },
   red:    { card: 'var(--red)',    icon: 'var(--red-bg)',    pip: '#b85555' },
-  pink:   { card: 'var(--pink)',   icon: 'var(--pink-bg)',   pip: '#b85888' }
+  pink:   { card: 'var(--pink)',   icon: 'var(--pink-bg)',   pip: '#b85888' },
+  slate:  { card: 'var(--slate)',  icon: 'var(--slate-bg)',  pip: '#7a8a9e' }
 };
 
 function getColors(colorKey) {
@@ -990,6 +982,7 @@ async function fetchData(fresh = false) {
   try {
     const res = await fetch('/api/services');
     if (res.status === 401) { window.location.href = '/login'; return; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     APP = await res.json();
     renderAll(fresh);
     renderWeatherFromState();
@@ -1017,7 +1010,9 @@ async function onPollFire() {
   // ping cadence — calling /api/check-all here would double the per-minute
   // ping count and feed the alerting pipeline twice. The manual Refresh
   // button still POSTs /api/check-all for "force a check now" semantics.
-  try { await fetchData(true); }
+  // fresh=false: smart in-place card patch (see renderAll). Only the Refresh
+  // button and same-tab mutations force a full re-render with animation.
+  try { await fetchData(false); }
   finally { scheduleNextPoll(); }
 }
 
@@ -1150,7 +1145,7 @@ function renderCard(s) {
   const ticks  = hist.map(v=>`<div class="tick ${tickCls(v)}"></div>`).join('');
   const hasUrl = s.url && s.hasUI;
   const linkHtml = hasUrl
-    ? `<a class="open-link" href="${s.url}" target="_blank">Open ↗</a>`
+    ? `<a class="open-link" href="${esc(s.url)}" target="_blank">Open ↗</a>`
     : `<span class="open-link dim">No UI ↗</span>`;
 
   const isMaint = !!s.maintenance && !isDisabled;
@@ -1218,7 +1213,7 @@ function renderCard(s) {
 }
 
 /* ─── Per-service state snapshot for change detection ─── */
-const prevStates = new Map(); // id → "status|maintenance"
+const prevStates = new Map(); // id → "status|maintenance|pinnedAt|disabled"
 function svcSnap(s) { return `${s.status}|${!!s.maintenance}|${s.pinnedAt||''}|${!!s.disabled}`; }
 
 /* Silent in-place update of the fields that change every poll */
@@ -1238,7 +1233,9 @@ function patchCard(el, s) {
     ? 'Disabled · checks paused'
     : isMaint
       ? '🔧 in maintenance · history paused'
-      : `${historyLabel()} · checked ${lastChk}`;
+      : s.status === 'pending'
+        ? 'awaiting first check…'
+        : `${historyLabel()} · checked ${lastChk}`;
 
   const up = el.querySelector('[data-field="uptime"]');
   if (up) up.textContent = s.uptime || '—';
@@ -1296,14 +1293,14 @@ function buildGridHtml(svcs) {
   const direct = unpinned.filter(s => s.cat === filter);
   if (direct.length) {
     const pip = getColors(cat.color).pip;
-    html += `<div class="section-hdr" data-section="${filter}"><span class="section-pip" style="background:${pip}"></span>${esc(cat.name)}</div>`;
+    html += `<div class="section-hdr" data-section="${esc(filter)}"><span class="section-pip" style="background:${pip}"></span>${esc(cat.name)}</div>`;
     html += direct.map(renderCard).join('');
   }
   for (const sub of subs) {
     const subSvcs = unpinned.filter(s => s.cat === sub.id);
     if (!subSvcs.length) continue;
     const pip = getColors(sub.color).pip;
-    html += `<div class="section-hdr" data-section="${sub.id}"><span class="section-pip" style="background:${pip}"></span>${esc(sub.name)}</div>`;
+    html += `<div class="section-hdr" data-section="${esc(sub.id)}"><span class="section-pip" style="background:${pip}"></span>${esc(sub.name)}</div>`;
     html += subSvcs.map(renderCard).join('');
   }
   return html;
@@ -1351,30 +1348,13 @@ function renderAll(fresh = false) {
     const renderedOrder = [...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id).join(',');
     if (expectedOrder !== renderedOrder) { renderAll(true); return; }
 
-    const currentIds  = new Set(allSvcs.map(s => s.id));
-    const renderedIds = new Set([...grid.querySelectorAll('[data-id]')].map(el => el.dataset.id));
-
-    /* remove deleted */
-    for (const id of renderedIds) {
-      if (!currentIds.has(id)) {
-        grid.querySelector(`[data-id="${id}"]`)?.remove();
-        prevStates.delete(id);
-      }
-    }
-
+    /* order matched, so every id in allSvcs has a rendered card */
     for (const s of allSvcs) {
       const el   = grid.querySelector(`[data-id="${s.id}"]`);
       const snap = svcSnap(s);
       const prev = prevStates.get(s.id);
 
-      if (!el) {
-        /* new service added since last render */
-        const tmp = document.createElement('div');
-        tmp.innerHTML = renderCard(s).trim();
-        const newEl = tmp.firstElementChild;
-        newEl.classList.add('card-init');
-        grid.appendChild(newEl);
-      } else if (prev !== snap) {
+      if (prev !== snap) {
         /* status / maintenance / disabled changed → replace card + flash */
         const tmp = document.createElement('div');
         tmp.innerHTML = renderCard(s).trim();
@@ -1443,13 +1423,13 @@ function renderNavCats() {
   document.getElementById('nav-cats').innerHTML = topLevel.map(cat => {
     const pip = getColors(cat.color).pip;
     const act = filter === cat.id ? ' active' : '';
-    let html = `<div class="nav-item${act}" onclick="setFilter('${cat.id}',this)">
+    let html = `<div class="nav-item${act}" data-filter="${esc(cat.id)}" onclick="setFilter(this.dataset.filter,this)">
       <span class="nav-pip" style="background:${pip}"></span>${esc(cat.name)}
     </div>`;
     for (const sub of subCatsOf(cat.id)) {
       const subPip = getColors(sub.color).pip;
       const subAct = filter === sub.id ? ' active' : '';
-      html += `<div class="nav-item nav-sub${subAct}" onclick="setFilter('${sub.id}',this)">
+      html += `<div class="nav-item nav-sub${subAct}" data-filter="${esc(sub.id)}" onclick="setFilter(this.dataset.filter,this)">
         <span class="nav-pip" style="background:${subPip}"></span>${esc(sub.name)}
       </div>`;
     }
@@ -1460,17 +1440,17 @@ function renderNavCats() {
 function renderTabs() {
   const tabs  = document.getElementById('tabs');
   const extra = topLevelCats().map(c =>
-    `<div class="tab${filter===c.id?' active':''}" data-filter="${c.id}"
-      onclick="setFilter('${c.id}',null,this)">${esc(c.name)}</div>`).join('');
+    `<div class="tab${filter===c.id?' active':''}" data-filter="${esc(c.id)}"
+      onclick="setFilter(this.dataset.filter)">${esc(c.name)}</div>`).join('');
   tabs.innerHTML =
     `<div class="tab${filter==='all'?' active':''}" data-filter="all"
-      onclick="setFilter('all',null,this)">All</div>` + extra;
+      onclick="setFilter('all')">All</div>` + extra;
 }
 
 /* ═══════════════════════════════════════════════════
    FILTER
 ═══════════════════════════════════════════════════ */
-function setFilter(cat, navEl, tabEl) {
+function setFilter(cat, navEl) {
   filter = cat;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if (navEl) navEl.classList.add('active');
@@ -1518,6 +1498,7 @@ function openAddModal() {
   document.getElementById('f-disabled').checked = false;
   populateCatSelect('');
   setCheckType('url');
+  resetManualEntry();
   hydrateAgentSelectors({ pm2AgentId: '', pm2ProcessName: '', dockerAgentId: '', dockerContainerName: '' });
   document.getElementById('svc-overlay').classList.add('show');
   document.body.classList.add('modal-open');
@@ -1544,6 +1525,7 @@ function openEditModal(id) {
   document.getElementById('f-disabled').checked = !!s.disabled;
   populateCatSelect(s.cat);
   setCheckType(s.checkType || 'url');
+  resetManualEntry();
   hydrateAgentSelectors({
     pm2AgentId:          s.pm2AgentId || '',
     pm2ProcessName:      s.pm2ProcessName || '',
@@ -1676,6 +1658,21 @@ function toggleDockerManual(e) {
   sel.style.display = manual ? 'none' : '';
   link.textContent = manual ? 'Pick from list instead' : 'Enter a container name manually';
   if (manual) inp.value = sel.value || '';
+}
+
+// The manual-entry toggles persist across modal opens (the modal is never
+// destroyed), and submitSvc() prefers the manual input whenever it is visible,
+// so a stale value from an earlier open could silently win on save. Reset
+// both toggles to list mode every time the modal opens.
+function resetManualEntry() {
+  document.getElementById('f-pm2-process-manual').style.display      = 'none';
+  document.getElementById('f-pm2-process-manual').value              = '';
+  document.getElementById('f-pm2-process').style.display             = '';
+  document.getElementById('pm2-manual-link').textContent             = 'Enter a process name manually';
+  document.getElementById('f-docker-container-manual').style.display = 'none';
+  document.getElementById('f-docker-container-manual').value         = '';
+  document.getElementById('f-docker-container').style.display        = '';
+  document.getElementById('docker-manual-link').textContent          = 'Enter a container name manually';
 }
 
 function populateCatSelect(selected) {
@@ -1889,7 +1886,6 @@ function openSettings() {
   if (window.innerWidth <= 640) closeSidebar();
   document.getElementById('upd-sha').textContent        = APP.version || 'dev';
   document.getElementById('upd-result').style.display  = 'none';
-  document.getElementById('upd-apply-btn').style.display = 'none';
   const cb = document.getElementById('upd-check-btn');
   cb.disabled = false; cb.textContent = 'Check for Updates';
   pendingCats = JSON.parse(JSON.stringify(APP.categories));
@@ -2079,7 +2075,9 @@ function submitCategory() {
     return;
   }
 
-  const id = name.toLowerCase().replace(/\s+/g, '-');
+  // Ids are embedded in data attributes and used as svc.cat keys; keep them
+  // to a safe slug so punctuation in a name can't break markup or lookups.
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || ('cat-' + Date.now());
   if (pendingCats.find(c => c.id === id)) { alert('Category ID already exists.'); return; }
   const entry = { id, name, color: selectedColor };
   if (parentId) entry.parentId = parentId;
@@ -2152,7 +2150,9 @@ async function saveSettings() {
   const escCount  = parseInt(document.getElementById('cfg-esc-count').value, 10);
   const escWindow = parseInt(document.getElementById('cfg-esc-window').value, 10);
   const slowMs    = parseInt(document.getElementById('cfg-slow-ms').value, 10);
-  await fetch('/api/config', {
+  let res;
+  try {
+    res = await fetch('/api/config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -2180,10 +2180,23 @@ async function saveSettings() {
       categories: pendingCats
     })
   });
+  } catch (e) {
+    alert('Failed to save settings: ' + (e.message || 'network error'));
+    return;
+  }
+  if (!res.ok) {
+    // Keep the modal open so the pending edits aren't silently lost on an
+    // expired session or server error.
+    let msg = 'Failed to save settings.';
+    try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+    alert(msg);
+    return;
+  }
   closeCfgModal();
   await doRefreshAll();
   scheduleNextPoll();
-  await fetchWeather(true);
+  // startWeatherPoll() fetches immediately; the server cache key includes
+  // location and units, so a changed location is never served stale.
   startWeatherPoll();
 }
 
@@ -2383,14 +2396,18 @@ function updResult(msg, type) {
 
 async function checkForUpdates() {
   const btn = document.getElementById('upd-check-btn');
-  document.getElementById('upd-apply-btn').style.display = 'none';
   document.getElementById('upd-result').style.display    = 'none';
   btn.disabled = true;
   btn.textContent = 'Checking…';
   try {
     const res  = await fetch('/api/update/check');
     const data = await res.json();
-    if (!res.ok) { updResult(data.error, 'red'); return; }
+    if (!res.ok) {
+      updResult(data.error || `HTTP ${res.status}`, 'red');
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
+      return;
+    }
     if (data.isDev) {
       updResult('Running a local dev build — version tracking only works in deployed containers.', 'amber');
       btn.disabled = false;
@@ -2411,34 +2428,31 @@ async function checkForUpdates() {
 }
 
 async function applyUpdate() {
-  const btn = document.getElementById('upd-apply-btn');
-  btn.disabled = true;
-  btn.textContent = 'Applying…';
+  // Called straight from checkForUpdates() (no confirmation step), which has
+  // already disabled the Check button. Re-enable it on any non-restart
+  // outcome so the panel doesn't sit on "Checking…" until the modal reopens.
+  const checkBtn = document.getElementById('upd-check-btn');
+  const resetCheckBtn = () => { checkBtn.disabled = false; checkBtn.textContent = 'Check for Updates'; };
   try {
     const res  = await fetch('/api/update/apply', { method: 'POST' });
     const data = await res.json();
     if (data.ok) {
       updResult('Update triggered — restarting…', 'green');
-      btn.style.display = 'none';
       waitForRestart();
     } else if (data.manual) {
       updResult(data.message, 'amber');
-      btn.disabled = false;
-      btn.textContent = 'Apply Update';
+      resetCheckBtn();
     } else if (data.error && data.error.toLowerCase().includes('timeout')) {
       // Watchtower timeout means the container is already restarting
       updResult('Restarting…', 'green');
-      btn.style.display = 'none';
       waitForRestart();
     } else {
       updResult(data.error || 'Update failed.', 'red');
-      btn.disabled = false;
-      btn.textContent = 'Apply Update';
+      resetCheckBtn();
     }
   } catch (e) {
     // A network error / timeout here means Watchtower restarted the container — treat as success
     updResult('Restarting…', 'green');
-    btn.style.display = 'none';
     waitForRestart();
   }
 }

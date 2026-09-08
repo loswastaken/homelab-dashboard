@@ -13,7 +13,6 @@
 
     :root {
       --bg-base:   #131110;
-      --bg-side:   #0f0e0c;
       --bg-surf:   #1a1815;
       --bg-card:   #1e1c18;
       --bg-cardh:  #232019;
@@ -30,7 +29,6 @@
       --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
       --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
       --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
-      --blue:    #5285b8; --blue-bg:   rgba(82,133,184,.13);
       --slate:   #7a8a9e; --slate-bg:  rgba(122,138,158,.13);
     }
 
@@ -157,7 +155,6 @@
     .det-ev-item { display: flex; align-items: center; gap: 10px; padding: 7px 0;
       border-bottom: 1px solid var(--b0); font-size: 12px; }
     .det-ev-item:last-child { border-bottom: none; }
-    .det-ev-item:empty { display: none; }
     .ev-icon { width: 22px; height: 22px; border-radius: 50%; display: flex;
       align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
     .ev-icon.offline    { background: var(--red-bg);   color: var(--red); }
@@ -176,11 +173,6 @@
     .global-log { background: var(--bg-card); border: 1px solid var(--b0);
       border-radius: 12px; padding: 6px 18px; }
     .global-log .det-ev-item { padding: 12px 0; }
-
-    /* ─── Footer ─── */
-    footer { text-align: center; margin-top: 48px; font-size: 11px; color: var(--tm); }
-    footer a { color: var(--ts); text-decoration: none; border-bottom: 1px solid var(--b0); }
-    footer a:hover { color: var(--tp); }
 
     /* ─── Error / loading ─── */
     .loading, .error { text-align: center; padding: 80px 0; color: var(--ts); }
@@ -239,11 +231,13 @@
   }
   function fmtDateShort(iso) {
     const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // Daily keys are UTC calendar days (server TODAY_KEY); format in UTC so the
+    // label matches the bucket instead of slipping a day west of UTC.
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   }
   function fmtHourShort(ts) {
-    // ts shape: 'YYYY-MM-DDTHH' — render as "MMM D, h a"
-    const d = new Date(ts + ':00:00');
+    // ts shape: 'YYYY-MM-DDTHH' in UTC (server HOUR_KEY) — parse as UTC, display local
+    const d = new Date(ts + ':00:00Z');
     return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
   }
   function fmtRelative(iso) {

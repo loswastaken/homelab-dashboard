@@ -1,0 +1,15 @@
+# Build context for the dashboard image (Dockerfile COPYs only package*.json,
+# server.js, public/ and the blank data/services.json seed).
+.git
+.github
+.claude
+node_modules
+pm2-agent
+docker-agent
+data/*
+!data/services.json
+*.md
+.env
+.env.example
+.DS_Store
+*.log

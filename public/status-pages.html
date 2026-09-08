@@ -29,9 +29,8 @@
       --b2: rgba(237,232,213,.18);
 
       --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
-      --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
-      --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
-      --blue:    #5285b8;
+      --amber:   #c4884a;
+      --red:     #b85555;
       --slate:   #7a8a9e;
 
       --sw: 200px;
@@ -202,16 +201,29 @@
     input:checked + .tslider:before { transform: translateX(16px); background: var(--green); }
 
     /* ─── Responsive ─── */
+    .sidebar-backdrop { display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); z-index: 199; }
+    .sidebar-backdrop.show { display: block; }
+    .menu-btn { display: none; background: none; border: 1px solid var(--b0);
+      border-radius: 6px; color: var(--ts); cursor: pointer; padding: 6px 10px;
+      font-size: 17px; line-height: 1; transition: all .15s; flex-shrink: 0; }
+    .menu-btn:hover { color: var(--tp); border-color: var(--b1); }
+    .hdr-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
     @media (max-width: 640px) {
       .sidebar { transform: translateX(-100%); transition: transform .25s; }
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
+      .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
+      .hdr { align-items: center; flex-wrap: wrap; }
       .hdr, .content { padding-left: 18px; padding-right: 18px; }
       .page-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
 <nav class="sidebar" id="sidebar">
@@ -240,8 +252,11 @@
 
   <div class="hdr">
     <div class="hdr-l">
-      <h1>Status <b>Pages</b></h1>
-      <div class="hdr-sub" id="hdr-sub">Public uptime pages, shareable via URL.</div>
+      <button class="menu-btn" onclick="openSidebar()" aria-label="Menu">≡</button>
+      <div>
+        <h1>Status <b>Pages</b></h1>
+        <div class="hdr-sub" id="hdr-sub">Public uptime pages, shareable via URL.</div>
+      </div>
     </div>
     <button class="btn-prim" onclick="openEditor()">+ New Status Page</button>
   </div>
@@ -351,6 +366,18 @@
   async function logout() {
     try { await fetch('/api/logout', { method: 'POST' }); } catch {}
     location.href = '/login';
+  }
+
+  // ─── Sidebar (mobile) ───────────────────────────────────────────────────────
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebar-backdrop').classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-backdrop').classList.remove('show');
+    document.body.style.overflow = '';
   }
 
   // ─── Page list ──────────────────────────────────────────────────────────────

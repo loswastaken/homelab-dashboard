@@ -47,6 +47,9 @@ services:
       - TZ=America/New_York
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN}
       - WATCHTOWER_HTTP_API_URL=http://localhost:8080
+      # Optional overrides read from .env (see .env.example). Blank = server defaults.
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - VAPID_CONTACT=${VAPID_CONTACT:-}
 
     volumes:
       # Persist services.json — edit this path to match your NAS volume layout.

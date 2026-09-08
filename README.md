@@ -35,6 +35,8 @@ cd /your/data/path
 curl -O https://raw.githubusercontent.com/loswastaken/homelab-dashboard/main/docker-compose.yml
 ```
 
+Edit the `volumes:` path in `docker-compose.yml` to point at your data directory, then create a `.env` next to it with `WATCHTOWER_HTTP_API_TOKEN=<random hex>` (see `.env.example`). Watchtower exits at startup if that token is empty.
+
 ### 3. Pull and start
 ```bash
 sudo docker compose pull
@@ -42,7 +44,9 @@ sudo docker compose up -d
 ```
 
 ### 4. First-time setup
-Open `http://NAS_IP:55964`. You'll be redirected to `/setup` to create your admin account (username + password, min 8 characters). This page is locked permanently after first use.
+Open the dashboard over **HTTPS** (e.g. your Cloudflare Tunnel hostname — see below). You'll be redirected to `/setup` to create your admin account (username + password, min 8 characters). This page is locked permanently after first use.
+
+> The production image sets `NODE_ENV=production`, which marks the session cookie `Secure`; browsers will not keep you logged in over plain `http://NAS_IP:55964`. Use HTTPS, or run the container with `NODE_ENV` unset for LAN-only HTTP access.
 
 ---
 
@@ -101,7 +105,8 @@ Hover a card to reveal action buttons:
 - **×** — delete (confirmation required)
 - **✓ Resolve** — clears degraded/offline → online
 - **Pin** — pins the service to the top of the grid
-- **Maintenance** — toggles maintenance mode
+
+Maintenance mode and Disabled are toggles inside the edit modal (**✎**), not card buttons.
 
 ### Pending State
 Newly added services start in a **pending** state (blue pill) until the first health check runs or the first `/report` arrives from the agent. No history ticks or notifications are generated during pending — it's just a "we haven't checked yet" placeholder. Pending services are also excluded from public status pages until they have real data.
@@ -175,7 +180,7 @@ Open **Settings** from the sidebar.
 | Server Label | Shown in the sidebar footer |
 | NAS IP | Shown in the sidebar footer |
 | Health Check Interval | Seconds between auto-check cycles (min 10, default 60) |
-| Report Stale After | Seconds before a push-reported service (no check URL) is flipped to offline if no `/report` arrives. Default 120. Per-service override: set `reportInterval` on the service and the threshold becomes `reportInterval × 4`. |
+| Stale Report Threshold | Seconds before a push-reported service (PM2 / Docker check type) is flipped to offline if no `/report` arrives. Default 120, min 10. Per-service override (API only, no UI field): set `reportInterval` on the service and the threshold becomes `reportInterval × 4`. |
 
 ### Weather
 Shows a live weather pill in the dashboard header (hidden on mobile). Uses the Open-Meteo free API — no API key required.
@@ -205,8 +210,7 @@ Thresholds that control when a flaky service actually flips to degraded/offline.
 |---|---|
 | Degraded escalation count | Consecutive degraded checks (5xx, timeouts, slow responses, connection errors) before escalating to offline. Default 3. |
 | Degraded escalation window (min) | The streak must fit inside this rolling window; otherwise it resets. Default 5 minutes. |
-| Slow-response threshold (ms) | A 2xx response slower than this counts as degraded. Default 0 (disabled globally). Override or disable per-service from the service modal's "Disable slow-response monitoring" toggle. |
-| Slow-response streak required | Consecutive slow checks before a slow response actually marks a service degraded. Default 1. |
+| Slow-response threshold (ms) | A 2xx response slower than this counts as degraded. Default 0 (disabled globally). Override or disable per-service from the service modal's "Disable slow-response monitoring" toggle. Slow responses feed the same escalation streak as 5xx/timeouts. |
 
 ### API Key
 Used by external agents (PM2 agent, Docker agent, scripts) to push status updates and register themselves. Pass as the `X-Api-Key` header. The tab also embeds ready-to-run install snippets for both agents with your dashboard URL + key pre-filled.
@@ -215,7 +219,7 @@ Used by external agents (PM2 agent, Docker agent, scripts) to push status update
 Under the General tab, any registered PM2 or Docker agent appears here. Each row shows the agent type, hostname, item count, and last seen time. Use **Rename** to give an agent a friendly label (stable across re-registrations) or **Delete** to remove one. A `stale` marker appears next to any agent that hasn't checked in for 10+ minutes.
 
 ### Categories
-- Reorder with **↑ / ↓**
+- Edit with **✎** — loads the name, color, and parent into the form (the list is sorted alphabetically; there is no manual reorder)
 - Delete with **×** (services are not deleted, just uncategorized)
 - Choose preset color swatches or type any `#rrggbb` hex
 
@@ -230,8 +234,8 @@ The PM2 agent runs on any host where PM2 manages processes. The dashboard is the
 
 ### Setup
 ```bash
-git clone https://github.com/loswastaken/homelab-dashboard.git
-cd ~/homelab-dashboard/pm2-agent
+cd ~ && git clone https://github.com/loswastaken/homelab-dashboard.git
+cd homelab-dashboard/pm2-agent
 # Edit ecosystem.config.js: set DASHBOARD_URL and REPORT_API_KEY
 # (REPORT_API_KEY is visible in Dashboard → Settings → API Key)
 pm2 start ecosystem.config.js
@@ -327,7 +331,7 @@ All persistent data lives in the `data/` directory mounted via the Docker volume
 | `push-subscriptions.json` | Active push subscriber endpoints |
 | `sessions/` | Active session files (7-day TTL) |
 
-Never included in the Docker image — lives only in the mounted volume.
+None of this is baked into the Docker image — it only carries a blank `services.json` seed, copied into the volume on first start if no file exists there. Live data exists only in the mounted volume.
 
 **Backup:** Copy the `data/` directory. Restore by dropping it back in place and restarting the container.
 
@@ -335,7 +339,7 @@ Never included in the Docker image — lives only in the mounted volume.
 
 ## API Reference
 
-All endpoints require an authenticated session except `/api/services/:id/report` (accepts `X-Api-Key` header), `/status/:slug`, and `/api/public/status/:slug` (public status pages — no auth).
+All endpoints require an authenticated session except: `/healthz` (no auth); the agent endpoints — `/api/services/:id/report`, `/api/{pm2,docker}/agents/register`, `/api/{pm2,docker}/agents/:id/discovery`, `/api/{pm2,docker}/agents/:id/monitored` — which accept an `X-Api-Key` header instead (50 bad keys per IP per 15 min returns 429); and `/status/:slug` + `/api/public/status/:slug` (public status pages — no auth).
 
 | Method | Path | Description |
 |---|---|---|
@@ -357,7 +361,7 @@ All endpoints require an authenticated session except `/api/services/:id/report`
 | POST | `/api/push/test` | Send a test push notification |
 | POST | `/api/ifttt/test` | Send a test event to the IFTTT Maker webhook (accepts unsaved key/event) |
 | POST | `/api/ntfy/test` | Send a test notification to the ntfy topic (accepts unsaved topic) |
-| GET | `/api/config` | Settings + categories + API key |
+| GET | `/api/config` | Settings + categories (no API key — see `/api/auth/api-key`) |
 | GET | `/api/auth/api-key` | Report API key — fetched on demand by the API Key tab |
 | PUT | `/api/config` | Update settings + categories |
 | GET | `/api/update/check` | Compare running SHA vs GitHub main |

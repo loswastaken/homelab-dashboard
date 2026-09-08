@@ -52,7 +52,7 @@ Pushing to `main` automatically triggers GitHub Actions, which builds and pushes
 
 ### GitHub Actions
 
-`.github/workflows/docker.yml` — triggers on push to `main` and `workflow_dispatch`, with `paths-ignore` for `pm2-agent/**`, `docker-agent/**`, and `**.md` so agent-only or docs-only pushes don't rebuild (and Watchtower-redeploy) the dashboard image. Uses `docker/setup-buildx-action@v3` (required for GHA cache backend). Pushes `latest` and `sha-*` tags. The Docker agent image is built separately by `docker-agent.yml` (path-filtered to `docker-agent/**`).
+`.github/workflows/docker.yml` — triggers on push to `main` and `workflow_dispatch`, with `paths-ignore` for `pm2-agent/**`, `docker-agent/**`, and `**.md` so agent-only or docs-only pushes don't rebuild (and Watchtower-redeploy) the dashboard image. Uses `docker/setup-buildx-action@v3` (required for GHA cache backend). Pushes `latest` and `sha-*` tags. The Docker agent image is built separately by `docker-agent.yml` (path-filtered to `docker-agent/**`). `.dockerignore` trims the build context to what the Dockerfile actually COPYs (no `.git`, `node_modules`, agents, or `data/*` other than the seed).
 
 ### Updating the compose file on the host
 
@@ -86,6 +86,8 @@ sudo docker compose up -d
 - **Auth:** bcryptjs (cost 12), express-session + session-file-store (7-day TTL), persisted in `data/sessions/`
 - **Secrets:** `data/auth.json` holds `sessionSecret`, `apiKey`, `username`, `passwordHash` — generated on first start. The session secret can be overridden by setting the `SESSION_SECRET` env var (preferred in production so rotating the secret doesn't require touching `data/auth.json`).
 - **Rate limiting:** 5 failed login attempts per IP → 15-minute lockout (in-memory Map, resets on restart). Same shape applied to `/api/services/:id/report`: 50 bad API-key attempts per IP per 15 min → 429.
+- **Async handlers + error middleware:** Express 4 doesn't catch a rejected promise from an `async` route (the request hangs and Node treats the rejection as fatal). Every handler that awaits (`/api/setup`, `/api/login`, `PUT /api/auth`, `/api/check-all`, `/api/services/:id/check`) is wrapped in `asyncRoute()`, and a 4-arg JSON error handler sits at the bottom of the file — it also turns malformed JSON bodies into a `400 { error }` instead of Express's HTML page. Login/setup/auth-change type-check `username`/`password` as strings before they reach bcrypt (bcryptjs throws on non-strings, which used to be a crash path).
+- **Input whitelists:** `SERVICE_EDITABLE_FIELDS` (+ string/bool coercion in `pickServiceFields()`) for `POST/PUT /api/services`, and `SETTINGS_EDITABLE_FIELDS` (derived from `defaults().settings`) for `PUT /api/config`. Unknown keys are dropped; `checkInterval` / `reportStaleAfter` are clamped to integers (min 10) because they feed `setTimeout` and the stale watchdog directly. `PUT /api/config` calls `scheduleChecks()` **after** `save()` — the scheduler reads the interval from disk, so calling it first re-armed the timer with the old value.
 - `app.set('trust proxy', 1)` — required for Cloudflare Tunnel / reverse proxy
 - `sameSite: 'lax'` on session cookie — `'strict'` breaks login via Cloudflare Tunnel. `secure: true` is set when `NODE_ENV=production` (Dockerfile sets this), so the cookie only rides HTTPS in prod.
 - Pre-auth static assets are a narrow allowlist: `/favicon*.{svg,ico}` and `*.woff2`. `.js`/`.css`/`.html` all require a session. Login and setup pages are self-contained (inline `<style>`, no external scripts), which is what makes this work. Any new login-page asset needs either inlining or an explicit whitelist entry in the gate.
@@ -103,7 +105,7 @@ sudo docker compose up -d
 | `POST` | `/api/check-all` | Triggers immediate health check on all services |
 | `POST` | `/api/services` | Add a new service |
 | `PUT` | `/api/services/:id` | Edit a service |
-| `DELETE` | `/api/services/:id` | Remove a service |
+| `DELETE` | `/api/services/:id` | Remove a service (404 if unknown; also prunes the id from every `statusPages[].serviceIds`) |
 | `POST` | `/api/services/:id/report` | External status push — accepts session OR `X-Api-Key` header (no auth gate). Body: `{ status?, desc?, response? }` — `status` must be `online`/`degraded`/`offline` (400 otherwise; omitted = metadata-only update). No history tick (recorded on the scheduled cadence). Ignored (200) while the service is in maintenance or disabled. |
 | `POST` | `/api/services/:id/check` | Re-check a single service (read-only preview — updates response/lastChecked only) |
 | `POST` | `/api/services/:id/resolve` | Force status to online |
@@ -138,7 +140,7 @@ sudo docker compose up -d
 
 ### Health Check (`ping`)
 
-- Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`
+- Uses Node `http`/`https` with `HEAD` request, 5s timeout, `rejectUnauthorized: false`. The request path includes the URL's query string (a `?token=` style health URL used to be silently truncated).
 - HTTP 5xx response, connection error, and timeout all feed the degraded-escalation gate (see below) — the immediate tick is degraded, not offline. Anything else = online.
 - **Degraded → offline escalation** is user-configurable in Settings → Alerts:
   - `settings.degradedEscalateCount` (default 3, min 1) — consecutive bad checks that flip the service to degraded; the same count again (2× total) escalates to offline.
@@ -185,9 +187,9 @@ New services are created with `status: 'pending'` instead of flipping straight t
 
 - **URL services:** transition out of pending on the next `checkAll()` cycle (up to `settings.checkInterval` seconds). `checkAll()` filters by `url + checkEnabled + !maintenance + !disabled` — there's no status filter, so pending URL services are picked up on the very next tick.
 - **pm2 / docker services:** transition out of pending on the first `/report` that arrives. The report-staleness watchdog (`isReportStale`) explicitly short-circuits on `status === 'pending'` so a silent agent doesn't flip a brand-new service to offline before it has a chance to report.
-- **No history tick is pushed while pending** — `svc.history[]` stays empty until the first real result, so pending services don't distort the 30-min bar or daily/hourly uptime. For URL services the first real ping pushes a tick; for pm2/docker services the first `/report` flips status out of pending and the first tick lands on the next scheduled `checkAll()` cycle (ticks for push services are always recorded on the scheduled cadence, never per report).
+- **No history tick is pushed while pending** — `svc.history[]` stays empty until the first real result, so pending services don't distort the 30-min bar or daily/hourly uptime. For URL services the first ping that produces a classified status pushes a tick; `evaluatePingResult()` skips the tick while `status` is still `pending` (a failing first check that hasn't reached the degraded threshold yet would otherwise record as an "online" tick). For pm2/docker services the first `/report` flips status out of pending and the first tick lands on the next scheduled `checkAll()` cycle (ticks for push services are always recorded on the scheduled cadence, never per report).
 - **No notifications fire on entering or leaving pending.** `maybeNotify()` only fires for offline/degraded/recovery, and the recovery branches in both `evaluatePingResult()` and `/report` already gate on `prevStatus === 'offline' || 'degraded'` — so pending → online is silent. First pending → degraded / offline transitions *do* notify (that's genuine signal).
-- **Public status pages hide pending services** — `sanitizeServiceForPublic()` returns `null` for pending, and the caller in `/api/public/status/:slug` applies `.filter(Boolean)` after sanitization so pending services don't leak to `/status/<slug>` or affect `computeOverallStatus()` until they have real data.
+- **Public status pages hide pending and disabled services** — `sanitizeServiceForPublic()` returns `null` for both, and the caller in `/api/public/status/:slug` applies `.filter(Boolean)` after sanitization so they don't leak to `/status/<slug>` or affect `computeOverallStatus()`. Disabled services used to render as a red "offline" row under an "operational" banner.
 - **Frontend:** blue `--blue` badge + border in `index.html`; blue pip in `history.html` (`statusClass()` maps `'pending' → 'pending'`). Stats row counts pending in `Services` only — not under Online/Degraded/Offline/Maintenance/Disabled. No alert-bar entry, no favicon tint.
 
 ### Daily History & Event Log
@@ -240,7 +242,8 @@ Public-facing, unauthenticated uptime pages (Uptime Kuma style) served at `/stat
 - **Management UI:** `public/status-pages.html` — auth-gated page listing all status pages as cards with an editor modal (name, slug, description, per-category grouped service picker, reveal-category-name toggles, banner/log toggles). Linked from the "Overview" nav section in both `index.html` and `history.html`.
 - **Public view:** `public/status-page.html` — single standalone file. Reads slug from `location.pathname`, fetches `/api/public/status/:slug`, auto-refreshes every 60s. 24h/7d/30d bar-strip toggle (default 30d; 24h uses hourly data, 7d/30d use daily), expandable per-service detail with canvas chart + sanitized event log, optional global incident log. Uses the same CSS tokens as the rest of the app, inlined.
 - **Freshness indicators:** a manual ↺ refresh button and an "Updated Xs ago" label sit next to the range toggle and under the banner. Both are driven by a client-side `lastRefreshed` timestamp (set on each successful fetch) and a 10s ticker that keeps the relative labels live between polls. The banner meta deliberately does NOT use `page.updatedAt` (which is the admin edit time, not data freshness).
-- **Uptime Kuma aesthetic:** centered ~960px container, big banner at top (green/amber/red/blue-grey), stacked service rows with uniform pill-shaped bars that fill the strip. Shorter histories render fewer, wider bars rather than left-padding with empty slots. Rounded 10–12px corners throughout.
+- **Uptime Kuma aesthetic:** centered ~960px container, big banner at top (green/amber/red/blue-grey), stacked service rows with uniform pill-shaped bars that fill the strip. Shorter histories are left-padded with empty placeholder slots so every row keeps the same footprint. Rounded 10–12px corners throughout.
+- **Timestamps:** `dailyHistory.date` and `hourlyHistory.ts` are keyed in **UTC** by the server (`TODAY_KEY()` / `HOUR_KEY()` use `toISOString()`, ignoring the container's `TZ`). Both `status-page.html` and `history.html` therefore format daily labels with `timeZone: 'UTC'` and parse hourly keys with a trailing `Z` before converting to local time. Without this, viewers west of UTC saw every daily bar labelled one day early and hourly labels shifted by the UTC offset.
 
 ### Data Files
 
@@ -260,7 +263,7 @@ Single-file vanilla JS app. No build step.
 
 ### Key Design Decisions
 
-- **Smart card updates:** Poll refreshes do NOT re-render the whole grid. Each service card has `data-id`. On poll, only cards whose `status` or `maintenance` flag changed get replaced (with an amber flash animation). Unchanged cards are silently patched in-place (history ticks, uptime, response, last-checked). Initial load and filter switches use a stagger `fadein` animation.
+- **Smart card updates:** Poll refreshes do NOT re-render the whole grid. Each service card has `data-id`. On poll, only cards whose `status` / `maintenance` / `pinnedAt` / `disabled` snapshot changed get replaced (with an amber flash animation). Unchanged cards are silently patched in-place (history ticks, uptime, response, last-checked, the pending placeholder). If the set or order of ids differs from what's rendered (add/delete/pin), the whole grid re-renders. Initial load and filter switches use a stagger `fadein` animation. **`onPollFire()` must call `fetchData(false)`** — it regressed to `true` twice through refactors, which made every auto-poll a full animated re-render and left the smart-patch path unreachable. Trade-off: cross-tab edits to name/desc/url etc. don't show until a state change or manual Refresh.
 - **`renderAll(fresh)`:** `fresh=true` = full re-render with animation (first load, filter switch, manual refresh). `fresh=false` = smart in-place patch.
 - **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete. The endpoint only records history ticks when `?recordHistory=true` is passed — manual clicks omit it, so the 30-min `svc.history` bar, `dailyHistory`, and `hourlyHistory` are driven solely by the scheduled poll (which calls `checkAll()` directly with the `recordHistory=true` function default). This keeps the bar cadence tied to the configured `checkInterval` regardless of how often users click refresh. Only `svc.response` and `svc.lastChecked` update from manual checks — **status never does** (see the preview-mode note under degraded escalation; a status-mutating preview swallowed real recovery transitions and their notifications).
 - **Wall-clock-anchored refresh (commit `c2483cd`):** the dashboard countdown, the public status page auto-refresh, and the server `checkAll()` loop all self-schedule via `setTimeout` with the next fire computed as `Math.ceil(Date.now() / intervalMs) * intervalMs`. Consequences: opening the dashboard mid-cycle shows the real seconds to the next boundary, manual refreshes don't reset the schedule, and saving settings doesn't silently shift cadence.
@@ -268,7 +271,9 @@ Single-file vanilla JS app. No build step.
 - **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
 - **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location. Displays icon emoji, temperature in JetBrains Mono, city + abbreviated state (US state lookup map), condition text. Polls every 10 minutes. Hidden entirely on mobile (`≤640px`).
 - **Dynamic favicon:** `updateFavicon()` called on every poll. Swaps among `favicon.svg` (green), `favicon-degraded.svg` (amber), `favicon-offline.svg` (red), `favicon-maintenance.svg` (grey) based on service states. Maintenance-mode services excluded from offline/degraded check.
-- **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 90s safety timeout.
+- **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 90s safety timeout. There is no Apply button; every non-restart outcome re-enables the Check button.
+- **Mobile sidebar:** `index.html`, `history.html`, and `status-pages.html` all carry the same `.menu-btn` / `.sidebar-backdrop` / `openSidebar()` / `closeSidebar()` set. At `≤640px` the sidebar slides off-screen, so any new authed page needs the menu button or its nav and Sign out become unreachable on phones.
+- **Error handling on saves:** `submitSvc()` and `saveSettings()` check `res.ok` and keep the modal open with the server's `error` message on failure (an expired session used to close the settings modal and silently drop the edits).
 
 ### Settings Modal
 
@@ -282,11 +287,11 @@ Tabbed layout with eight panels: **General · Account · Weather · Notification
 
 ### Categories Tab
 
-Categories can be created, edited inline, and deleted. Each row has a pencil button that loads its name, color, and parent into the Add form; the primary button switches to "Save" and a Cancel button appears. The category id (derived from the name) is kept stable across renames so services referencing it via `svc.cat` are not orphaned. The parent select is filtered to prevent self-parenting and disabled entirely when editing a category that has subcategories.
+Categories can be created, edited inline, and deleted. Each row has a pencil button that loads its name, color, and parent into the Add form; the primary button switches to "Save" and a Cancel button appears. The category id is derived from the name as a `[a-z0-9-]` slug (punctuation collapses to `-`; an empty result falls back to `cat-<timestamp>`) and is kept stable across renames so services referencing it via `svc.cat` are not orphaned. Filter handlers read the id from `data-filter` rather than interpolating it into an inline JS string. The parent select is filtered to prevent self-parenting and disabled entirely when editing a category that has subcategories.
 
 ### Color System
 
-Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pink`, `slate`) or any `#rrggbb` hex. `getColors(colorKey)` returns `{ card, icon, pip }` — hex colors use `hex + '22'` for the icon background (8-digit hex alpha).
+Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pink`, `slate`) or any `#rrggbb` hex. `getColors(colorKey)` returns `{ card, icon, pip }` — hex colors use `hex + '22'` for the icon background (8-digit hex alpha). `COLOR_CSS` in `index.html` and `PRESETS` in `history.html` must list the same preset names, or a category renders in different colors on the two pages.
 
 ### Stats Row
 
@@ -300,14 +305,14 @@ Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). L
 
 ### List View (Atlassian-style)
 
-- All services displayed as rows with a day-by-day bar strip (bar height = uptime %, coloured green/amber/red/grey)
-- Current status pip, avg uptime label, incident count
+- All services displayed as rows with a day-by-day bar strip (uniform full-height pills; colour encodes uptime: green/amber/red/grey)
+- Current status pip (green/amber/red/slate/blue for pending/dim grey for disabled), avg uptime label, incident count (offline + degraded transitions in range)
 - Tooltip on each bar showing date + uptime %
 - Click a row to expand the detail panel (click again to close)
 
 ### Detail Panel (Downdetector-style)
 
-- Metric cards: avg uptime, incidents, best streak (consecutive 100% days)
+- Metric cards: avg uptime, incidents, best streak (consecutive periods at ≥ 99.9% uptime)
 - Canvas area/line chart of daily uptime % for the selected time range
 - Per-service event log (offline, degraded, recovery, maintenance)
 
@@ -356,7 +361,7 @@ Flow:
 
 Status mapping: `online → online`, `stopped / stopping → offline`, anything else (`errored`, `launching`, `one-launch-status`) → `degraded`.
 
-- **Config:** `pm2-agent/ecosystem.config.js` — set `DASHBOARD_URL`, `REPORT_API_KEY` (from Settings → API Key), and optional `AGENT_NAME` (defaults to `os.hostname()`).
+- **Config:** `pm2-agent/ecosystem.config.js` — set `DASHBOARD_URL`, `REPORT_API_KEY` (from Settings → API Key), and optional `AGENT_NAME` (defaults to `os.hostname()`). `POLL_INTERVAL_MS` is clamped to ≥ 1000 in both agents (an unparseable value used to become `setInterval(fn, NaN)`, a 1ms busy loop).
 - **Auto-update:** `pm2-agent/update-agent.sh` — compares local vs remote git SHA, pulls + `pm2 restart` only if changed. Add to cron: `*/15 * * * * bash ~/homelab-dashboard/pm2-agent/update-agent.sh`.
 - **No more `PM2_MAP`** — the mapping lives in the dashboard UI as a dropdown on each service's modal. Upgrading an existing PM2 agent host requires re-mapping each service once via the modal.
 
@@ -415,9 +420,11 @@ Scoped to containers with label `com.centurylinklabs.watchtower.scope=homelab`. 
 
 **Gotcha:** enabling `WATCHTOWER_HTTP_API_UPDATE=true` disables periodic polling by default. `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true` must also be set to keep the 5-minute poll alive alongside the HTTP API. Without it, Watchtower logs `Periodic runs are not enabled.` and images only refresh via one-click updates.
 
+The compose file also forwards `SESSION_SECRET` and `VAPID_CONTACT` from `.env` into the dashboard container (blank = server defaults). Compose only uses `.env` for `${}` interpolation, so a variable that isn't listed under `environment:` never reaches the process.
+
 ### First-Run Setup
 
-On first start with no `data/auth.json`, the app redirects to `/setup` for account creation. After that, it redirects to `/login`. Setup page is locked once an account exists.
+On first start with no `data/auth.json`, the app redirects to `/setup` for account creation. After that, it redirects to `/login`. Setup page is locked once an account exists. Because the production image sets `NODE_ENV=production` (secure cookie), first-run setup and login must happen over HTTPS (the Cloudflare hostname); plain `http://<nas-ip>:55964` will not keep a session. The login and setup pages inline their CSS/JS but do pull the Sora/JetBrains Mono stylesheet from Google Fonts, so they degrade to `sans-serif` offline.
 
 ---
 

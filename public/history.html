@@ -18,7 +18,6 @@
       --bg-card:   #1e1c18;
       --bg-cardh:  #232019;
       --bg-hi:     #2c2922;
-      --bg-modal:  #1a1815;
 
       --tp:  #ede8d5;
       --ts:  #7a7165;
@@ -32,8 +31,6 @@
       --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
       --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
       --blue:    #5285b8; --blue-bg:   rgba(82,133,184,.13);
-      --purple:  #7a60b8; --purple-bg: rgba(122,96,184,.13);
-      --pink:    #b85888; --pink-bg:   rgba(184,88,136,.13);
       --slate:   #7a8a9e; --slate-bg:  rgba(122,138,158,.13);
 
       --sw: 200px;
@@ -166,6 +163,7 @@
     .status-pip.bad   { background: var(--red);   box-shadow: 0 0 0 3px var(--red-bg); }
     .status-pip.maint { background: var(--slate); box-shadow: 0 0 0 3px var(--slate-bg); }
     .status-pip.pending { background: var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); }
+    .status-pip.disabled { background: var(--tm); }
 
     /* ─── Detail panel (Downdetector-style) ─── */
     .detail-panel { background: var(--bg-surf); border: 1px solid var(--b1);
@@ -203,7 +201,6 @@
       font-size: 10px; color: var(--tm); margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
 
     /* ─── Event log ─── */
-    .event-log { }
     .event-empty { font-size: 12px; color: var(--ts); padding: 16px 0; text-align: center; }
     .event-item { display: flex; align-items: flex-start; gap: 14px; padding: 11px 0;
       border-bottom: 1px solid var(--b0); }
@@ -228,6 +225,15 @@
     .no-data-sub { font-size: 11px; margin-top: 4px; color: var(--tm); }
 
     /* ─── Responsive ─── */
+    .sidebar-backdrop { display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.55); z-index: 199; }
+    .sidebar-backdrop.show { display: block; }
+    .menu-btn { display: none; background: none; border: 1px solid var(--b0);
+      border-radius: 6px; color: var(--ts); cursor: pointer; padding: 6px 10px;
+      font-size: 17px; line-height: 1; transition: all .15s; flex-shrink: 0; }
+    .menu-btn:hover { color: var(--tp); border-color: var(--b1); }
+    .hdr-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
     @media (max-width: 900px) {
       .summary-row { grid-template-columns: repeat(2, 1fr); }
       .metric-row  { grid-template-columns: repeat(2, 1fr); }
@@ -236,6 +242,8 @@
       .sidebar { transform: translateX(-100%); transition: transform .25s; }
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
+      .menu-btn { display: inline-flex; align-items: center; justify-content: center; }
+      .hdr { align-items: center; }
       .hdr, .controls, .content { padding-left: 18px; padding-right: 18px; }
       .summary-row { grid-template-columns: 1fr 1fr; }
       .metric-row  { grid-template-columns: 1fr 1fr; }
@@ -245,6 +253,8 @@
   </style>
 </head>
 <body>
+
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
 
 <!-- ══════════════ SIDEBAR ══════════════ -->
 <nav class="sidebar" id="sidebar">
@@ -285,8 +295,11 @@
 
   <div class="hdr">
     <div class="hdr-l">
-      <h1>Uptime <b>History</b></h1>
-      <div class="hdr-sub" id="hdr-sub">Loading data…</div>
+      <button class="menu-btn" onclick="openSidebar()" aria-label="Menu">≡</button>
+      <div>
+        <h1>Uptime <b>History</b></h1>
+        <div class="hdr-sub" id="hdr-sub">Loading data…</div>
+      </div>
     </div>
   </div>
 
@@ -316,7 +329,7 @@
       <div class="sum-card">
         <div class="sum-lbl">Incidents</div>
         <div class="sum-val" id="sum-incidents">—</div>
-        <div class="sum-sub">offline events</div>
+        <div class="sum-sub">offline or degraded events</div>
       </div>
       <div class="sum-card">
         <div class="sum-lbl">Services Tracked</div>
@@ -447,6 +460,7 @@ function statusClass(s) {
   if (s === 'degraded')    return 'warn';
   if (s === 'maintenance') return 'maint';
   if (s === 'pending')     return 'pending';
+  if (s === 'disabled')    return 'disabled';
   return 'bad';
 }
 
@@ -470,12 +484,14 @@ function fmtDate(iso) {
 
 function fmtDateShort(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // Daily keys are UTC calendar days (server TODAY_KEY); format in UTC so the
+  // label matches the bucket instead of slipping a day west of UTC.
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function fmtHour(tsHour) {
-  // tsHour is 'YYYY-MM-DDTHH' — format as '2pm', '12am', etc.
-  const d = new Date(tsHour + ':00:00');
+  // tsHour is 'YYYY-MM-DDTHH' in UTC (server HOUR_KEY) — parse as UTC, display local.
+  const d = new Date(tsHour + ':00:00Z');
   return d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
 }
 
@@ -669,7 +685,9 @@ function renderDetail(svc) {
         <div class="detail-status">Current status: <span style="color:${
           svc.currentStatus === 'online' ? 'var(--green)' :
           svc.currentStatus === 'degraded' ? 'var(--amber)' :
-          svc.currentStatus === 'maintenance' ? 'var(--slate)' : 'var(--red)'
+          svc.currentStatus === 'maintenance' ? 'var(--slate)' :
+          svc.currentStatus === 'pending' ? 'var(--blue)' :
+          svc.currentStatus === 'disabled' ? 'var(--tm)' : 'var(--red)'
         }">${statusLabel}</span></div>
       </div>
       <button class="detail-close" onclick="selectService('${esc(svc.id)}')">✕ Close</button>
@@ -846,9 +864,21 @@ function renderEvents(el, events, showSvc = false) {
   }).join('');
 }
 
+// ─── Sidebar (mobile) ─────────────────────────────────────────────────────────
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 async function logout() {
-  await fetch('/api/logout', { method: 'POST' });
+  try { await fetch('/api/logout', { method: 'POST' }); } catch {}
   window.location.href = '/login';
 }
 

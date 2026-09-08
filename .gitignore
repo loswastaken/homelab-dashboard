@@ -6,13 +6,16 @@ docker-agent/data/
 
 # Live data lives in the NAS volume, not in the repo.
 # The committed data/services.json is a seed bundled into the Docker image.
-# If your seed contains sensitive URLs, uncomment the line below:
-# data/services.json
+# Keep it blank rather than ignoring it: the Dockerfile COPYs it, so the
+# image build fails if it is missing from the checkout.
 
-# Secrets generated at runtime — never commit.
+# Secrets and runtime state — never commit.
 data/auth.json
 data/vapid.json
 data/push-subscriptions.json
+data/sessions/
+data/*.tmp
+data/services.json.corrupt-*
 
 # Local env overrides (Watchtower token, etc.) — see .env.example.
 .env

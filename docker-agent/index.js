@@ -6,7 +6,7 @@ const http = require('http');
 const https = require('https');
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:55964';
-const POLL_MS       = parseInt(process.env.POLL_INTERVAL_MS || '30000', 10);
+const POLL_MS       = Math.max(1000, parseInt(process.env.POLL_INTERVAL_MS, 10) || 30000);
 const API_KEY       = process.env.REPORT_API_KEY || '';
 const AGENT_NAME    = process.env.AGENT_NAME || os.hostname() || 'docker-agent';
 
