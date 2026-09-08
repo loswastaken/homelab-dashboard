@@ -14,7 +14,7 @@ const PORT      = process.env.PORT || 55964;
 const BUILD_SHA = process.env.BUILD_SHA || 'dev';
 const SERVER_STARTED_AT = Date.now();
 const REPO      = 'loswastaken/homelab-dashboard';
-const DATA_DIR  = path.join(__dirname, 'data');
+const DATA_DIR  = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'services.json');
 const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
 const VAPID_FILE = path.join(DATA_DIR, 'vapid.json');
@@ -86,6 +86,9 @@ function defaults() {
       degradedEscalateCount: 3,
       degradedEscalateWindowMinutes: 5,
       slowThresholdMs: 0,
+      defaultFolder:   '',      // '' = All services; otherwise a category id
+      hideEmptyFolders: false,
+      compactHive:     false,
     },
     categories:  [],
     services:    [],
@@ -105,6 +108,10 @@ function migrateData(data) {
   if (!Array.isArray(data.pm2Agents))    data.pm2Agents    = [];
   if (!Array.isArray(data.dockerAgents)) data.dockerAgents = [];
   data.settings = { ...defaults().settings, ...(data.settings || {}) };
+  for (const page of data.statusPages) {
+    if (page.visibility !== 'private') page.visibility = 'public';
+    if (!page.views || typeof page.views !== 'object' || Array.isArray(page.views)) page.views = {};
+  }
   // The slow-response path used to track its own streak with its own threshold.
   // Both have been folded into the unified degradedStreak / degradedEscalateCount
   // pair; drop the stale fields so they can't drift back into the saved file.
@@ -407,6 +414,7 @@ app.post('/api/logout', (req, res) => {
 // ─── Status pages helpers (public-facing) ───────────────────────────────────
 
 const RESERVED_SLUGS = new Set([
+  'uptime', 'settings',
   'api', 'login', 'logout', 'setup', 'static', 'public', 'status',
   'status-pages', 'admin', 'history', 'new', 'edit', 'index'
 ]);
@@ -420,6 +428,29 @@ function validateSlug(slug, pages, selfId) {
   const clash = (pages || []).find(p => p.slug === s && p.id !== selfId);
   if (clash) return { ok: false, error: 'Slug is already in use' };
   return { ok: true, value: s };
+}
+
+// Page-load counter for the status pages screen ("{n} views"). Keyed by UTC
+// day so the rolling 30-day figure survives restarts; pruned on every write.
+function recordStatusPageView(page) {
+  if (!page.views || typeof page.views !== 'object') page.views = {};
+  const today = TODAY_KEY();
+  page.views[today] = (page.views[today] || 0) + 1;
+  const cutoff = new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10);
+  for (const k of Object.keys(page.views)) if (k < cutoff) delete page.views[k];
+}
+
+function statusPageViews30d(page) {
+  if (!page.views || typeof page.views !== 'object') return 0;
+  const cutoff = new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10);
+  let n = 0;
+  for (const [k, v] of Object.entries(page.views)) if (k >= cutoff) n += (parseInt(v, 10) || 0);
+  return n;
+}
+
+function statusPageForClient(page) {
+  const { views, ...rest } = page;
+  return { ...rest, visibility: page.visibility === 'private' ? 'private' : 'public', views30d: statusPageViews30d(page) };
 }
 
 function findStatusPageBySlug(d, slug) {
@@ -469,6 +500,14 @@ app.get('/status/:slug', (req, res) => {
   const slug = (req.params.slug || '').toLowerCase();
   const d = load();
   const page = findStatusPageBySlug(d, slug);
+  if (page && page.visibility === 'private' && !req.session?.authenticated) {
+    return res.redirect('/login');
+  }
+  if (page) {
+    // Count the HTML load only (not the 60s API auto-refresh) so a visit is one view.
+    recordStatusPageView(page);
+    save(d);
+  }
   if (!page) {
     return res.status(404).send(
       '<!doctype html><meta charset="utf-8"><title>Status page not found</title>' +
@@ -486,6 +525,9 @@ app.get('/api/public/status/:slug', (req, res) => {
   const d = load();
   const page = findStatusPageBySlug(d, slug);
   if (!page) return res.status(404).json({ error: 'Status page not found' });
+  if (page.visibility === 'private' && !req.session?.authenticated) {
+    return res.status(401).json({ error: 'This status page is private — sign in to view it' });
+  }
 
   const catsById = {};
   for (const c of (d.categories || [])) catsById[c.id] = c;
@@ -563,6 +605,21 @@ app.use((req, res, next) => {
 
   next();
 });
+
+// ─── SPA routes (protected) ──────────────────────────────────────────────────
+//
+// The authed UI is a single page (public/index.html) with client-side screen
+// switching; these paths make each screen linkable and reload-safe. The
+// exact-path '/status' management screen is distinct from the public
+// '/status/:slug' route registered before the gate.
+
+const SPA_INDEX = path.join(__dirname, 'public', 'index.html');
+for (const route of ['/', '/uptime', '/status', '/settings']) {
+  app.get(route, (_, res) => res.sendFile(SPA_INDEX));
+}
+// Old standalone pages — keep bookmarks working.
+app.get('/history.html',      (_, res) => res.redirect(301, '/uptime'));
+app.get('/status-pages.html', (_, res) => res.redirect(301, '/status'));
 
 // ─── Static files (protected) ────────────────────────────────────────────────
 
@@ -1086,7 +1143,12 @@ function serviceForClient(svc) {
 
 app.get('/api/services', (_, res) => {
   const d = load();
-  res.json({ ...d, services: d.services.map(serviceForClient), version: BUILD_SHA.slice(0, 7) });
+  res.json({
+    ...d,
+    services:    d.services.map(serviceForClient),
+    statusPages: (d.statusPages || []).map(statusPageForClient),
+    version:     BUILD_SHA.slice(0, 7)
+  });
 });
 
 app.get('/api/weather', async (req, res) => {
@@ -1497,6 +1559,16 @@ app.get('/api/auth/api-key', (_, res) => {
   res.json({ apiKey: auth.apiKey || '' });
 });
 
+// Rotate the report API key. Every running agent keeps its old key and will
+// start getting 401s until it is updated — the UI confirms before calling this.
+app.post('/api/auth/api-key/regenerate', (_, res) => {
+  const auth = loadAuth();
+  if (!auth) return res.status(500).json({ error: 'Auth store missing' });
+  auth.apiKey = crypto.randomBytes(24).toString('hex');
+  saveAuth(auth);
+  res.json({ apiKey: auth.apiKey });
+});
+
 app.put('/api/auth', asyncRoute(async (req, res) => {
   const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword    : '';
   const newUsername     = typeof req.body?.newUsername     === 'string' ? req.body.newUsername.trim() : '';
@@ -1530,7 +1602,35 @@ app.get('/api/config', (_, res) => {
 // Settings a client may write. Anything outside this list is dropped so a
 // stray field can't be persisted into services.json and re-served forever.
 const SETTINGS_EDITABLE_FIELDS = Object.keys(defaults().settings);
-const SETTINGS_STRING_FIELDS   = ['siteTitle', 'displayName', 'serverLabel', 'nasIp'];
+const SETTINGS_STRING_FIELDS   = ['siteTitle', 'displayName', 'serverLabel', 'nasIp', 'defaultFolder'];
+
+// Categories are stored in the order the client sends them — array order is
+// the display order (the Folders tab drag-reorders it). Each entry is coerced
+// to { id, name, color, parentId? } so a malformed body can't persist junk
+// that the sidebar and the public status page would then render.
+function sanitizeCategories(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+    const id = String(raw.id ?? '').trim();
+    const name = String(raw.name ?? '').trim();
+    if (!id || !name || seen.has(id)) continue;
+    seen.add(id);
+    let color = String(raw.color ?? 'green').trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(color) && !/^[a-z]{3,12}$/.test(color)) color = 'green';
+    const entry = { id, name: name.slice(0, 60), color };
+    const parentId = raw.parentId != null ? String(raw.parentId).trim() : '';
+    if (parentId && parentId !== id) entry.parentId = parentId;
+    out.push(entry);
+  }
+  // Drop parent references that don't resolve to a top-level category.
+  const ids = new Set(out.map(c => c.id));
+  for (const c of out) {
+    if (c.parentId && (!ids.has(c.parentId) || out.find(p => p.id === c.parentId)?.parentId)) delete c.parentId;
+  }
+  return out;
+}
 
 function intSetting(v, fallback, min) {
   const n = parseInt(v, 10);
@@ -1566,9 +1666,12 @@ app.put('/api/config', (req, res) => {
     if (incoming.degradedEscalateCount         !== undefined) incoming.degradedEscalateCount         = intSetting(incoming.degradedEscalateCount, 3, 1);
     if (incoming.degradedEscalateWindowMinutes !== undefined) incoming.degradedEscalateWindowMinutes = intSetting(incoming.degradedEscalateWindowMinutes, 5, 1);
     if (incoming.slowThresholdMs !== undefined) incoming.slowThresholdMs = intSetting(incoming.slowThresholdMs, 0, 0);
+    if (incoming.hideEmptyFolders !== undefined) incoming.hideEmptyFolders = !!incoming.hideEmptyFolders;
+    if (incoming.compactHive      !== undefined) incoming.compactHive      = !!incoming.compactHive;
     d.settings = { ...d.settings, ...incoming };
   }
-  if (Array.isArray(body.categories)) d.categories = body.categories;
+  if (Array.isArray(body.categories)) d.categories = sanitizeCategories(body.categories);
+  if (d.settings.defaultFolder && !d.categories.find(c => c.id === d.settings.defaultFolder)) d.settings.defaultFolder = '';
   save(d);
   // Reschedule AFTER the save: scheduleChecks() reads checkInterval from
   // disk, so calling it before save() re-armed the timer with the old value
@@ -1804,13 +1907,17 @@ function normalizeStatusPageInput(body, existingPages, selfId) {
   }
   if (body.showEventLog !== undefined) out.showEventLog = !!body.showEventLog;
   if (body.showOverallBanner !== undefined) out.showOverallBanner = !!body.showOverallBanner;
+  if (body.visibility !== undefined) {
+    if (body.visibility !== 'public' && body.visibility !== 'private') errors.push('visibility must be "public" or "private"');
+    else out.visibility = body.visibility;
+  }
 
   return { errors, data: out };
 }
 
 app.get('/api/status-pages', (_, res) => {
   const d = load();
-  res.json({ pages: d.statusPages || [] });
+  res.json({ pages: (d.statusPages || []).map(statusPageForClient) });
 });
 
 app.post('/api/status-pages', (req, res) => {
@@ -1831,12 +1938,14 @@ app.post('/api/status-pages', (req, res) => {
     includedCategoryIds: data.includedCategoryIds || [],
     showEventLog:        data.showEventLog !== false,
     showOverallBanner:   data.showOverallBanner !== false,
+    visibility:          data.visibility || 'public',
+    views:               {},
     createdAt:           now,
     updatedAt:           now
   };
   d.statusPages.push(page);
   save(d);
-  res.status(201).json({ page });
+  res.status(201).json({ page: statusPageForClient(page) });
 });
 
 app.put('/api/status-pages/:id', (req, res) => {
@@ -1851,7 +1960,7 @@ app.put('/api/status-pages/:id', (req, res) => {
   Object.assign(target, data);
   target.updatedAt = new Date().toISOString();
   save(d);
-  res.json({ page: target });
+  res.json({ page: statusPageForClient(target) });
 });
 
 app.delete('/api/status-pages/:id', (req, res) => {

@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-A self-hosted homelab service monitor dashboard built with Node.js/Express (server) and vanilla JS (no framework, single `index.html`). Runs as a Docker container on a Synology DS423+ NAS. Publicly accessible via Cloudflare Tunnel.
+A self-hosted homelab service monitor dashboard built with Node.js/Express (server) and vanilla JS (no framework, no build step). The authed UI is a single-page app (`public/index.html` + `app.css` + `app.js` + one module per screen under `public/screens/`) implementing the "Folder rail + hive" redesign (Sept 2026). Runs as a Docker container on a Synology DS423+ NAS. Publicly accessible via Cloudflare Tunnel.
 
 - **Repo:** `https://github.com/loswastaken/homelab-dashboard`
 - **Registry:** `ghcr.io/loswastaken/homelab-dashboard:latest`
@@ -83,6 +83,8 @@ sudo docker compose up -d
 ### Server (`server.js`)
 
 - Express app, plain Node `http`/`https` for health checks
+- **Data dir:** `data/` next to `server.js`, overridable with the `DATA_DIR` env var (used for local dev/test instances so the repo's own `data/` stays untouched: `PORT=55970 DATA_DIR=/tmp/somewhere node server.js`).
+- **SPA routes:** `/`, `/uptime`, `/status`, `/settings` all serve `public/index.html` (registered after the auth gate, before `express.static`). `/history.html` and `/status-pages.html` 301 to `/uptime` and `/status` for old bookmarks. The exact-path `/status` (management screen, auth) is distinct from the public `/status/:slug` route registered before the gate.
 - **Auth:** bcryptjs (cost 12), express-session + session-file-store (7-day TTL), persisted in `data/sessions/`
 - **Secrets:** `data/auth.json` holds `sessionSecret`, `apiKey`, `username`, `passwordHash` — generated on first start. The session secret can be overridden by setting the `SESSION_SECRET` env var (preferred in production so rotating the secret doesn't require touching `data/auth.json`).
 - **Rate limiting:** 5 failed login attempts per IP → 15-minute lockout (in-memory Map, resets on restart). Same shape applied to `/api/services/:id/report`: 50 bad API-key attempts per IP per 15 min → 429.
@@ -111,7 +113,8 @@ sudo docker compose up -d
 | `POST` | `/api/services/:id/resolve` | Force status to online |
 | `POST` | `/api/services/:id/pin` | Toggle pin to top of grid (`pinnedAt` = timestamp or null) |
 | `PUT` | `/api/auth` | Change username/password (requires current password) |
-| `PUT` | `/api/config` | Save settings + categories |
+| `POST` | `/api/auth/api-key/regenerate` | Rotate the report API key (returns the new key; every running agent must be updated) |
+| `PUT` | `/api/config` | Save settings + categories. Categories are sanitized (`sanitizeCategories()`) and stored in the order sent — **array order is display order** (Settings → Folders drag-reorder). Also clears `defaultFolder` if it no longer resolves. |
 | `POST` | `/api/setup` | First-run account creation (locked after use) |
 | `POST` | `/api/login` | Authenticate |
 | `POST` | `/api/logout` | Destroy session |
@@ -123,12 +126,12 @@ sudo docker compose up -d
 | `POST` | `/api/push/test` | Send a test push notification to all subscribers |
 | `POST` | `/api/ifttt/test` | Send a test event to the configured IFTTT Maker webhook (accepts unsaved `webhookKey`/`eventName`) |
 | `POST` | `/api/ntfy/test` | Send a test notification to the configured ntfy topic (accepts unsaved `topic`) |
-| `GET` | `/api/status-pages` | List all configured public status pages (auth) |
+| `GET` | `/api/status-pages` | List all configured status pages (auth). Pages are shaped by `statusPageForClient()`: raw `views` map dropped, `views30d` + `visibility` added. Same shape is embedded in `GET /api/services` |
 | `POST` | `/api/status-pages` | Create a new status page (auth) |
 | `PUT` | `/api/status-pages/:id` | Update a status page (auth) |
 | `DELETE` | `/api/status-pages/:id` | Delete a status page (auth) |
-| `GET` | `/status/:slug` | Serves the public status page HTML (**no auth**) |
-| `GET` | `/api/public/status/:slug` | Sanitized public status data — no service URLs, no event notes, categories only if explicitly revealed (**no auth**) |
+| `GET` | `/status/:slug` | Serves the public status page HTML (**no auth** for `visibility: 'public'`; `private` pages redirect to `/login` without a session). Each HTML load bumps the page's per-day view counter (`recordStatusPageView`) |
+| `GET` | `/api/public/status/:slug` | Sanitized public status data — no service URLs, no event notes, categories only if explicitly revealed (**no auth**; 401 for private pages without a session) |
 | `POST` | `/api/pm2/agents/register` | Agent registers itself (idempotent by hostname). **X-Api-Key** |
 | `POST` | `/api/pm2/agents/:id/discovery` | Agent pushes current process list + updates `lastSeen`. **X-Api-Key** |
 | `GET` | `/api/pm2/agents/:id/monitored` | Agent pulls `[{ serviceId, name }]` to report on. **X-Api-Key** |
@@ -234,15 +237,16 @@ Added to each service object for the uptime history page:
 Public-facing, unauthenticated uptime pages (Uptime Kuma style) served at `/status/<slug>`.
 
 - **Data model:** top-level `statusPages: []` in `data/services.json`. Each page:
-  `{ id, slug, name, description, serviceIds, includedCategoryIds, showEventLog, showOverallBanner, createdAt, updatedAt }`.
-- **Slug rules:** `[a-z0-9]+(-[a-z0-9]+)*`, 2–40 chars, unique, must not collide with reserved words (`api`, `login`, `logout`, `setup`, `static`, `public`, `status`, `status-pages`, `admin`, `history`, `new`, `edit`, `index`). Enforced by `validateSlug()` in `server.js`.
+  `{ id, slug, name, description, serviceIds, includedCategoryIds, showEventLog, showOverallBanner, visibility: 'public'|'private', views: { 'YYYY-MM-DD': n }, createdAt, updatedAt }`.
+  `visibility` (default `public`) gates both the HTML and the public API behind a session when `private`. `views` is a per-UTC-day counter of HTML loads, pruned to 30 days on write; clients get the derived `views30d` instead (the Status pages screen shows it as `{n} views`). `migrateData()` backfills both fields.
+- **Slug rules:** `[a-z0-9]+(-[a-z0-9]+)*`, 2–40 chars, unique, must not collide with reserved words (`api`, `login`, `logout`, `setup`, `static`, `public`, `status`, `status-pages`, `admin`, `history`, `uptime`, `settings`, `new`, `edit`, `index`). Enforced by `validateSlug()` in `server.js`; mirrored client-side in `public/screens/status.js`.
 - **Routing:** `/status/:slug` and `/api/public/status/:slug` are registered **before** the auth gate (`server.js` ~line 233) so no session is required. The auth gate itself does NOT special-case these paths — route order is what lets them through.
 - **Privacy / sanitization:** `sanitizeServiceForPublic()` in `server.js` strips `url`, `port`, `response`, `lastChecked`, raw `history`, `hourlyHistory`, and `pinnedAt`. Event `note` bodies are always dropped; only `{ ts, type }` is emitted. Category names are only included when the category id is in the page's `includedCategoryIds`.
 - **Overall status:** `computeOverallStatus()` — `outage` if any included service is offline, `degraded` if any degraded, `maintenance` if all are in maintenance, else `operational`.
-- **Management UI:** `public/status-pages.html` — auth-gated page listing all status pages as cards with an editor modal (name, slug, description, per-category grouped service picker, reveal-category-name toggles, banner/log toggles). Linked from the "Overview" nav section in both `index.html` and `history.html`.
-- **Public view:** `public/status-page.html` — single standalone file. Reads slug from `location.pathname`, fetches `/api/public/status/:slug`, auto-refreshes every 60s. 24h/7d/30d bar-strip toggle (default 30d; 24h uses hourly data, 7d/30d use daily), expandable per-service detail with canvas chart + sanitized event log, optional global incident log. Uses the same CSS tokens as the rest of the app, inlined.
+- **Management UI:** the `/status` screen (`public/screens/status.js`) — page cards (initial tile, URL, visibility chip, `{n} services` / `{uptime} 30d` / `{views} views` chips, Edit / Copy link / Open / Delete) on the left and a **live public preview** on the right that renders the selected page from the dashboard's own data (never the public API). Editor modal: name, slug (live validation), description, visibility, folder-grouped service picker with reveal-folder-name toggles, banner/log toggles.
+- **Public view:** `public/status-page.html` — single standalone file (inline CSS/JS; it cannot load `/app.css` or `/app.js` because static assets are auth-gated). Reads slug from `location.pathname`, fetches `/api/public/status/:slug`, auto-refreshes every 60s. 24h/7d/30d pill toggle (default 30d; 24h uses hourly data, 7d/30d use daily), expandable per-service detail with canvas chart + sanitized event log, optional global incident log. Styled to match the preview pane in the management screen (state-colored banner, tile + pill-bar rows).
 - **Freshness indicators:** a manual ↺ refresh button and an "Updated Xs ago" label sit next to the range toggle and under the banner. Both are driven by a client-side `lastRefreshed` timestamp (set on each successful fetch) and a 10s ticker that keeps the relative labels live between polls. The banner meta deliberately does NOT use `page.updatedAt` (which is the admin edit time, not data freshness).
-- **Uptime Kuma aesthetic:** centered ~960px container, big banner at top (green/amber/red/blue-grey), stacked service rows with uniform pill-shaped bars that fill the strip. Shorter histories are left-padded with empty placeholder slots so every row keeps the same footprint. Rounded 10–12px corners throughout.
+- **Layout:** centered ~760px column, state-colored banner (tint + 1px inset ring, pulsing dot), stacked service rows with pill-shaped bars whose color encodes state and height encodes uptime. Shorter histories are left-padded with empty placeholder slots so every row keeps the same footprint. 18–24px radii throughout, no drop shadows.
 - **Timestamps:** `dailyHistory.date` and `hourlyHistory.ts` are keyed in **UTC** by the server (`TODAY_KEY()` / `HOUR_KEY()` use `toISOString()`, ignoring the container's `TZ`). Both `status-page.html` and `history.html` therefore format daily labels with `timeZone: 'UTC'` and parse hourly keys with a trailing `Z` before converting to local time. Without this, viewers west of UTC saw every daily bar labelled one day early and hourly labels shifted by the UTC offset.
 
 ### Data Files
@@ -257,77 +261,77 @@ All JSON data files are written via `writeFileAtomic()` (write `.tmp`, then `ren
 
 ---
 
-## Frontend (`public/index.html`)
+## Frontend — single-page app (`public/`)
 
-Single-file vanilla JS app. No build step.
+Vanilla JS, no build step. One shell page plus one module per screen. Design language: **"Folder rail + hive"** (see the Sept 2026 redesign handoff): a folder rail on the left that owns navigation *and* grouping, a bubble hive of the selected folder's services, and a detail rail on the right for the one selected service. Large radii (18–30px), pill buttons, spring easing, pulsing live dots, no drop shadows.
 
-### Key Design Decisions
+### Files
 
-- **Smart card updates:** Poll refreshes do NOT re-render the whole grid. Each service card has `data-id`. On poll, only cards whose `status` / `maintenance` / `pinnedAt` / `disabled` snapshot changed get replaced (with an amber flash animation). Unchanged cards are silently patched in-place (history ticks, uptime, response, last-checked, the pending placeholder). If the set or order of ids differs from what's rendered (add/delete/pin), the whole grid re-renders. Initial load and filter switches use a stagger `fadein` animation. **`onPollFire()` must call `fetchData(false)`** — it regressed to `true` twice through refactors, which made every auto-poll a full animated re-render and left the smart-patch path unreachable. Trade-off: cross-tab edits to name/desc/url etc. don't show until a state change or manual Refresh.
-- **`renderAll(fresh)`:** `fresh=true` = full re-render with animation (first load, filter switch, manual refresh). `fresh=false` = smart in-place patch.
-- **`doRefreshAll()`:** Calls `POST /api/check-all` first (triggers live pings), then `fetchData(true)`. The ↺ button spins and is disabled until complete. The endpoint only records history ticks when `?recordHistory=true` is passed — manual clicks omit it, so the 30-min `svc.history` bar, `dailyHistory`, and `hourlyHistory` are driven solely by the scheduled poll (which calls `checkAll()` directly with the `recordHistory=true` function default). This keeps the bar cadence tied to the configured `checkInterval` regardless of how often users click refresh. Only `svc.response` and `svc.lastChecked` update from manual checks — **status never does** (see the preview-mode note under degraded escalation; a status-mutating preview swallowed real recovery transitions and their notifications).
-- **Wall-clock-anchored refresh (commit `c2483cd`):** the dashboard countdown, the public status page auto-refresh, and the server `checkAll()` loop all self-schedule via `setTimeout` with the next fire computed as `Math.ceil(Date.now() / intervalMs) * intervalMs`. Consequences: opening the dashboard mid-cycle shows the real seconds to the next boundary, manual refreshes don't reset the schedule, and saving settings doesn't silently shift cadence.
-- **`prevStates` Map:** Tracks `"status|maintenance|pinnedAt|disabled"` snapshot per service ID for change detection.
-- **`tick()`:** Updates greeting and header clock every 30s, and is also called immediately after `fetchData` so the display name appears instantly on load.
-- **Weather header pill:** Uses Open-Meteo (`/api/weather`) with settings-driven location. Displays icon emoji, temperature in JetBrains Mono, city + abbreviated state (US state lookup map), condition text. Polls every 10 minutes. Hidden entirely on mobile (`≤640px`).
-- **Dynamic favicon:** `updateFavicon()` called on every poll. Swaps among `favicon.svg` (green), `favicon-degraded.svg` (amber), `favicon-offline.svg` (red), `favicon-maintenance.svg` (grey) based on service states. Maintenance-mode services excluded from offline/degraded check.
-- **One-click updates:** `checkForUpdates()` checks GitHub SHA; if an update is found it immediately calls `applyUpdate()` — no confirmation step. `waitForRestart()` polls `/api/services` every 3s and reloads only once the returned `version` SHA differs from the pre-update value. 8s initial delay + 90s safety timeout. There is no Apply button; every non-restart outcome re-enables the Check button.
-- **Mobile sidebar:** `index.html`, `history.html`, and `status-pages.html` all carry the same `.menu-btn` / `.sidebar-backdrop` / `openSidebar()` / `closeSidebar()` set. At `≤640px` the sidebar slides off-screen, so any new authed page needs the menu button or its nav and Sign out become unreachable on phones.
-- **Error handling on saves:** `submitSvc()` and `saveSettings()` check `res.ok` and keep the modal open with the server's `error` message on failure (an expired session used to close the settings modal and silently drop the edits).
+| File | Role |
+|------|------|
+| `index.html` | Shell only: sidebar markup, `#screen` root, `#modal-root`, `#toasts`; loads `app.css`, `app.js`, the four screen modules, then `App.boot()`. |
+| `app.css` | Design tokens (`:root` — accent/tint per hue, surface ladder, overlay ladder, text tokens, `--spring`) and every shared component class. Screen-only rules go in `screens/<name>.css`, never here. |
+| `app.js` | Core runtime: `App.state`, router, `/api/services` polling, `/api/history` cache, sidebar (folder rail), modals/toasts/confirm/prompt, the service add/edit modal, service actions, and all shared helpers. |
+| `screens/dashboard.js` | `/` — fleet ribbon header, bubble hive, detail rail. |
+| `screens/uptime.js` | `/uptime` — range switcher, stat pods, per-service bar rows, incident log. |
+| `screens/status.js` | `/status` — status page cards, live public preview, editor modal. |
+| `screens/settings.js` | `/settings` — tabbed settings form with dirty-state Save/Cancel. |
+| `status-page.html` | Public visitor page (standalone, inline CSS/JS — static assets are auth-gated). |
+| `login.html`, `setup.html` | Standalone auth pages on the same tokens (inline CSS/JS). |
+| `push-client.js`, `sw.js` | Web Push registration + service worker (unchanged). |
 
-### Settings Modal
+### Screen module API
 
-Tabbed layout with eight panels: **General · Account · Weather · Notifications · Alerts · Categories · API Key · Updates**. Introduced in commit `40341a7`; the **Alerts** tab (commit `71f3efe`) holds degraded-escalation and slow-response thresholds that used to live under General.
+```js
+App.registerScreen('uptime', {
+  title: 'Uptime history',      // document.title = `${title} · ${siteTitle}`
+  render(root, fresh) {},       // full render into #screen
+  onData(fresh) {},             // new poll data → patch in place (fresh=true after manual refresh / mutations)
+  onFolder() {}, onRange() {}, onSelect() {}, onTick() {}, onWeather() {},
+  async onLeave() { return true; }   // return false to block navigation (settings dirty guard)
+});
+```
+Routes are `App.ROUTES = { dashboard:'/', uptime:'/uptime', status:'/status', settings:'/settings' }` via `history.pushState`; `popstate` re-renders and honours `onLeave`. Global selection state lives in `App.state`: `folder` (shared by Dashboard and Uptime — intentional), `sel` (detail-rail service; clicking an uptime row selects it and jumps to the dashboard), `range` (`24h|7d|30d`, default 30d), `tab`, `page`.
 
-- Markup: `.settings-tab[data-tab="..."]` buttons in the header, `.settings-panel[data-panel="..."]` bodies. Tab strip scrolls horizontally on narrow screens.
-- `switchSettingsTab(tabId)` toggles the `.active` class on the matching tab/panel pair and shows/hides the shared footer based on the active panel's `data-footer` attribute.
-- `data-footer="hide"` on a panel hides the shared Cancel / Save Settings footer (used for tabs whose primary action lives inside the panel). Use sparingly: hiding the footer also hides Save for any pending changes made on other tabs before switching, which is why the Updates panel no longer uses it.
-- `openSettings()` resets to the General tab on every open.
-- The settings modal exists ONLY in `index.html`. `history.html` once carried a duplicated copy; it has been fully removed — do not reintroduce one there.
+### Data flow
 
-### Categories Tab
+- `App.fetchData(fresh)` → `GET /api/services` (services, categories, settings, statusPages, agents, version). Wall-clock-anchored poll (`Math.ceil(now / interval) * interval`) — **read-only**; the server loop drives ping cadence. `onPollFire` calls `fetchData(false)` so screens patch in place.
+- `App.fetchHistory(force)` → `GET /api/history` into `App.state.hist[id] = { dailyHistory, hourlyHistory, events }`. Fetched at boot, on manual refresh, when the status snapshot changes, every 5 min, and on every poll while the uptime screen is open.
+- `App.doRefreshAll()` = `POST /api/check-all` (server-side preview: response/lastChecked only, never status/ticks) + refetch both. Called by the Recheck button and after every mutation.
+- Weather: `App.weatherText()` (Open-Meteo via `/api/weather`, 10-min poll) is folded into the dashboard header sub-line: `checked 7:11 PM · every 60s · next in 32s · ☀ 59°F Boston`.
+- **Smart patching (dashboard):** bubbles carry `data-id`; on poll only bubbles whose `status|pinned|name|abbr|cat` snapshot changed are replaced (amber flash), others get their uptime text patched. Set/order changes trigger a full hive re-render with staggered `hl-in`.
 
-Categories can be created, edited inline, and deleted. Each row has a pencil button that loads its name, color, and parent into the Add form; the primary button switches to "Save" and a Cancel button appears. The category id is derived from the name as a `[a-z0-9-]` slug (punctuation collapses to `-`; an empty result falls back to `cat-<timestamp>`) and is kept stable across renames so services referencing it via `svc.cat` are not orphaned. Filter handlers read the id from `data-filter` rather than interpolating it into an inline JS string. The parent select is filtered to prevent self-parenting and disabled entirely when editing a category that has subcategories.
+### Status vocabulary
 
-### Color System
+`App.statusOf(svc)` → `online | degraded | offline | maintenance | pending | disabled` (disabled wins over maintenance wins over `svc.status`). Hues: online 158, degraded 75, offline 25, maintenance 265, pending 220, disabled = neutral grey. The fleet ribbon has five segments (online / degraded / offline / pending-if-any / paused) where **paused = maintenance + disabled**. Folder health sub-line counts degraded + offline only. The six stat tiles of the old dashboard are gone on purpose — do not reintroduce stat tiles on the dashboard.
 
-Categories support named presets (`blue`, `green`, `amber`, `red`, `purple`, `pink`, `slate`) or any `#rrggbb` hex. `getColors(colorKey)` returns `{ card, icon, pip }` — hex colors use `hex + '22'` for the icon background (8-digit hex alpha). `COLOR_CSS` in `index.html` and `PRESETS` in `history.html` must list the same preset names, or a category renders in different colors on the two pages.
+### History buckets
 
-### Stats Row
+`App.bucketsFor(id, range)` returns exactly `App.RANGES[range].slots` buckets (24 hourly / 28 six-hour, aggregated client-side from the 168 hourly entries / 30 daily), left-padded with `{ empty: true }`. `App.uptimeFor` is the tick-weighted mean over non-empty buckets. `App.barsHtml(buckets, {minH, maxH, lowH})` renders pill bars: healthy height scales 99% → `minH` up to 100% → `maxH`; degraded/offline sit at `lowH`; maintenance mid; empty dim. `App.buildIncidents(services, range)` pairs `offline|degraded` events with the next `recovery` (or maintenance toggle) into `{ severity: outage|degraded|maintenance, cause, startedAt, endedAt|null }`; open incidents render `open · {elapsed}`.
 
-Six cards in a `repeat(6, 1fr)` grid: **Services · Online · Degraded · Offline · Maintenance · Disabled**. "Services" count excludes disabled services. Maintenance count = active services with `maintenance: true`. Disabled count = services with `disabled: true`. Pending services count in `Services` only — they are not included in Online, Degraded, Offline, Maintenance, or Disabled tallies (pending is an unknown state, not a classified one).
+### Colors
 
----
+One accent formula rotated by hue: `App.acc(h) = oklch(0.80 0.13 h)`, `App.tint(h)` = same at alpha .14, `App.textOn(h) = oklch(0.86 0.11 h)`. Category colors are either a preset name (`App.PRESET_HUES = { green:158, amber:75, red:25, blue:240, purple:300, pink:340, slate:200 }`) or `#rrggbb`, which `App.hueFromHex()` converts to an OKLab hue so custom colors keep the fixed lightness/chroma. `App.folderHue(svc)` resolves a service's own category color. `status-page.html` and `login/setup.html` inline the same values.
 
-## Uptime History Page (`public/history.html`)
+### Folders (categories)
 
-Standalone page at `/history.html`. Auth-gated (redirects to `/login` on 401). Links from the sidebar "Uptime History" nav item. The sidebar's former Settings button was replaced with a **Back to Dashboard** link (routes to `/`) because a duplicated settings modal kept drifting from the dashboard's; that dead modal markup has since been deleted entirely. All settings editing lives in `index.html`.
+The data model is still `categories` (`{ id, name, color, parentId? }`, two levels max); the UI calls them **Folders**. Array order is display order everywhere (rail, selects, settings list) — nothing sorts alphabetically any more. Ids are `[a-z0-9-]` slugs derived from the name on create and kept stable on rename (services reference `svc.cat`). Deleting a parent deletes its subcategories. Settings: `defaultFolder` (rail selection on load), `hideEmptyFolders`, `compactHive` (146px bubbles).
 
-### List View (Atlassian-style)
+### Sidebar / responsive
 
-- All services displayed as rows with a day-by-day bar strip (uniform full-height pills; colour encodes uptime: green/amber/red/grey)
-- Current status pip (green/amber/red/slate/blue for pending/dim grey for disabled), avg uptime label, incident count (offline + degraded transitions in range)
-- Tooltip on each bar showing date + uptime %
-- Click a row to expand the detail panel (click again to close)
+The sidebar is sticky at ≥900px (250px, nav + folders with health rollups + server card + Sign out). At ≤900px it collapses to a **74px icon rail** (brand tile, nav glyphs, folder initials with count badges — amber when the folder needs a look, sign-out arrow); tapping the brand tile expands the full rail as an overlay with a backdrop (`App.expandRail/collapseRail`). Screens degrade via `flex-wrap`/`auto-fill` grids; uptime rows shrink and never wrap. `prefers-reduced-motion` disables the pulse and hover lifts. Nothing may cause horizontal page scroll.
 
-### Detail Panel (Downdetector-style)
+### Modals, dialogs, toasts
 
-- Metric cards: avg uptime, incidents, best streak (consecutive periods at ≥ 99.9% uptime)
-- Canvas area/line chart of daily uptime % for the selected time range
-- Per-service event log (offline, degraded, recovery, maintenance)
+`App.modal({ title, body, foot, cls })` (stackable overlays in `#modal-root`, Escape/backdrop close), `App.confirm()`, `App.prompt()`, `App.toast(msg, 'ok'|'err'|'warn')`. Toggles are buttons built by `App.toggleHtml(id, on, label, desc)` + `App.wireToggles(root, cb)` (`.toggle-row.on`). Never use `window.alert/confirm/prompt`.
 
-### Controls
+### Settings screen (`screens/settings.js`)
 
-- **Time range:** 30d / 7d / 24h segment buttons
-- **Service filter:** dropdown to narrow to a single service
-- Summary stats row: avg uptime across services, total incidents, tracked services count, best-uptime service
+Header `Cancel` / `Save settings` operate on a draft (settings + categories deep copy); Save is disabled when clean; `onLeave` and `beforeunload` guard unsaved changes. Tabs: **General** (name, site title, server label/IP, check interval, stale threshold, compact hive; Connected agents rename/delete) · **Account** (own `Update account` action → `PUT /api/auth`, not part of Save) · **Weather** · **Notifications** (Web Push / IFTTT / ntfy, each with enable toggle + test) · **Alerts** (streak threshold, escalation window, slow-response ms) · **Folders** (default folder, hide empty, drag-to-reorder list with Rename / Recolor / Delete, Add folder) · **API Key** (masked push endpoint with Reveal / Copy / Regenerate, PM2 + Docker install snippets; the key is fetched only on reveal/copy and never cached) · **Updates** (build SHA, Check for updates → auto-apply → wait for the SHA to change → reload). The prototype's fictional fields (2FA, session length, weather provider, Discord webhook, email, quiet hours, batch window, API scopes, release channel, release notes) were deliberately **not** implemented — the backend has no such features.
 
-### Event Log
+### Uptime screen (`screens/uptime.js`)
 
-- Global log at bottom of page showing recent events across all visible services (newest first, max 50)
-- Per-service log shown in the detail panel
-
----
+Header range switcher (24h / 7d / 30d) + Refresh; four pods (**AVG UPTIME**, **INCIDENTS**, **DOWN NOW** naming the offender and open duration, **BEST UPTIME**); folder-scoped rows (44px tile, name + `folder · response`, pill-bar strip, status dot, uptime in status color; click → select + jump to dashboard); incident log (severity dot, name, cause = event note, timestamp, duration chip). Daily keys are UTC (`App.fmtDateUTC`), hourly keys parsed with a trailing `Z`.
 
 ## Service Check Types
 

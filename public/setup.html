@@ -7,88 +7,130 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg-base: #131110; --bg-surf: #1a1815; --bg-card: #1e1c18; --bg-hi: #2c2922;
-      --tp: #ede8d5; --ts: #7a7165; --tm: #46423b;
-      --b1: rgba(237,232,213,.09); --b2: rgba(237,232,213,.18);
-      --red: #b85555; --red-bg: rgba(184,85,85,.14);
-      --amber: #c4884a; --amber-bg: rgba(196,136,74,.14);
+      --font-ui:   'Outfit', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      --bg-app:    oklch(0.155 0.012 150);
+      --bg-card:   oklch(0.21 0.014 152);
+      --bg-input:  oklch(0.145 0.01 150);
+      --glow:      radial-gradient(1100px 520px at 14% -10%, oklch(0.26 0.03 158 / .45), transparent 60%);
+      --t-body:    oklch(0.95 0.01 150);
+      --t-desc:    oklch(0.78 0.01 150);
+      --t-mono:    oklch(0.74 0.01 150);
+      --ok:        oklch(0.80 0.13 158);
+      --warn:      oklch(0.80 0.13 75);
+      --down:      oklch(0.80 0.13 25);
+      --ok-text:   oklch(0.86 0.11 158);
+      --warn-text: oklch(0.86 0.11 75);
+      --down-text: oklch(0.86 0.11 25);
+      --on-green:  oklch(0.22 0.04 158);
+      --warn-tint: oklch(0.80 0.13 75 / .14);
+      --down-tint: oklch(0.80 0.13 25 / .14);
+      --bar-empty: oklch(1 0 0 / .08);
+      --hairline:  inset 0 1px 0 oklch(1 0 0 / .05);
+      --edge:      inset 0 0 0 1px oklch(1 0 0 / .07);
+      --edge-hi:   inset 0 0 0 1px oklch(0.80 0.13 158 / .5);
+      --spring:    cubic-bezier(.34, 1.56, .64, 1);
     }
-    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
-      font-family: 'Sora', sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
-    body { display: flex; align-items: center; justify-content: center; }
-    body::before { content: ''; position: fixed; inset: 0;
-      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
-      background-size: 28px 28px; pointer-events: none; }
+    html { background: var(--bg-app); }
+    body {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+      background: var(--glow), var(--bg-app); color: var(--t-body);
+      font-family: var(--font-ui); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; color: inherit; }
 
-    .card { position: relative; z-index: 1; width: min(380px, calc(100vw - 32px)); background: var(--bg-card);
-      border: 1px solid var(--b1); border-radius: 14px; padding: 36px 32px; }
+    .card {
+      width: min(400px, calc(100vw - 32px)); padding: 34px 32px; border-radius: 30px;
+      background: var(--bg-card); box-shadow: var(--hairline);
+    }
 
-    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
-    .logo img { width: 36px; height: 36px; border-radius: 8px; }
-    .logo-label { font-size: 10px; font-weight: 500; letter-spacing: .14em;
-      text-transform: uppercase; color: var(--tm); }
-    .logo-name { font-size: 18px; font-weight: 600; letter-spacing: -.03em; color: var(--tp); }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+    .brand-tile {
+      width: 40px; height: 40px; flex: none; border-radius: 14px;
+      background: linear-gradient(150deg, oklch(0.80 0.13 158), oklch(0.72 0.12 190));
+      display: flex; align-items: center; justify-content: center;
+      font: 700 14px var(--font-mono); color: oklch(0.20 0.03 158);
+    }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+    .brand-name { font-size: 15px; font-weight: 600; }
+    .brand-sub { font: 400 11px var(--font-mono); color: var(--t-mono); }
 
-    .first-run { display: inline-flex; align-items: center; gap: 6px; font-size: 10px;
-      font-weight: 500; letter-spacing: .1em; text-transform: uppercase;
-      color: var(--amber); background: var(--amber-bg);
-      border: 1px solid rgba(196,136,74,.22); border-radius: 20px;
-      padding: 3px 10px; margin-bottom: 14px; }
+    .chip {
+      display: inline-flex; align-items: center; padding: 6px 13px; border-radius: 99px;
+      background: var(--warn-tint); color: var(--warn-text);
+      font: 700 10.5px var(--font-mono); letter-spacing: .1em; text-transform: uppercase;
+      margin-bottom: 14px;
+    }
 
-    h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 6px; }
-    .sub { font-size: 12px; color: var(--ts); margin-bottom: 28px; line-height: 1.6; }
+    h1 { font-size: 25px; font-weight: 300; letter-spacing: -.02em; line-height: 1.15; margin-bottom: 7px; }
+    h1 b { font-weight: 700; }
+    .sub { font: 400 11.5px/1.6 var(--font-mono); color: var(--t-mono); margin-bottom: 26px; }
 
-    .field { margin-bottom: 14px; }
-    label { display: block; font-size: 11px; font-weight: 500; color: var(--ts);
-      letter-spacing: .04em; margin-bottom: 5px; }
-    input { width: 100%; background: var(--bg-surf); border: 1px solid var(--b1);
-      border-radius: 7px; padding: 10px 14px; color: var(--tp);
-      font-family: 'Sora', sans-serif; font-size: 13px; outline: none;
-      transition: border-color .15s; }
-    input:focus { border-color: var(--b2); }
-    input::placeholder { color: var(--tm); }
+    .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    label { font-size: 13.5px; font-weight: 600; }
+    label span { font-weight: 400; color: var(--t-desc); }
+    input {
+      width: 100%; padding: 13px 16px; border-radius: 18px; border: none; outline: none;
+      background: var(--bg-input); box-shadow: var(--edge); color: var(--t-body);
+      font: 400 14px var(--font-ui); transition: box-shadow .18s;
+    }
+    input[type="password"] { font-family: var(--font-mono); }
+    input:hover, input:focus { box-shadow: var(--edge-hi); }
+    input::placeholder { font-family: var(--font-mono); font-size: 13px; color: var(--t-mono); opacity: .7; }
+    input:-webkit-autofill {
+      -webkit-box-shadow: var(--edge), inset 0 0 0 1000px var(--bg-input);
+      -webkit-text-fill-color: var(--t-body); caret-color: var(--t-body);
+    }
+    input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+      -webkit-box-shadow: var(--edge-hi), inset 0 0 0 1000px var(--bg-input);
+    }
 
-    .hint { font-size: 11px; color: var(--tm); margin-top: 4px; }
+    .strength { display: flex; gap: 4px; }
+    .str-bar { flex: 1; height: 4px; border-radius: 99px; background: var(--bar-empty); transition: background .2s; }
+    .hint { font: 400 11px var(--font-mono); color: var(--t-mono); margin-top: -2px; }
 
-    .strength { display: flex; gap: 3px; margin-top: 6px; }
-    .str-bar { flex: 1; height: 3px; border-radius: 2px; background: var(--b1);
-      transition: background .2s; }
+    .btn {
+      width: 100%; margin-top: 8px; padding: 13px; border-radius: 18px; border: none; cursor: pointer;
+      background: var(--ok); color: var(--on-green); font: 700 14px var(--font-ui); line-height: 1.2;
+      transition: transform .2s var(--spring), opacity .16s;
+    }
+    .btn:hover:not(:disabled) { transform: translateY(-2px); }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn:focus-visible { outline: 2px solid var(--ok); outline-offset: 3px; }
+    .btn:disabled { opacity: .5; cursor: default; transform: none; }
 
-    .btn { width: 100%; margin-top: 6px; padding: 11px; font-family: 'Sora', sans-serif;
-      font-size: 13px; font-weight: 600; color: var(--tp); background: var(--bg-hi);
-      border: 1px solid var(--b2); border-radius: 7px; cursor: pointer;
-      transition: all .15s; }
-    .btn:hover { background: rgba(237,232,213,.12); }
-    .btn:disabled { opacity: .5; cursor: default; }
-
-    .msg { display: none; margin-top: 14px; padding: 10px 14px; border-radius: 7px;
-      font-size: 12px; }
-    .msg.error { background: var(--red-bg); border: 1px solid rgba(184,85,85,.22); color: var(--red); }
+    .msg { display: none; margin-top: 14px; padding: 11px 14px; border-radius: 16px; font-size: 12.5px; }
+    .msg.error { background: var(--down-tint); color: var(--down-text); }
     .msg.show { display: block; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; }
+      .btn:hover:not(:disabled), .btn:active:not(:disabled) { transform: none !important; }
+    }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">
-      <img src="/favicon.svg" alt="logo">
-      <div>
-        <div class="logo-label">Homelab</div>
-        <div class="logo-name">los.dev</div>
+    <div class="brand">
+      <div class="brand-tile">ls</div>
+      <div class="brand-text">
+        <div class="brand-name">los.dev</div>
+        <div class="brand-sub">homelab</div>
       </div>
     </div>
 
-    <div class="first-run">⚡ First-time setup</div>
+    <div class="chip">First-time setup</div>
 
-    <h1>Create your account</h1>
+    <h1>Create your <b>account.</b></h1>
     <p class="sub">This runs once. Set your admin credentials — you'll use these to sign in every time.</p>
 
     <form onsubmit="setup(event)">
       <div class="field">
-        <label>Your name <span style="color:var(--tm);font-weight:400">(shown in greeting)</span></label>
+        <label>Your name <span>(shown in greeting)</span></label>
         <input id="displayName" type="text" placeholder="Alex">
       </div>
       <div class="field">
@@ -127,14 +169,15 @@
       if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
       if (/[0-9!@#$%^&*]/.test(pw)) score++;
 
-      const colors = ['#b85555', '#c4884a', '#c4884a', '#5a9e72'];
-      const labels = ['Too short', 'Weak', 'Fair', 'Strong'];
+      const colors     = ['var(--down)', 'var(--warn)', 'var(--warn)', 'var(--ok)'];
+      const textColors = ['var(--down-text)', 'var(--warn-text)', 'var(--warn-text)', 'var(--ok-text)'];
+      const labels     = ['Too short', 'Weak', 'Fair', 'Strong'];
 
       bars.forEach((b, i) => {
-        b.style.background = i < score ? colors[Math.min(score - 1, 3)] : 'var(--b1)';
+        b.style.background = i < score ? colors[Math.min(score - 1, 3)] : 'var(--bar-empty)';
       });
       hint.textContent = pw.length === 0 ? 'Minimum 8 characters' : labels[Math.min(score, 3)];
-      hint.style.color = score > 0 ? colors[Math.min(score - 1, 3)] : 'var(--tm)';
+      hint.style.color = score > 0 ? textColors[Math.min(score - 1, 3)] : 'var(--t-mono)';
     }
 
     async function setup(e) {

@@ -22,3 +22,6 @@ data/services.json.corrupt-*
 
 .DS_Store
 *.log
+
+# Local dev-server launch config (machine-specific paths).
+.claude/launch.json

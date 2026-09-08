@@ -7,541 +7,596 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+    /* Tokens copied from /app.css (this page is served without a session and
+       cannot load the auth-gated stylesheet). Keep the values in sync. */
     :root {
-      --bg-base:   #131110;
-      --bg-surf:   #1a1815;
-      --bg-card:   #1e1c18;
-      --bg-cardh:  #232019;
-      --bg-hi:     #2c2922;
+      --font-ui:   'Outfit', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-      --tp:  #ede8d5;
-      --ts:  #7a7165;
-      --tm:  #46423b;
+      --ok:      oklch(0.80 0.13 158);
+      --warn:    oklch(0.80 0.13 75);
+      --down:    oklch(0.80 0.13 25);
+      --maint:   oklch(0.80 0.13 265);
+      --pending: oklch(0.80 0.13 220);
+      --on-green: oklch(0.22 0.04 158);
 
-      --b0: rgba(237,232,213,.05);
-      --b1: rgba(237,232,213,.09);
-      --b2: rgba(237,232,213,.18);
+      --bg-app:     oklch(0.155 0.012 150);
+      --bg-inset:   oklch(0.13 0.008 150);
+      --bg-panel:   oklch(0.19 0.012 152);
+      --bg-sidebar: oklch(0.21 0.014 152);
+      --bg-well:    oklch(0 0 0 / .22);
+      --glow:       radial-gradient(1100px 520px at 14% -10%, oklch(0.26 0.03 158 / .45), transparent 60%);
 
-      --green:   #5a9e72; --green-bg:  rgba(90,158,114,.14);
-      --amber:   #c4884a; --amber-bg:  rgba(196,136,74,.14);
-      --red:     #b85555; --red-bg:    rgba(184,85,85,.14);
-      --slate:   #7a8a9e; --slate-bg:  rgba(122,138,158,.13);
+      --ov-035: oklch(1 0 0 / .035);
+      --ov-05:  oklch(1 0 0 / .05);
+      --ov-06:  oklch(1 0 0 / .06);
+      --ov-07:  oklch(1 0 0 / .07);
+      --ov-10:  oklch(1 0 0 / .10);
+      --ov-11:  oklch(1 0 0 / .11);
+
+      --t-body:  oklch(0.95 0.01 150);
+      --t-strong:oklch(0.88 0.01 150);
+      --t-nav:   oklch(0.82 0.01 150);
+      --t-sec:   oklch(0.80 0.01 150);
+      --t-desc:  oklch(0.78 0.01 150);
+      --t-faint: oklch(0.76 0.01 150);
+      --t-mono:  oklch(0.74 0.01 150);
+
+      --hairline: inset 0 1px 0 oklch(1 0 0 / .05);
+      --spring: cubic-bezier(.34, 1.56, .64, 1);
     }
 
-    html, body { height: 100%; background: var(--bg-base); color: var(--tp);
-      font-family: 'Sora', sans-serif; font-size: 14px; line-height: 1.5;
-      -webkit-font-smoothing: antialiased; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg-app); }
+    body {
+      min-height: 100vh;
+      background: var(--glow), var(--bg-app);
+      color: var(--t-body);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: oklch(0.86 0.11 158); text-decoration: none; }
+    a:hover { color: oklch(0.92 0.09 158); }
+    button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
 
-    body::before { content: ''; position: fixed; inset: 0;
-      background-image: radial-gradient(circle, rgba(237,232,213,.05) 1px, transparent 1px);
-      background-size: 28px 28px; pointer-events: none; z-index: 0; }
+    @keyframes hl-pulse {
+      0%   { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+      70%  { box-shadow: 0 0 0 7px rgba(0,0,0,0); opacity: .85; }
+      100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); opacity: 1; }
+    }
+    @keyframes hl-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: none; }
+    }
+    @keyframes hl-spin { to { transform: rotate(360deg); } }
 
-    main { position: relative; z-index: 1; max-width: 960px; margin: 0 auto;
-      padding: 56px 28px 96px; }
+    /* ─── Frame ─────────────────────────────────────────────────────────── */
+    main {
+      max-width: 760px; margin: 0 auto; padding: 44px 24px 88px;
+      display: flex; flex-direction: column; gap: 20px;
+      animation: hl-in .3s ease both;
+    }
+    .caption { font: 500 9.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--t-mono); }
+    .rule { flex: 1; height: 1px; background: var(--ov-07); min-width: 12px; }
+    .hint { font-size: 12.5px; color: var(--t-faint); }
+    .mono { font-family: var(--font-mono); }
 
-    /* ─── Banner ─── */
-    .banner { display: flex; align-items: center; gap: 18px; padding: 22px 28px;
-      border-radius: 14px; border: 1px solid var(--b1); background: var(--bg-card);
-      margin-bottom: 28px; }
-    .banner-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
-      box-shadow: 0 0 0 6px transparent; }
-    .banner.operational  .banner-dot { background: var(--green); box-shadow: 0 0 0 6px var(--green-bg); }
-    .banner.degraded     .banner-dot { background: var(--amber); box-shadow: 0 0 0 6px var(--amber-bg); }
-    .banner.outage       .banner-dot { background: var(--red);   box-shadow: 0 0 0 6px var(--red-bg); }
-    .banner.maintenance  .banner-dot { background: var(--slate); box-shadow: 0 0 0 6px var(--slate-bg); }
-    .banner.operational  { border-color: rgba(90,158,114,.35); }
-    .banner.degraded     { border-color: rgba(196,136,74,.35); }
-    .banner.outage       { border-color: rgba(184,85,85,.35); }
-    .banner.maintenance  { border-color: rgba(122,138,158,.35); }
-    .banner-title { font-size: 22px; font-weight: 500; letter-spacing: -.02em; flex: 1; }
-    .banner-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ts); }
+    /* ─── Banner ────────────────────────────────────────────────────────── */
+    .banner {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+      padding: 16px 20px; border-radius: 22px;
+      background: oklch(0.80 0.13 158 / .10); box-shadow: inset 0 0 0 1px oklch(0.80 0.13 158 / .22);
+    }
+    .banner-dot { width: 13px; height: 13px; flex: none; border-radius: 99px; background: var(--ok); color: var(--ok); animation: hl-pulse 2.4s ease-out infinite; }
+    .banner-msg { flex: 1 1 200px; min-width: 0; font-size: 18px; font-weight: 600; color: oklch(0.90 0.06 158); line-height: 1.2; }
+    .banner-meta { font: 400 11.5px var(--font-mono); color: var(--t-faint); white-space: nowrap; }
+    .banner.degraded { background: oklch(0.80 0.13 75 / .10); box-shadow: inset 0 0 0 1px oklch(0.80 0.13 75 / .22); }
+    .banner.degraded .banner-dot { background: var(--warn); color: var(--warn); }
+    .banner.degraded .banner-msg { color: oklch(0.90 0.06 75); }
+    .banner.outage { background: oklch(0.80 0.13 25 / .10); box-shadow: inset 0 0 0 1px oklch(0.80 0.13 25 / .22); }
+    .banner.outage .banner-dot { background: var(--down); color: var(--down); }
+    .banner.outage .banner-msg { color: oklch(0.90 0.06 25); }
+    .banner.maintenance { background: oklch(0.80 0.13 265 / .10); box-shadow: inset 0 0 0 1px oklch(0.80 0.13 265 / .22); }
+    .banner.maintenance .banner-dot { background: var(--maint); color: var(--maint); }
+    .banner.maintenance .banner-msg { color: oklch(0.90 0.06 265); }
 
-    /* ─── Page intro ─── */
-    .page-hdr { text-align: center; margin-bottom: 34px; }
-    .page-hdr h1 { font-size: 28px; font-weight: 300; letter-spacing: -.03em; }
-    .page-hdr h1 b { font-weight: 600; }
-    .page-hdr p { color: var(--ts); font-size: 13px; margin-top: 6px; max-width: 540px;
-      margin-left: auto; margin-right: auto; }
+    /* ─── Title ─────────────────────────────────────────────────────────── */
+    .page-hdr { text-align: center; display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
+    .page-hdr h1 { font-size: 26px; font-weight: 600; letter-spacing: -.015em; line-height: 1.15; overflow-wrap: anywhere; }
+    .page-hdr p { font-size: 14px; color: var(--t-sec); max-width: 560px; margin: 0 auto; overflow-wrap: anywhere; }
 
-    /* ─── Controls ─── */
-    .controls { display: flex; align-items: center; justify-content: flex-end;
-      gap: 10px; margin-bottom: 18px; }
-    .refreshed { font-size: 11px; color: var(--tm); font-family: 'JetBrains Mono', monospace;
-      margin-right: auto; }
-    .refresh-btn { display: inline-flex; align-items: center; justify-content: center;
-      width: 32px; height: 32px; border-radius: 8px; background: var(--bg-surf);
-      border: 1px solid var(--b1); color: var(--ts); cursor: pointer;
-      transition: all .15s; padding: 0; }
-    .refresh-btn:hover:not(:disabled) { color: var(--tp); background: var(--bg-hi); border-color: var(--b2); }
-    .refresh-btn:disabled { cursor: default; opacity: .55; }
-    .refresh-btn svg { width: 14px; height: 14px; transition: transform .6s ease; }
-    .refresh-btn.spinning svg { animation: refresh-spin .8s linear infinite; }
-    @keyframes refresh-spin { to { transform: rotate(360deg); } }
-    .seg { display: flex; background: var(--bg-surf); border: 1px solid var(--b1);
-      border-radius: 8px; overflow: hidden; }
-    .seg-btn { padding: 6px 14px; font-size: 12px; font-family: 'Sora', sans-serif;
-      color: var(--ts); background: none; border: none; cursor: pointer;
-      transition: all .15s; white-space: nowrap; }
-    .seg-btn:hover { color: var(--tp); background: var(--b0); }
-    .seg-btn.active { color: var(--tp); background: var(--bg-hi); }
+    /* ─── Controls ──────────────────────────────────────────────────────── */
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .refreshed { margin-right: auto; font: 400 11.5px var(--font-mono); color: var(--t-mono); min-height: 1.2em; }
+    .seg-group { display: flex; gap: 5px; padding: 5px; border-radius: 99px; background: var(--bg-well); }
+    .seg-opt {
+      padding: 8px 16px; border-radius: 99px; font-size: 12.5px; font-weight: 700;
+      background: transparent; color: var(--t-nav); transition: all .2s var(--spring);
+    }
+    .seg-opt:hover { transform: translateY(-1px); }
+    .seg-opt.active { background: var(--ok); color: var(--on-green); }
+    .refresh-btn {
+      width: 38px; height: 38px; border-radius: 99px; background: var(--ov-06); color: var(--t-body);
+      display: inline-flex; align-items: center; justify-content: center; font-size: 17px; line-height: 1;
+      transition: background .16s, transform .2s var(--spring);
+    }
+    .refresh-btn:hover:not(:disabled) { background: var(--ov-11); transform: translateY(-1px); }
+    .refresh-btn:disabled { cursor: default; opacity: .6; }
+    .refresh-icon { display: inline-block; }
+    .refresh-btn.spinning .refresh-icon { animation: hl-spin .8s linear infinite; }
 
-    /* ─── Service rows ─── */
-    .svc-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 40px; }
-    .svc-row { background: var(--bg-card); border: 1px solid var(--b0); border-radius: 10px;
-      transition: all .15s; }
-    .svc-row:hover { background: var(--bg-cardh); border-color: var(--b1); }
-    .svc-row.open { border-color: var(--b2); background: var(--bg-cardh); }
-    .svc-head { padding: 14px 18px; display: flex; align-items: center; gap: 16px;
-      cursor: pointer; flex-wrap: wrap; }
-    .svc-abbr { width: 36px; height: 36px; border-radius: 8px; display: flex;
-      align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
-      letter-spacing: .04em; flex-shrink: 0; background: var(--bg-hi); color: var(--ts); }
-    .svc-info { flex: 1 1 180px; min-width: 140px; }
-    .svc-name { font-size: 13px; font-weight: 500; color: var(--tp);
-      word-break: break-word; overflow-wrap: anywhere; line-height: 1.35; }
-    .svc-cat { font-size: 11px; color: var(--ts); margin-top: 1px;
-      word-break: break-word; overflow-wrap: anywhere; }
-    .svc-uptime-label { font-family: 'JetBrains Mono', monospace; font-size: 12px;
-      font-weight: 500; flex-shrink: 0; width: 56px; text-align: right; }
-    .svc-uptime-label.cg { color: var(--green); }
-    .svc-uptime-label.ca { color: var(--amber); }
-    .svc-uptime-label.cr { color: var(--red); }
-    .svc-uptime-label.cm { color: var(--slate); }
+    /* ─── Service rows ──────────────────────────────────────────────────── */
+    .svc-list { display: flex; flex-direction: column; gap: 9px; }
+    .svc-row { border-radius: 20px; background: var(--ov-035); box-shadow: var(--hairline); transition: background .2s; min-width: 0; }
+    .svc-row:hover, .svc-row.open { background: var(--ov-05); }
+    .svc-head {
+      display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; padding: 12px 16px;
+      cursor: pointer; user-select: none; width: 100%; text-align: left; min-width: 0; border-radius: 20px;
+    }
+    .svc-tile {
+      width: 40px; height: 40px; flex: none; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center; font: 700 11px var(--font-mono);
+      background: var(--ov-06); color: var(--t-sec);
+    }
+    .svc-info { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .svc-name { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-cat { font: 400 11px var(--font-mono); color: var(--t-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bars { flex: 2 1 90px; min-width: 0; display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+    .bar { flex: 1; min-width: 0; border-radius: 99px; position: relative; transition: filter .15s; }
+    .bar.ok    { background: oklch(0.62 0.09 158); }
+    .bar.warn  { background: oklch(0.78 0.13 75); }
+    .bar.down  { background: oklch(0.78 0.13 25); }
+    .bar.maint { background: oklch(0.72 0.06 265); }
+    .bar.empty { background: var(--ov-06); }
+    .bar:not(.empty):hover { filter: brightness(1.15); }
+    .bar[data-tip]:hover::after {
+      content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: var(--bg-sidebar); box-shadow: inset 0 0 0 1px var(--ov-10);
+      padding: 6px 10px; border-radius: 12px; font: 400 11px var(--font-mono); color: var(--t-body);
+      white-space: nowrap; z-index: 20; pointer-events: none;
+    }
+    .svc-dot { width: 9px; height: 9px; flex: none; border-radius: 99px; }
+    .svc-uptime { width: 64px; flex: none; text-align: right; font: 500 14px var(--font-mono); }
+    .chev { flex: none; width: 14px; text-align: center; color: var(--t-faint); font-size: 18px; line-height: 1; transition: transform .22s var(--spring); }
+    .svc-row.open .chev { transform: rotate(90deg); color: var(--t-sec); }
 
-    .bar-strip { display: flex; gap: 2px; align-items: stretch; height: 34px;
-      flex: 1 1 0; min-width: 0; overflow: hidden; }
-    .bar { flex: 1 1 0; min-width: 0; border-radius: 2px;
-      transition: filter .15s, transform .15s; cursor: default; position: relative;
-      background: var(--bg-hi); }
-    .bar.ok    { background: var(--green); }
-    .bar.warn  { background: var(--amber); }
-    .bar.bad   { background: var(--red);   }
-    .bar.maint { background: var(--slate); opacity: .55; }
-    .bar.empty { background: var(--b1); }
-    .bar:not(.empty):hover { filter: brightness(1.15); transform: scaleY(1.06); }
-    .bar-tooltip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
-      transform: translateX(-50%); background: var(--bg-surf); border: 1px solid var(--b1);
-      border-radius: 6px; padding: 5px 9px; white-space: nowrap; font-size: 11px;
-      color: var(--tp); pointer-events: none; z-index: 100; }
-    .bar:hover .bar-tooltip { display: block; }
-
-    .status-pip { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .status-pip.ok    { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
-    .status-pip.warn  { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
-    .status-pip.bad   { background: var(--red);   box-shadow: 0 0 0 3px var(--red-bg); }
-    .status-pip.maint { background: var(--slate); box-shadow: 0 0 0 3px var(--slate-bg); }
-
-    .chev { color: var(--tm); font-size: 13px; flex-shrink: 0; transition: transform .15s; }
-    .svc-row.open .chev { transform: rotate(90deg); color: var(--ts); }
-
-    /* ─── Expanded detail ─── */
-    .svc-detail { display: none; padding: 0 18px 22px; border-top: 1px solid var(--b0); }
+    /* ─── Expanded detail ───────────────────────────────────────────────── */
+    .svc-detail { display: none; padding: 0 10px 10px; }
     .svc-row.open .svc-detail { display: block; }
-    .chart-wrap { margin: 18px 0 20px; }
-    .chart-title { font-size: 10px; font-weight: 500; letter-spacing: .1em;
-      text-transform: uppercase; color: var(--ts); margin-bottom: 10px; }
-    .chart-canvas-wrap { position: relative; height: 120px; }
-    canvas.uptime-chart { width: 100%; height: 100%; display: block; }
-    .chart-axis { display: flex; justify-content: space-between;
-      font-size: 10px; color: var(--tm); margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
+    .detail-inset { border-radius: 18px; background: var(--bg-well); padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .detail-sec { display: flex; flex-direction: column; gap: 10px; }
+    .detail-sec-hdr { display: flex; align-items: center; gap: 10px; }
+    .chart-wrap { position: relative; height: 120px; }
+    canvas.chart { width: 100%; height: 100%; display: block; }
+    .chart-axis { display: flex; justify-content: space-between; gap: 10px; font: 400 10.5px var(--font-mono); color: var(--t-mono); }
+    .ev-list { display: flex; flex-direction: column; }
+    .ev-item { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid var(--ov-05); font-size: 13px; }
+    .ev-item:first-child { border-top: none; padding-top: 2px; }
+    .ev-dot { width: 9px; height: 9px; flex: none; border-radius: 99px; }
+    .ev-body { flex: 1; min-width: 0; color: var(--t-strong); }
+    .ev-when { font: 400 11.5px var(--font-mono); color: var(--t-mono); white-space: nowrap; }
+    .ev-empty { font-size: 12.5px; color: var(--t-faint); padding: 2px 0; }
 
-    .det-events { display: flex; flex-direction: column; }
-    .det-ev-title { font-size: 10px; font-weight: 500; letter-spacing: .1em;
-      text-transform: uppercase; color: var(--ts); margin-bottom: 8px; }
-    .det-ev-item { display: flex; align-items: center; gap: 10px; padding: 7px 0;
-      border-bottom: 1px solid var(--b0); font-size: 12px; }
-    .det-ev-item:last-child { border-bottom: none; }
-    .ev-icon { width: 22px; height: 22px; border-radius: 50%; display: flex;
-      align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
-    .ev-icon.offline    { background: var(--red-bg);   color: var(--red); }
-    .ev-icon.degraded   { background: var(--amber-bg); color: var(--amber); }
-    .ev-icon.recovery   { background: var(--green-bg); color: var(--green); }
-    .ev-icon.maintenance{ background: var(--slate-bg); color: var(--slate); }
-    .ev-body { flex: 1; color: var(--tp); }
-    .ev-time { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--tm); }
-    .ev-empty { font-size: 12px; color: var(--ts); padding: 8px 0; }
+    /* ─── Incident log ──────────────────────────────────────────────────── */
+    .panel {
+      padding: 22px; border-radius: 28px; background: var(--bg-panel); box-shadow: var(--hairline);
+      display: flex; flex-direction: column; gap: 12px; min-width: 0;
+    }
+    .panel-hdr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .log { display: flex; flex-direction: column; gap: 9px; }
+    .log-row {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 13px 16px;
+      border-radius: 20px; background: var(--ov-035); transition: background .18s;
+    }
+    .log-row:hover { background: var(--ov-07); }
+    .log-dot { width: 9px; height: 9px; flex: none; border-radius: 99px; }
+    .log-name { width: 200px; flex: none; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-cause { flex: 1; min-width: 160px; font-size: 13px; color: var(--t-sec); }
+    .log-when { font: 400 12px var(--font-mono); color: var(--t-mono); white-space: nowrap; }
 
-    /* ─── Global incident log ─── */
-    .sec-head { margin-bottom: 14px; }
-    .sec-title { font-size: 11px; font-weight: 500; letter-spacing: .1em;
-      text-transform: uppercase; color: var(--ts); }
+    /* ─── Empty / loading / error states ───────────────────────────────── */
+    .state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 70px 16px; text-align: center; color: var(--t-faint); font-size: 13.5px; }
+    .state .glyph { font-size: 34px; opacity: .3; }
+    .state-title { font-size: 20px; font-weight: 600; color: var(--t-body); }
+    .state .btn {
+      margin-top: 8px; padding: 11px 18px; border-radius: 99px; background: var(--ov-06); color: var(--t-body);
+      font-size: 13px; font-weight: 600; transition: background .16s;
+    }
+    .state .btn:hover { background: var(--ov-11); }
+    .state .btn.primary { background: var(--ok); color: var(--on-green); font-weight: 700; }
+    .empty-list { padding: 34px 16px; text-align: center; color: var(--t-faint); font-size: 13.5px; border-radius: 20px; background: var(--ov-035); }
+    .foot { text-align: center; font: 400 11px var(--font-mono); color: var(--t-mono); padding-top: 8px; }
 
-    .global-log { background: var(--bg-card); border: 1px solid var(--b0);
-      border-radius: 12px; padding: 6px 18px; }
-    .global-log .det-ev-item { padding: 12px 0; }
-
-    /* ─── Error / loading ─── */
-    .loading, .error { text-align: center; padding: 80px 0; color: var(--ts); }
-    .error-title { font-size: 20px; font-weight: 500; color: var(--tp); margin-bottom: 6px; }
-
-    /* ─── Mobile ─── */
+    /* ─── Responsive ────────────────────────────────────────────────────── */
     @media (max-width: 640px) {
-      main { padding: 32px 16px 72px; }
-      .banner { flex-wrap: wrap; padding: 18px 20px; gap: 12px; }
-      .banner-title { font-size: 18px; flex-basis: 100%; order: 2; }
-      .banner-meta { flex-basis: 100%; order: 3; }
-      .svc-head { flex-wrap: wrap; }
-      .bar-strip { flex-basis: 100%; order: 4; height: 30px; }
-      .svc-uptime-label { width: auto; }
+      main { padding: 24px 16px 60px; gap: 16px; }
+      .banner { padding: 14px 16px; border-radius: 20px; }
+      .banner-msg { font-size: 16.5px; }
       .page-hdr h1 { font-size: 22px; }
+      .svc-head { flex-wrap: wrap; padding: 12px 14px; row-gap: 10px; }
+      .svc-info { flex: 1 1 120px; }
+      .bars { flex: 1 1 100%; order: 10; height: 24px; }
+      .svc-uptime { width: 60px; font-size: 13.5px; }
+      .svc-tile { width: 36px; height: 36px; border-radius: 12px; }
+      .panel { padding: 16px; border-radius: 24px; }
+      .log-name { width: auto; flex: 1 1 140px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .seg-opt:hover, .refresh-btn:hover { transform: none !important; }
     }
   </style>
 </head>
 <body>
 
 <main id="root">
-  <div class="loading">Loading status…</div>
+  <div class="state"><span>Loading status…</span></div>
 </main>
 
 <script>
-  // ─── State ───────────────────────────────────────────────────────────────────
-  const SLUG  = location.pathname.split('/')[2] || '';
-  let DATA    = null;
-  // range: { key, slots, label, unit } — unit 'hour' uses hourlyHistory, 'day' uses dailyHistory
-  const RANGES = {
-    '24h': { key: '24h', slots: 24, label: '24h', unit: 'hour' },
-    '7d':  { key: '7d',  slots: 7,  label: '7d',  unit: 'day'  },
-    '30d': { key: '30d', slots: 30, label: '30d', unit: 'day'  }
-  };
+(function () {
+  'use strict';
+
+  // ─── State ──────────────────────────────────────────────────────────────
+  const SLUG = location.pathname.split('/')[2] || '';
+  let DATA = null;
   let rangeKey = '30d';
-  let expanded = new Set();
+  const expanded = new Set();
   let lastRefreshed = null;
   let isRefreshing = false;
 
-  // ─── Helpers (copied from history.html) ─────────────────────────────────────
-  function statusClass(s) {
-    if (s === 'online')      return 'ok';
-    if (s === 'degraded')    return 'warn';
-    if (s === 'maintenance') return 'maint';
-    return 'bad';
+  // Ranges. The public API returns only the last 24 hourly entries, so 7d
+  // falls back to 7 daily buckets when there is no hourly coverage beyond a day.
+  const RANGES = {
+    '24h': { slots: 24, bucket: '1 hour',  label: '24h', hours: 24 },
+    '7d':  { slots: 28, bucket: '6 hours', label: '7d',  hours: 24 * 7 },
+    '30d': { slots: 30, bucket: '1 day',   label: '30d', hours: 24 * 30 }
+  };
+  const STATUS = {
+    online:      { h: 158, label: 'Online' },
+    degraded:    { h: 75,  label: 'Degraded' },
+    offline:     { h: 25,  label: 'Offline' },
+    maintenance: { h: 265, label: 'Maintenance' },
+    unknown:     { h: 220, label: 'Unknown' }
+  };
+  const EVENT = {
+    offline:     { h: 25,  label: 'Went offline' },
+    degraded:    { h: 75,  label: 'Degraded performance' },
+    recovery:    { h: 158, label: 'Recovered' },
+    maintenance: { h: 265, label: 'Maintenance' }
+  };
+  const BANNER = {
+    operational: { cls: 'operational', msg: 'All systems operational' },
+    degraded:    { cls: 'degraded',    msg: 'Degraded performance' },
+    outage:      { cls: 'outage',      msg: 'Partial outage' },
+    maintenance: { cls: 'maintenance', msg: 'Scheduled maintenance' }
+  };
+  const PRESET_HUES = { green: 158, amber: 75, red: 25, blue: 240, purple: 300, pink: 340, slate: 200 };
+
+  // ─── Color helpers (accent formula, copied from app.js) ──────────────────
+  const acc  = h => `oklch(0.80 0.13 ${h})`;
+  const tint = h => `oklch(0.80 0.13 ${h} / 0.14)`;
+  function hueFromHex(hex) {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+    if (!m) return null;
+    let h = m[1];
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const r = lin(parseInt(h.slice(0, 2), 16)), g = lin(parseInt(h.slice(2, 4), 16)), b = lin(parseInt(h.slice(4, 6), 16));
+    const l  = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m_ = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s  = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    const A = 1.9779984951 * l - 2.4285922050 * m_ + 0.4505937099 * s;
+    const B = 0.0259040371 * l + 0.7827717662 * m_ - 0.8086757660 * s;
+    if (Math.abs(A) < 1e-4 && Math.abs(B) < 1e-4) return 200;
+    let hue = Math.atan2(B, A) * 180 / Math.PI;
+    if (hue < 0) hue += 360;
+    return Math.round(hue);
   }
-  function uptimeClass(pct) {
-    if (pct === null || pct === undefined) return 'cm';
-    if (pct >= 99) return 'cg';
-    if (pct >= 95) return 'ca';
-    return 'cr';
+  function hueOf(color) {
+    if (!color) return 158;
+    if (PRESET_HUES[color] !== undefined) return PRESET_HUES[color];
+    const h = hueFromHex(color);
+    return h == null ? 158 : h;
   }
-  function fmtUptime(pct) {
-    if (pct === null || pct === undefined) return '—';
-    return pct.toFixed(2) + '%';
+  function statusOf(svc) {
+    if (svc.maintenance) return 'maintenance';
+    return STATUS[svc.status] ? svc.status : 'unknown';
   }
-  function fmtDateShort(iso) {
-    const d = new Date(iso);
-    // Daily keys are UTC calendar days (server TODAY_KEY); format in UTC so the
-    // label matches the bucket instead of slipping a day west of UTC.
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const statusHue = st => (STATUS[st] || STATUS.unknown).h;
+
+  // ─── Formatting ─────────────────────────────────────────────────────────
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  // Daily keys are UTC calendar days (server TODAY_KEY); format in UTC so the
+  // label matches the bucket instead of slipping a day west of UTC.
+  const fmtDateUTC = iso => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  // Hourly keys are 'YYYY-MM-DDTHH' in UTC — parse as UTC, display local.
+  const fmtHourKey = key => new Date(key + ':00:00Z').toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+  function relTime(iso) {
+    const t = new Date(iso).getTime();
+    if (!t) return 'never';
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 5)     return 'just now';
+    if (s < 60)    return s + 's ago';
+    if (s < 3600)  return Math.round(s / 60) + 'm ago';
+    if (s < 86400) return Math.round(s / 3600) + 'h ago';
+    return Math.round(s / 86400) + 'd ago';
   }
-  function fmtHourShort(ts) {
-    // ts shape: 'YYYY-MM-DDTHH' in UTC (server HOUR_KEY) — parse as UTC, display local
-    const d = new Date(ts + ':00:00Z');
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+  const fmtPct = (n, digits = 1) => (n == null || isNaN(n)) ? '—' : n.toFixed(digits) + '%';
+  const plural = (n, one, many) => n === 1 ? one : (many || one + 's');
+
+  // ─── History buckets (mirrors App.bucketsFor / bucketKind / barsHtml) ──
+  function mergeEntries(entries, label) {
+    const out = { label, online: 0, degraded: 0, offline: 0, maintenance: 0, total: 0 };
+    for (const e of entries) {
+      out.online += e.online || 0; out.degraded += e.degraded || 0;
+      out.offline += e.offline || 0; out.maintenance += e.maintenance || 0; out.total += e.total || 0;
+    }
+    const denom = out.online + out.degraded + out.offline;
+    out.uptime = denom > 0 ? parseFloat((out.online / denom * 100).toFixed(2)) : null;
+    return out;
   }
-  function fmtRelative(iso) {
-    const d = new Date(iso);
-    const diff = (Date.now() - d.getTime()) / 1000;
-    if (diff < 60)        return 'just now';
-    if (diff < 3600)      return Math.floor(diff / 60) + 'm ago';
-    if (diff < 86400)     return Math.floor(diff / 3600) + 'h ago';
-    if (diff < 86400 * 7) return Math.floor(diff / 86400) + 'd ago';
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // Returns { buckets, slots, bucketLabel } — exactly `slots` buckets, oldest → newest,
+  // left-padded with { empty: true }.
+  function bucketsFor(svc, range) {
+    const r = RANGES[range] || RANGES['30d'];
+    const hourly = svc.hourlyHistory || [], daily = svc.dailyHistory || [];
+    let out = [], slots = r.slots, bucketLabel = r.bucket;
+    if (range === '24h') {
+      out = hourly.slice(-24).map(e => ({ ...e, label: fmtHourKey(e.ts) }));
+    } else if (range === '7d') {
+      if (hourly.length > 30) {
+        const hours = hourly.slice(-168);
+        const groups = [];
+        for (let end = hours.length; end > 0; end -= 6) {
+          const chunk = hours.slice(Math.max(0, end - 6), end);
+          groups.unshift(mergeEntries(chunk, fmtHourKey(chunk[0].ts) + ' +6h'));
+        }
+        out = groups.slice(-28);
+      } else {
+        // Only a day of hourly data is published — fall back to daily buckets.
+        out = daily.slice(-7).map(e => ({ ...e, label: fmtDateUTC(e.date) }));
+        slots = 7; bucketLabel = '1 day';
+      }
+    } else {
+      out = daily.slice(-30).map(e => ({ ...e, label: fmtDateUTC(e.date) }));
+    }
+    while (out.length < slots) out.unshift({ empty: true });
+    return { buckets: out.slice(-slots), slots, bucketLabel };
   }
-  function calcAvgUptime(hist) {
-    const valid = hist.filter(e => e.uptime !== null && e.uptime !== undefined);
-    if (!valid.length) return null;
-    return valid.reduce((a, e) => a + e.uptime, 0) / valid.length;
+  function bucketKind(b) {
+    if (!b || b.empty) return 'empty';
+    if (b.uptime == null) return (b.maintenance > 0 ? 'maint' : 'empty');
+    if (b.uptime >= 99) return 'ok';
+    if (b.uptime >= 80) return 'warn';
+    return 'down';
   }
-  function currentRange() { return RANGES[rangeKey]; }
-  function sliceHistory(svc) {
-    const r = currentRange();
-    if (r.unit === 'hour') return (svc.hourlyHistory || []).slice(-r.slots);
-    return (svc.dailyHistory || []).slice(-r.slots);
+  function barsHtml(buckets, opts) {
+    const minH = opts.minH, maxH = opts.maxH, lowH = opts.lowH;
+    return buckets.map(b => {
+      const kind = bucketKind(b);
+      let h = lowH;
+      if (kind === 'ok') h = Math.round(minH + (maxH - minH) * Math.min(1, Math.max(0, (b.uptime - 99) / 1)));
+      else if (kind === 'maint') h = Math.round((minH + lowH) / 2);
+      const tip = b.empty ? '' : ` data-tip="${esc(b.label)}: ${b.uptime == null ? 'maintenance' : fmtPct(b.uptime, 2)}"`;
+      return `<span class="bar ${kind}" style="height:${h}px"${tip}></span>`;
+    }).join('');
   }
-  function rangeCutoff() {
-    const r = currentRange();
-    const d = new Date();
-    if (r.unit === 'hour') d.setHours(d.getHours() - r.slots);
-    else d.setDate(d.getDate() - r.slots);
-    return d;
+  function uptimeFor(buckets) {
+    let up = 0, denom = 0;
+    for (const b of buckets) {
+      if (b.empty || b.uptime == null) continue;
+      up += b.online || 0; denom += (b.online || 0) + (b.degraded || 0) + (b.offline || 0);
+    }
+    return denom > 0 ? up / denom * 100 : null;
   }
-  function filterEventsForService(svc) {
+  const rangeCutoff = () => Date.now() - (RANGES[rangeKey] || RANGES['30d']).hours * 3600 * 1000;
+  function eventsFor(svc) {
     const cutoff = rangeCutoff();
-    return (svc.events || []).filter(e => new Date(e.ts) >= cutoff).reverse().slice(0, 20);
-  }
-  function eventLabel(type) {
-    if (type === 'offline')     return 'Went offline';
-    if (type === 'degraded')    return 'Degraded performance';
-    if (type === 'recovery')    return 'Recovered';
-    if (type === 'maintenance') return 'Maintenance';
-    return type;
-  }
-  function eventSymbol(type) {
-    if (type === 'offline')     return '●';
-    if (type === 'degraded')    return '◐';
-    if (type === 'recovery')    return '✓';
-    if (type === 'maintenance') return '⚒';
-    return '•';
+    return (svc.events || []).filter(e => new Date(e.ts).getTime() >= cutoff).slice().reverse().slice(0, 20);
   }
 
-  // ─── Banner ─────────────────────────────────────────────────────────────────
-  function bannerConfig(overall) {
-    if (overall === 'operational')  return { cls: 'operational', title: 'All systems operational' };
-    if (overall === 'degraded')     return { cls: 'degraded',    title: 'Some services are degraded' };
-    if (overall === 'outage')       return { cls: 'outage',      title: 'Major outage in progress' };
-    if (overall === 'maintenance')  return { cls: 'maintenance', title: 'Scheduled maintenance in progress' };
-    return { cls: 'operational', title: 'All systems operational' };
-  }
-
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Render ─────────────────────────────────────────────────────────────
   function render() {
     if (!DATA) return;
     const root = document.getElementById('root');
-    const bn = bannerConfig(DATA.overall);
-    const showBanner = DATA.page.showOverallBanner !== false;
-    const showLog    = DATA.page.showEventLog !== false;
-    const updated    = lastRefreshed ? fmtRelative(lastRefreshed) : '';
-
-    const title = DATA.page.name || 'Status';
+    const page = DATA.page || {};
+    const title = page.name || 'Status';
     document.title = `${title} · Status`;
+    const b = BANNER[DATA.overall] || BANNER.operational;
+    const updated = lastRefreshed ? 'Updated ' + relTime(lastRefreshed) : '';
+    const r = RANGES[rangeKey];
 
     let html = '';
-
-    if (showBanner) {
-      html += `<section class="banner ${bn.cls}">
-        <div class="banner-dot"></div>
-        <div class="banner-title">${escapeHtml(bn.title)}</div>
-        <div class="banner-meta" id="banner-meta">${updated ? 'Updated ' + escapeHtml(updated) : ''}</div>
+    if (page.showOverallBanner !== false) {
+      html += `<section class="banner ${b.cls}">
+        <span class="banner-dot"></span>
+        <span class="banner-msg">${esc(b.msg)}</span>
+        <span class="banner-meta" data-updated>${esc(updated)}</span>
       </section>`;
     }
-
-    html += `<div class="page-hdr">
-      <h1>${escapeHtml(title)}</h1>
-      ${DATA.page.description ? `<p>${escapeHtml(DATA.page.description)}</p>` : ''}
-    </div>`;
-
-    const refreshedLabel = lastRefreshed ? `Updated ${fmtRelative(lastRefreshed)}` : '';
+    html += `<header class="page-hdr">
+      <h1>${esc(title)}</h1>
+      ${page.description ? `<p>${esc(page.description)}</p>` : ''}
+    </header>`;
     html += `<div class="controls">
-      <div class="refreshed" id="refreshed">${escapeHtml(refreshedLabel)}</div>
-      <div class="seg">
-        ${['24h','7d','30d'].map(k =>
-          `<button class="seg-btn${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`
-        ).join('')}
+      <span class="refreshed" data-updated>${esc(updated)}</span>
+      <div class="seg-group" role="group" aria-label="Time range">
+        ${Object.keys(RANGES).map(k => `<button type="button" class="seg-opt${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`).join('')}
       </div>
-      <button class="refresh-btn${isRefreshing ? ' spinning' : ''}" id="refresh-btn" title="Refresh"${isRefreshing ? ' disabled' : ''}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/>
-          <path d="M21 3v5h-5"/>
-          <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/>
-          <path d="M3 21v-5h5"/>
-        </svg>
-      </button>
+      <button type="button" class="refresh-btn${isRefreshing ? ' spinning' : ''}" id="refresh-btn" title="Refresh" aria-label="Refresh"${isRefreshing ? ' disabled' : ''}><span class="refresh-icon">↻</span></button>
     </div>`;
 
     if (!DATA.services.length) {
-      html += `<div class="loading">No services on this page yet.</div>`;
+      html += `<div class="empty-list">No services on this page yet.</div>`;
     } else {
-      html += `<div class="svc-list">${DATA.services.map(renderRow).join('')}</div>`;
+      html += `<div class="svc-list">${DATA.services.map(rowHtml).join('')}</div>`;
     }
-
-    if (showLog) html += renderGlobalLog();
-
+    if (page.showEventLog !== false) html += logHtml();
+    html += `<div class="foot">auto-refreshes every minute · last ${esc(r.label)}</div>`;
     root.innerHTML = html;
 
-    // Wire up controls
-    root.querySelectorAll('.seg-btn').forEach(b => {
-      b.addEventListener('click', () => {
-        rangeKey = b.dataset.range;
-        render();
-      });
-    });
+    root.querySelectorAll('.seg-opt').forEach(btn => btn.addEventListener('click', () => {
+      if (rangeKey === btn.dataset.range) return;
+      rangeKey = btn.dataset.range;
+      render();
+    }));
     const refreshBtn = root.querySelector('#refresh-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', () => load(true));
-    root.querySelectorAll('.svc-head').forEach(h => {
-      h.addEventListener('click', () => {
-        const row = h.parentElement;
-        const id = row.dataset.id;
-        if (expanded.has(id)) { expanded.delete(id); row.classList.remove('open'); }
-        else { expanded.add(id); row.classList.add('open'); drawRowChart(id); }
-      });
-    });
-
-    // Redraw expanded charts
-    expanded.forEach(id => drawRowChart(id));
+    root.querySelectorAll('.svc-head').forEach(h => h.addEventListener('click', () => {
+      const row = h.parentElement, id = row.dataset.id;
+      if (expanded.has(id)) { expanded.delete(id); row.classList.remove('open'); h.setAttribute('aria-expanded', 'false'); }
+      else { expanded.add(id); row.classList.add('open'); h.setAttribute('aria-expanded', 'true'); drawChart(id); }
+    }));
+    expanded.forEach(id => drawChart(id));
   }
 
-  function renderRow(svc) {
-    const r    = currentRange();
-    const hist = sliceHistory(svc);
-    const avg  = calcAvgUptime(hist);
-    const sc   = statusClass(svc.maintenance ? 'maintenance' : svc.status);
-    const uc   = uptimeClass(avg);
+  function rowHtml(svc) {
+    const st = statusOf(svc);
+    const hue = statusHue(st);
+    const { buckets, bucketLabel } = bucketsFor(svc, rangeKey);
+    const up = uptimeFor(buckets);
     const isOpen = expanded.has(svc.id);
-
-    const slots = r.slots;
-    const bars = [];
-    for (let i = 0; i < slots; i++) {
-      const histIdx = hist.length - slots + i;
-      if (histIdx < 0) {
-        bars.push('<div class="bar empty"></div>');
-      } else {
-        const e = hist[histIdx];
-        const pct = e.uptime;
-        const cls = pct === null ? 'maint' : pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad';
-        const tipLabel = r.unit === 'hour' ? fmtHourShort(e.ts) : fmtDateShort(e.date);
-        const tip = `${escapeHtml(tipLabel)}: ${fmtUptime(pct)}`;
-        bars.push(`<div class="bar ${cls}"><span class="bar-tooltip">${tip}</span></div>`);
-      }
-    }
-
-    const catPart = svc.category
-      ? `<div class="svc-cat">${escapeHtml(svc.category.name)}</div>`
-      : '';
-
-    return `<div class="svc-row${isOpen ? ' open' : ''}" data-id="${escapeHtml(svc.id)}">
-      <div class="svc-head">
-        <div class="svc-abbr">${escapeHtml(svc.abbr || '?')}</div>
-        <div class="svc-info">
-          <div class="svc-name">${escapeHtml(svc.name || '')}</div>
-          ${catPart}
-        </div>
-        <div class="bar-strip">${bars.join('')}</div>
-        <div class="status-pip ${sc}"></div>
-        <div class="svc-uptime-label ${uc}">${avg !== null ? avg.toFixed(1) + '%' : '—'}</div>
-        <div class="chev">›</div>
-      </div>
+    const catHue = svc.category ? hueOf(svc.category.color) : null;
+    const tileStyle = catHue == null ? '' : ` style="background:${tint(catHue)};color:${acc(catHue)}"`;
+    const first = buckets.find(b => !b.empty);
+    const evs = eventsFor(svc);
+    return `<div class="svc-row${isOpen ? ' open' : ''}" data-id="${esc(svc.id)}">
+      <button type="button" class="svc-head" aria-expanded="${isOpen ? 'true' : 'false'}">
+        <span class="svc-tile"${tileStyle}>${esc(svc.abbr || '?')}</span>
+        <span class="svc-info">
+          <span class="svc-name">${esc(svc.name || '')}</span>
+          ${svc.category ? `<span class="svc-cat">${esc(svc.category.name)}</span>` : ''}
+        </span>
+        <span class="bars" title="${esc(bucketLabel)} per bar">${barsHtml(buckets, { minH: 19, maxH: 30, lowH: 13 })}</span>
+        <span class="svc-dot" style="background:${acc(hue)}" title="${esc(STATUS[st].label)}"></span>
+        <span class="svc-uptime" style="color:${acc(hue)}">${st === 'maintenance' && up == null ? 'maint' : fmtPct(up, 1)}</span>
+        <span class="chev">›</span>
+      </button>
       <div class="svc-detail">
-        <div class="chart-wrap">
-          <div class="chart-title">${r.unit === 'hour' ? 'Hourly' : 'Daily'} Uptime % · Last ${escapeHtml(r.label)}</div>
-          <div class="chart-canvas-wrap">
-            <canvas id="chart-${escapeHtml(svc.id)}" class="uptime-chart"></canvas>
+        <div class="detail-inset">
+          <div class="detail-sec">
+            <div class="detail-sec-hdr"><span class="caption">Uptime · last ${esc(RANGES[rangeKey].label)}</span><span class="rule"></span><span class="hint">${esc(bucketLabel)} per point</span></div>
+            <div class="chart-wrap"><canvas class="chart" id="chart-${esc(svc.id)}"></canvas></div>
+            <div class="chart-axis"><span>${first ? esc(first.label) : ''}</span><span>${rangeKey === '24h' ? 'Now' : 'Today'}</span></div>
           </div>
-          <div class="chart-axis">
-            <span>${hist.length ? escapeHtml(r.unit === 'hour' ? fmtHourShort(hist[0].ts) : fmtDateShort(hist[0].date)) : ''}</span>
-            <span>${r.unit === 'hour' ? 'Now' : 'Today'}</span>
+          <div class="detail-sec">
+            <div class="detail-sec-hdr"><span class="caption">Recent events</span><span class="rule"></span><span class="hint">${evs.length ? evs.length + ' in range' : ''}</span></div>
+            <div class="ev-list">${evs.length ? evs.map(e => {
+              const ev = EVENT[e.type] || { h: 220, label: e.type };
+              return `<div class="ev-item"><span class="ev-dot" style="background:${acc(ev.h)}"></span><span class="ev-body">${esc(ev.label)}</span><span class="ev-when" title="${esc(new Date(e.ts).toLocaleString())}">${esc(relTime(e.ts))}</span></div>`;
+            }).join('') : `<div class="ev-empty">No events in the last ${esc(RANGES[rangeKey].label)}.</div>`}</div>
           </div>
-        </div>
-        <div class="det-events">
-          <div class="det-ev-title">Recent events</div>
-          ${renderSvcEvents(svc)}
         </div>
       </div>
     </div>`;
   }
 
-  function renderSvcEvents(svc) {
-    const evs = filterEventsForService(svc);
-    const lbl = currentRange().label;
-    if (!evs.length) return `<div class="ev-empty">No events in the last ${escapeHtml(lbl)}.</div>`;
-    return evs.map(e => `<div class="det-ev-item">
-      <div class="ev-icon ${escapeHtml(e.type)}">${eventSymbol(e.type)}</div>
-      <div class="ev-body">${escapeHtml(eventLabel(e.type))}</div>
-      <div class="ev-time">${escapeHtml(fmtRelative(e.ts))}</div>
-    </div>`).join('');
-  }
-
-  function renderGlobalLog() {
+  function logHtml() {
     const cutoff = rangeCutoff();
-    const lbl = currentRange().label;
     const all = [];
-    DATA.services.forEach(svc => {
-      (svc.events || []).forEach(e => {
-        if (new Date(e.ts) >= cutoff) all.push({ ...e, svcName: svc.name });
-      });
-    });
+    for (const svc of DATA.services) {
+      for (const e of (svc.events || [])) {
+        if (new Date(e.ts).getTime() >= cutoff) all.push({ ts: e.ts, type: e.type, name: svc.name });
+      }
+    }
     all.sort((a, b) => new Date(b.ts) - new Date(a.ts));
     const recent = all.slice(0, 50);
-
-    let html = `<div class="sec-head"><div class="sec-title">Recent incidents</div></div>`;
-    if (!recent.length) {
-      html += `<div class="global-log"><div class="ev-empty">No incidents in the last ${escapeHtml(lbl)}.</div></div>`;
-      return html;
-    }
-    html += `<div class="global-log">${recent.map(e => `
-      <div class="det-ev-item">
-        <div class="ev-icon ${escapeHtml(e.type)}">${eventSymbol(e.type)}</div>
-        <div class="ev-body"><strong>${escapeHtml(e.svcName || '')}</strong> · ${escapeHtml(eventLabel(e.type))}</div>
-        <div class="ev-time">${escapeHtml(fmtRelative(e.ts))}</div>
-      </div>
-    `).join('')}</div>`;
-    return html;
+    const lbl = RANGES[rangeKey].label;
+    const note = recent.length ? `${recent.length} ${plural(recent.length, 'event')} · last ${lbl}` : `all quiet · last ${lbl}`;
+    return `<section class="panel">
+      <div class="panel-hdr"><span class="caption">Incident log</span><span class="rule"></span><span class="hint">${esc(note)}</span></div>
+      ${recent.length ? `<div class="log">${recent.map(e => {
+        const ev = EVENT[e.type] || { h: 220, label: e.type };
+        return `<div class="log-row">
+          <span class="log-dot" style="background:${acc(ev.h)}"></span>
+          <span class="log-name">${esc(e.name || '')}</span>
+          <span class="log-cause">${esc(ev.label)}</span>
+          <span class="log-when" title="${esc(new Date(e.ts).toLocaleString())}">${esc(relTime(e.ts))}</span>
+        </div>`;
+      }).join('')}</div>` : `<div class="empty-list">No incidents in the last ${esc(lbl)}.</div>`}
+    </section>`;
   }
 
-  // ─── Canvas chart (copied from history.html, simplified) ────────────────────
-  function drawRowChart(svcId) {
+  // ─── Canvas area chart ──────────────────────────────────────────────────
+  function drawChart(svcId) {
     const svc = DATA.services.find(s => s.id === svcId);
     if (!svc) return;
     const canvas = document.getElementById('chart-' + svcId);
     if (!canvas) return;
-    const hist = sliceHistory(svc);
-    const accent = '#5a9e72';
-
-    const dpr  = window.devicePixelRatio || 1;
+    const hue = statusHue(statusOf(svc));
+    const pts = bucketsFor(svc, rangeKey).buckets.filter(b => !b.empty && b.uptime != null).map(b => b.uptime);
+    const dpr = window.devicePixelRatio || 1;
     const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width  = rect.width  * dpr;
-    canvas.height = rect.height * dpr;
+    if (rect.width === 0) return;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
     const W = rect.width, H = rect.height;
 
-    if (!hist.length || W === 0) {
-      ctx.fillStyle = 'rgba(237,232,213,.2)';
-      ctx.font = '12px Sora, sans-serif';
+    if (!pts.length) {
+      ctx.fillStyle = 'oklch(0.76 0.01 150)';
+      ctx.font = '12px Outfit, system-ui, sans-serif';
       ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       ctx.fillText('No data yet', W / 2, H / 2);
       return;
     }
-
-    const pts = hist.map(e => e.uptime !== null ? e.uptime : 0);
-    const padT = 10, padB = 4;
-    const plotH = H - padT - padB;
+    const padT = 10, padB = 4, plotH = H - padT - padB;
     const xStep = pts.length > 1 ? W / (pts.length - 1) : W;
-    const toX = i => i * xStep;
+    const toX = i => pts.length > 1 ? i * xStep : W / 2;
     const toY = v => padT + plotH - (v / 100 * plotH);
 
-    ctx.strokeStyle = 'rgba(237,232,213,.05)';
+    ctx.strokeStyle = 'oklch(1 0 0 / .06)';
     ctx.lineWidth = 1;
-    [0, 50, 100].forEach(v => {
-      const y = toY(v);
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    });
+    [0, 50, 100].forEach(v => { const y = toY(v); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); });
 
     const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
-    grad.addColorStop(0, accent + '55');
-    grad.addColorStop(1, accent + '00');
+    grad.addColorStop(0, `oklch(0.80 0.13 ${hue} / 0.35)`);
+    grad.addColorStop(1, `oklch(0.80 0.13 ${hue} / 0)`);
     ctx.beginPath();
     pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
     ctx.lineTo(toX(pts.length - 1), padT + plotH);
-    ctx.lineTo(0, padT + plotH);
+    ctx.lineTo(toX(0), padT + plotH);
     ctx.closePath();
     ctx.fillStyle = grad;
     ctx.fill();
 
     ctx.beginPath();
-    ctx.strokeStyle = accent;
+    ctx.strokeStyle = acc(hue);
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
     ctx.stroke();
+    if (pts.length === 1) { ctx.beginPath(); ctx.arc(toX(0), toY(pts[0]), 3, 0, Math.PI * 2); ctx.fillStyle = acc(hue); ctx.fill(); }
+  }
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => expanded.forEach(id => drawChart(id)), 120);
+  });
+
+  // ─── States ─────────────────────────────────────────────────────────────
+  function showState(title, msg, action) {
+    const root = document.getElementById('root');
+    root.innerHTML = `<div class="state"><span class="glyph">◎</span>
+      <div class="state-title">${esc(title)}</div><div>${esc(msg)}</div>${action || ''}</div>`;
+    const retry = root.querySelector('#retry');
+    if (retry) retry.addEventListener('click', () => load(true));
   }
 
-  // ─── Utilities ──────────────────────────────────────────────────────────────
-  function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  function showError(title, msg) {
-    document.getElementById('root').innerHTML =
-      `<div class="error"><div class="error-title">${escapeHtml(title)}</div><div>${escapeHtml(msg)}</div></div>`;
-  }
-
-  // ─── Load ───────────────────────────────────────────────────────────────────
-  async function load(manual = false) {
-    if (!SLUG) return showError('Status page not found', 'Missing slug in URL.');
+  // ─── Load ───────────────────────────────────────────────────────────────
+  async function load(manual) {
+    if (!SLUG) return showState('Status page not found', 'Missing slug in URL.');
     if (isRefreshing) return;
     isRefreshing = true;
     const btn = document.getElementById('refresh-btn');
@@ -549,40 +604,38 @@
     const started = Date.now();
     try {
       const res = await fetch('/api/public/status/' + encodeURIComponent(SLUG), { cache: 'no-store' });
-      if (res.status === 404) return showError('Status page not found', 'The URL you requested does not match any published status page.');
+      if (res.status === 404) return showState('Status page not found', 'The URL you requested does not match any published status page.');
+      if (res.status === 401) return showState('This status page is private', 'Sign in to the dashboard to view it.', '<a class="btn primary" href="/login">Sign in →</a>');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       DATA = await res.json();
+      DATA.services = Array.isArray(DATA.services) ? DATA.services : [];
       lastRefreshed = new Date().toISOString();
       render();
     } catch (err) {
-      showError('Could not load status', err.message || 'Network error');
-    } finally {
-      if (manual) {
-        const elapsed = Date.now() - started;
-        const hold = Math.max(0, 500 - elapsed);
-        setTimeout(() => {
-          isRefreshing = false;
-          const b = document.getElementById('refresh-btn');
-          if (b) { b.classList.remove('spinning'); b.disabled = false; }
-        }, hold);
+      if (DATA) {
+        // Keep the last good render; just flag the stale timestamp.
+        document.querySelectorAll('[data-updated]').forEach(el => el.textContent = 'Refresh failed · showing data from ' + relTime(lastRefreshed));
       } else {
+        showState('Could not load status', err.message || 'Network error', '<button type="button" class="btn" id="retry">Try again</button>');
+      }
+    } finally {
+      const done = () => {
         isRefreshing = false;
         const b = document.getElementById('refresh-btn');
         if (b) { b.classList.remove('spinning'); b.disabled = false; }
-      }
+      };
+      if (manual) setTimeout(done, Math.max(0, 500 - (Date.now() - started))); else done();
     }
   }
 
-  // Periodically refresh the "Updated Xs ago" labels between fetches.
+  // Keep the "Updated Xs ago" labels live between fetches.
   setInterval(() => {
     if (!lastRefreshed) return;
-    const label = 'Updated ' + fmtRelative(lastRefreshed);
-    const el = document.getElementById('refreshed');
-    if (el) el.textContent = label;
-    const bm = document.getElementById('banner-meta');
-    if (bm) bm.textContent = label;
+    const label = 'Updated ' + relTime(lastRefreshed);
+    document.querySelectorAll('[data-updated]').forEach(el => { if (el.textContent !== label && !/^Refresh failed/.test(el.textContent)) el.textContent = label; });
   }, 10000);
 
+  // Wall-clock-aligned auto-refresh (every 60s on the minute boundary).
   const PUBLIC_INTERVAL_MS = 60000;
   let autoLoadTimeout = null;
   function scheduleNextLoad() {
@@ -592,8 +645,9 @@
       try { await load(false); } finally { scheduleNextLoad(); }
     }, Math.max(0, nextFire - Date.now()));
   }
-  load();
+  load(false);
   scheduleNextLoad();
+})();
 </script>
 </body>
 </html>

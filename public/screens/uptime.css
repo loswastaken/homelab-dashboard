@@ -1,0 +1,16 @@
+/* uptime screen — screen-only rules; shared components live in app.css */
+
+/* Incident log panel is tighter than the default panel gap (spec: gap 12px). */
+.up-log-panel { gap: 12px; }
+
+/* Loading skeleton rows: shimmer, no hover lift, no pointer. */
+.row-skel { pointer-events: none; cursor: default; animation: hl-shimmer 1.6s ease-in-out infinite; }
+.row-skel:hover { transform: none; background: var(--ov-035); }
+.row-skel .row-info { gap: 6px; }
+
+/* Narrow screens: the header wraps, so let the range switcher take its own full line
+   and split it evenly so every option stays a comfortable tap target. */
+@media (max-width: 640px) {
+  .up-range { flex: 1 1 100%; }
+  .up-range .seg-opt { flex: 1; text-align: center; padding: 9px 12px; }
+}

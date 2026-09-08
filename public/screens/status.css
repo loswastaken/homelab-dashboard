@@ -1,0 +1,24 @@
+/* status screen — screen-only rules; shared components live in app.css */
+
+.pcard-spacer { flex: 1; }
+.pcard:focus-visible { outline: none; box-shadow: var(--ring); }
+
+.preview-url:hover { color: var(--t-body); }
+.preview-empty { padding: 30px 8px; }
+.preview-note { text-align: center; padding: 6px 0; }
+.preview-note b { color: var(--t-strong); font-weight: 600; }
+.range-pills .range-pill { font-family: var(--font-mono); }
+
+/* editor */
+.pick-list { display: flex; flex-direction: column; gap: 10px; }
+.pick-item.disabled { opacity: .5; cursor: default; }
+.pick-item.disabled:hover { background: transparent; }
+.pick-item.disabled input { cursor: default; }
+.pick-flag { font: 500 10px var(--font-mono); color: var(--t-faint); margin-left: 6px; }
+
+@media (max-width: 640px) {
+  .pcard { padding: 16px; border-radius: 22px; }
+  .pcard-bottom .btn-sm { padding: 8px 12px; font-size: 12px; }
+  .preview { padding: 14px; }
+  .preview-page { padding: 16px 14px; }
+}
