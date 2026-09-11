@@ -321,7 +321,7 @@ The data model is still `categories` (`{ id, name, color, parentId? }`, two leve
 
 ### Sidebar / responsive
 
-The sidebar is sticky at ≥900px (250px, nav + folders with health rollups + server card + Sign out). At ≤900px it collapses to a **74px icon rail** (brand tile, nav glyphs, folder initials with count badges — amber when the folder needs a look, sign-out arrow); tapping the brand tile expands the full rail as an overlay with a backdrop (`App.expandRail/collapseRail`). Screens degrade via `flex-wrap`/`auto-fill` grids; uptime rows shrink and never wrap. `prefers-reduced-motion` disables the pulse and hover lifts. Nothing may cause horizontal page scroll.
+The sidebar is sticky at ≥900px (250px, nav + folders with health rollups + server card + Sign out) and is exactly viewport height (`calc(100vh - 32px)`): brand, nav and the footer are always visible, only the folder list scrolls if it overflows. Windows shorter than 760px switch to a compact mode (single-line folder rows, the health sub-line hidden and the count turned amber for folders that need a look). The brand tile shows the first word of the site title, max 3 chars (`los.dev` → `los`). At ≤900px it collapses to a **74px icon rail** (brand tile, nav glyphs, folder initials with count badges — amber when the folder needs a look, sign-out arrow); tapping the brand tile expands the full rail as an overlay with a backdrop (`App.expandRail/collapseRail`). Screens degrade via `flex-wrap`/`auto-fill` grids; uptime rows shrink and never wrap. `prefers-reduced-motion` disables the pulse and hover lifts. Nothing may cause horizontal page scroll.
 
 ### Modals, dialogs, toasts
 

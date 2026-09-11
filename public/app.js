@@ -423,8 +423,9 @@
     const meta = document.getElementById('server-meta');
     if (name) name.textContent = s.serverLabel || 'Homelab Server';
     if (meta) meta.textContent = [s.nasIp, S.data.version || 'dev'].filter(Boolean).join(' · ');
+    // Tile text: the first word of the brand ("los.dev" → "los"), max 3 chars.
     const tile = document.getElementById('brand-tile');
-    if (tile) tile.textContent = App.brandName().replace(/[^a-z0-9]/gi, '').slice(0, 2).toLowerCase() || 'hl';
+    if (tile) tile.textContent = (App.brandName().split(/[^a-z0-9]+/i).find(Boolean) || 'hl').slice(0, 3).toLowerCase();
   };
   App.greetingHtml = function () {
     const h = new Date().getHours();
@@ -544,7 +545,7 @@
           <span class="folder-name">${App.esc(label)}</span>
           <span class="folder-sub ${hp.cls}">${App.esc(hp.text)}</span>
         </span>
-        <span class="folder-count">${list.length}</span>
+        <span class="folder-count${hp.bad ? ' bad' : ''}">${list.length}</span>
       </button>`;
     };
     rows.push(folderRow('all', 'All services', 158, S.data.services, false));
