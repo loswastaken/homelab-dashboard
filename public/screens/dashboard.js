@@ -3,29 +3,39 @@
   'use strict';
   const S = App.state;
   let root = null;
-  const prevSnap = new Map();   // id → "status|pinned|uptime" for smart patching
+  const prevSnap = new Map();   // id → "status|pinned|name|abbr|cat" for smart patching
   let lastSub = '';
+  let lastMeta = '';
 
   function snap(s) { return `${App.statusOf(s)}|${s.pinnedAt ? 1 : 0}|${s.name}|${s.abbr}|${s.cat}`; }
+  const isPinned = s => !!s.pinnedAt && !s.disabled;
 
+  /* Header is two tiers: the human line (greeting, date, weather, actions)
+     and the fleet strip (health ribbon + counts + check timing). */
   function layout() {
     return `
-      <div class="hdr" id="dash-hdr">
-        <div class="hdr-title-wrap">
-          <h1 id="greeting">${App.greetingHtml()}</h1>
-          <div class="hdr-sub" id="dash-sub">loading…</div>
+      <div class="hdr hdr-dash" id="dash-hdr">
+        <div class="hdr-top">
+          <div class="hdr-title-wrap">
+            <h1 id="greeting">${App.greetingHtml()}</h1>
+            <div class="hdr-sub" id="dash-sub"></div>
+          </div>
+          <span class="hdr-spacer"></span>
+          <div class="hdr-actions">
+            <button class="btn btn-secondary" id="recheck"><span id="recheck-icon">↻</span> Recheck</button>
+            <button class="btn btn-primary" id="add-svc">+ Add service</button>
+          </div>
         </div>
-        <div class="ribbon-wrap">
+        <div class="fleet">
           <div class="ribbon" id="ribbon">
             <span class="ribbon-seg ok"></span><span class="ribbon-seg warn"></span>
             <span class="ribbon-seg down"></span><span class="ribbon-seg pending"></span>
             <span class="ribbon-seg paused"></span>
           </div>
-          <div class="legend" id="legend"></div>
-        </div>
-        <div class="hdr-actions">
-          <button class="btn btn-secondary" id="recheck"><span id="recheck-icon">↻</span> Recheck</button>
-          <button class="btn btn-primary" id="add-svc">+ Add service</button>
+          <div class="fleet-foot">
+            <div class="legend" id="legend"></div>
+            <span class="fleet-meta" id="fleet-meta">loading…</span>
+          </div>
         </div>
       </div>
       <div class="hive-wrap">
@@ -35,6 +45,10 @@
             <span class="chip-count" id="hive-count">—</span>
             <span class="rule"></span>
             <span class="hint" id="hive-hint">click a bubble</span>
+          </div>
+          <div class="pinned" id="pinned" hidden>
+            <div class="pinned-hdr"><span class="caption">Pinned</span><span class="rule"></span></div>
+            <div class="hive hive-pinned${S.data.settings?.compactHive ? ' compact' : ''}" id="hive-pinned"></div>
           </div>
           <div class="hive${S.data.settings?.compactHive ? ' compact' : ''}" id="hive"></div>
         </div>
@@ -48,7 +62,7 @@
     root.querySelector('#add-svc').onclick = () => App.openServiceModal(null);
     root.querySelector('#recheck').onclick = recheck;
     prevSnap.clear();
-    lastSub = '';
+    lastSub = ''; lastMeta = '';
     patchAll(true);
   }
 
@@ -65,34 +79,54 @@
     const g = root.querySelector('#greeting');
     if (g) { const html = App.greetingHtml(); if (g.innerHTML !== html) g.innerHTML = html; }
     patchSub();
+    patchMeta();
     const list = S.data.services;
     const c = App.fleetCounts(list);
     const segs = root.querySelectorAll('#ribbon .ribbon-seg');
     const vals = [c.online, c.degraded, c.offline, c.pending, c.paused];
-    const total = list.length || 1;
     segs.forEach((el, i) => { el.style.flex = String(vals[i]); el.style.display = vals[i] ? '' : 'none'; });
     if (!list.length) { segs[4].style.display = ''; segs[4].style.flex = '1'; }
+    // Only states that are actually present get a legend entry; a row of
+    // zeros was the main source of header noise.
     const legend = root.querySelector('#legend');
     const item = (cls, n, label) => `<span class="legend-item"><span class="legend-dot ${cls}"></span>${n} ${label}</span>`;
-    legend.innerHTML =
-      item('ok', c.online, 'online') + item('warn', c.degraded, 'degraded') + item('down', c.offline, 'offline') +
-      (c.pending ? item('pending', c.pending, 'pending') : '') + item('paused', c.paused, 'paused');
-    void total;
+    let html = '';
+    if (!S.loaded) html = '';
+    else if (!list.length) html = `<span class="legend-note">no services yet</span>`;
+    else {
+      if (c.online)   html += item('ok', c.online, 'online');
+      if (c.degraded) html += item('warn', c.degraded, 'degraded');
+      if (c.offline)  html += item('down', c.offline, 'offline');
+      if (c.pending)  html += item('pending', c.pending, 'pending');
+      if (c.paused)   html += item('paused', c.paused, 'paused');
+      if (!c.degraded && !c.offline) html += `<span class="legend-note ok">all healthy</span>`;
+    }
+    if (legend.innerHTML !== html) legend.innerHTML = html;
   }
+  // Under the greeting: human context only (date + weather).
   function patchSub() {
     const el = root?.querySelector('#dash-sub');
     if (!el) return;
-    if (!S.loaded) { el.textContent = S.online ? 'loading…' : 'connection error — retrying'; return; }
-    const parts = [];
-    parts.push('checked ' + App.fmtTime(S.lastChecked || Date.now()));
-    parts.push('every ' + (S.data.settings?.checkInterval || 60) + 's');
-    const next = App.secondsToNextPoll();
-    if (next > 0) parts.push('next in ' + next + 's');
+    const parts = [new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })];
     const w = App.weatherText();
     if (w) parts.push(w);
-    if (!S.online) parts.push('connection error');
     const txt = parts.join(' · ');
     if (txt !== lastSub) { el.textContent = txt; lastSub = txt; }
+  }
+  // Under the ribbon: machine context (last check, countdown, connectivity).
+  function patchMeta() {
+    const el = root?.querySelector('#fleet-meta');
+    if (!el) return;
+    let txt;
+    if (!S.loaded) txt = S.online ? 'loading…' : 'connection error — retrying';
+    else {
+      const parts = ['checked ' + App.fmtTime(S.lastChecked || Date.now())];
+      const next = App.secondsToNextPoll();
+      if (next > 0) parts.push('next in ' + next + 's');
+      if (!S.online) parts.push('connection error');
+      txt = parts.join(' · ');
+    }
+    if (txt !== lastMeta) { el.textContent = txt; lastMeta = txt; }
   }
 
   /* ─── Hive ───────────────────────────────────────────────────────────── */
@@ -105,16 +139,18 @@
     const live = parseFloat(svc.uptime);
     return isNaN(live) ? '—' : live.toFixed(1) + '%';
   }
-  function bubbleHtml(svc) {
+  // wide = pinned-row variant (avatar left, text right) that stretches to fill the row.
+  function bubbleHtml(svc, wide) {
     const st = App.statusOf(svc);
     const hue = App.folderHue(svc);
     const dim = st === 'disabled' || st === 'maintenance';
-    return `<button class="bubble${S.sel === svc.id ? ' selected' : ''}${dim ? ' dim' : ''}" data-id="${App.esc(svc.id)}" title="${App.esc(svc.name)}">
-      ${svc.pinnedAt && !svc.disabled ? '<span class="bubble-pin">pinned</span>' : ''}
+    return `<button class="bubble${wide ? ' wide' : ''}${S.sel === svc.id ? ' selected' : ''}${dim ? ' dim' : ''}" data-id="${App.esc(svc.id)}" title="${App.esc(svc.name)}">
       <span class="bubble-avatar" style="background:${App.tint(hue)};color:${App.acc(hue)}">${App.esc(svc.abbr || '?')}
         <span class="bubble-dot" style="background:${App.statusColor(st)}"></span></span>
-      <span class="bubble-name">${App.esc(svc.name)}</span>
-      <span class="bubble-uptime" data-field="uptime" style="color:${App.statusColor(st)}">${App.esc(uptimeLabel(svc, st))}</span>
+      <span class="bubble-text">
+        <span class="bubble-name">${App.esc(svc.name)}</span>
+        <span class="bubble-uptime" data-field="uptime" style="color:${App.statusColor(st)}">${App.esc(uptimeLabel(svc, st))}</span>
+      </span>
     </button>`;
   }
   function skeletonHtml() {
@@ -130,42 +166,60 @@
       <span>No services yet. Click <b>+ Add service</b> to start monitoring.</span></div>`;
     return `<div class="empty" style="grid-column:1/-1"><span class="glyph">◫</span><span>Nothing in this folder yet.</span></div>`;
   }
+  function stagger(container, offset) {
+    container.querySelectorAll('.bubble').forEach((el, i) => {
+      el.style.animation = 'hl-in .3s ease both';
+      el.style.animationDelay = `${Math.min(i + offset, 24) * 30}ms`;
+    });
+  }
   function patchHive(fresh) {
     const hive = root.querySelector('#hive');
-    hive.classList.toggle('compact', !!S.data.settings?.compactHive);
-    const title = root.querySelector('#hive-title');
-    title.textContent = App.folderLabel(S.folder);
+    const pinnedWrap = root.querySelector('#pinned');
+    const pinnedGrid = root.querySelector('#hive-pinned');
+    const compact = !!S.data.settings?.compactHive;
+    hive.classList.toggle('compact', compact);
+    pinnedGrid.classList.toggle('compact', compact);
+    root.querySelector('#hive-title').textContent = App.folderLabel(S.folder);
     const list = App.sortServices(App.servicesInFolder(S.folder));
     root.querySelector('#hive-count').textContent = `${list.length} of ${S.data.services.length}`;
     root.querySelector('#hive-hint').textContent = list.length ? 'click a bubble' : '';
-    if (!S.loaded) { hive.innerHTML = skeletonHtml(); return; }
-    if (!list.length) { hive.innerHTML = emptyHtml(); prevSnap.clear(); return; }
+    if (!S.loaded) { pinnedWrap.hidden = true; hive.innerHTML = skeletonHtml(); return; }
+    if (!list.length) { pinnedWrap.hidden = true; pinnedGrid.innerHTML = ''; hive.innerHTML = emptyHtml(); prevSnap.clear(); return; }
 
-    const expected = list.map(s => s.id).join(',');
-    const rendered = [...hive.querySelectorAll('.bubble[data-id]')].map(b => b.dataset.id).join(',');
+    // Pinned services get their own full-width row above everything else so
+    // pinned and unpinned bubbles never share a line.
+    const pinned = list.filter(isPinned);
+    const rest   = list.filter(s => !isPinned(s));
+    pinnedWrap.hidden = !pinned.length;
+
+    const ids = (grid, tag) => [...grid.querySelectorAll('.bubble[data-id]')].map(b => tag + b.dataset.id);
+    const expected = [...pinned.map(s => 'p' + s.id), ...rest.map(s => 'r' + s.id)].join(',');
+    const rendered = [...ids(pinnedGrid, 'p'), ...ids(hive, 'r')].join(',');
     if (fresh || expected !== rendered) {
-      hive.innerHTML = list.map(bubbleHtml).join('');
-      hive.querySelectorAll('.bubble').forEach((el, i) => { el.style.animation = `hl-in .3s ease both`; el.style.animationDelay = `${Math.min(i, 24) * 30}ms`; });
+      pinnedGrid.innerHTML = pinned.map(s => bubbleHtml(s, true)).join('');
+      hive.innerHTML = rest.length ? rest.map(s => bubbleHtml(s, false)).join('') : '';
+      stagger(pinnedGrid, 0);
+      stagger(hive, pinned.length);
       list.forEach(s => prevSnap.set(s.id, snap(s)));
     } else {
       for (const s of list) {
-        const el = hive.querySelector(`.bubble[data-id="${CSS.escape(s.id)}"]`);
+        const wide = isPinned(s);
+        const el = (wide ? pinnedGrid : hive).querySelector(`.bubble[data-id="${CSS.escape(s.id)}"]`);
         if (!el) continue;
         const sn = snap(s);
         if (prevSnap.get(s.id) !== sn) {
-          const tmp = document.createElement('div'); tmp.innerHTML = bubbleHtml(s);
+          const tmp = document.createElement('div'); tmp.innerHTML = bubbleHtml(s, wide);
           const n = tmp.firstElementChild; n.classList.add('flash'); el.replaceWith(n);
         } else {
           el.classList.toggle('selected', S.sel === s.id);
           const u = el.querySelector('[data-field="uptime"]');
-          const st = App.statusOf(s);
-          const txt = uptimeLabel(s, st);
+          const txt = uptimeLabel(s, App.statusOf(s));
           if (u && u.textContent !== txt) u.textContent = txt;
         }
         prevSnap.set(s.id, sn);
       }
     }
-    hive.querySelectorAll('.bubble[data-id]').forEach(b => b.onclick = () => App.selectService(b.dataset.id));
+    root.querySelectorAll('.hive .bubble[data-id]').forEach(b => b.onclick = () => App.selectService(b.dataset.id));
   }
 
   /* ─── Detail rail ────────────────────────────────────────────────────── */
@@ -252,7 +306,7 @@
     onData: fresh => patchAll(fresh),
     onFolder: () => { patchHive(true); },
     onSelect: () => { patchHive(false); patchRail(); },
-    onTick: () => { patchSub(); },
+    onTick: () => { patchSub(); patchMeta(); },
     onWeather: () => { patchSub(); },
   });
 })();

@@ -206,6 +206,16 @@ button { background: none; border: none; cursor: pointer; }
 .hdr-sub { font: 400 11.5px var(--font-mono); color: var(--t-mono); display: flex; flex-wrap: wrap; gap: 0 6px; }
 .hdr-spacer { flex: 1; }
 .hdr-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+/* Dashboard header: tier 1 = greeting / date / weather + actions,
+   tier 2 = the fleet strip (ribbon, present-state counts, check timing). */
+.hdr-dash { flex-direction: column; align-items: stretch; gap: 16px; padding-bottom: 18px; }
+.hdr-top { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; }
+.fleet { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--ov-07); }
+.fleet .ribbon { height: 10px; }
+.fleet-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 18px; }
+.fleet-meta { font: 400 11.5px var(--font-mono); color: var(--t-mono); white-space: nowrap; margin-left: auto; }
+.legend-note { font-size: 12.5px; color: var(--t-faint); }
+.legend-note.ok { color: var(--ok-text); }
 
 /* ─── Buttons ────────────────────────────────────────────────────────────── */
 .btn {
@@ -269,6 +279,13 @@ button { background: none; border: none; cursor: pointer; }
 .hive-panel { flex: 1; min-width: 420px; }
 .hive { display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); gap: 12px; }
 .hive.compact { grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); }
+/* Pinned services own the first line: auto-fit lets a few bubbles stretch to
+   fill the full width, many wrap onto more lines. Never shares a row with
+   the regular hive below it. */
+.pinned { display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--ov-07); }
+.pinned-hdr { display: flex; align-items: center; gap: 12px; }
+.hive-pinned { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.hive-pinned.compact { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .bubble {
   position: relative;
   padding: 16px 14px; border-radius: 24px; background: var(--ov-032); box-shadow: var(--hairline);
@@ -289,9 +306,15 @@ button { background: none; border: none; cursor: pointer; }
   position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px; border-radius: 99px;
   border: 3px solid var(--bg-panel); box-sizing: content-box; width: 7px; height: 7px;
 }
+.bubble-text { display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 0; max-width: 100%; }
 .bubble-name { font-size: 13px; font-weight: 600; line-height: 1.2; max-width: 100%; overflow-wrap: anywhere; }
 .bubble-uptime { font: 500 11px var(--font-mono); }
-.bubble-pin { position: absolute; top: 12px; left: 14px; font: 500 9px var(--font-mono); letter-spacing: .1em; color: var(--warn); text-transform: uppercase; }
+/* Wide (pinned-row) variant: avatar left, name + uptime stacked to the right. */
+.bubble.wide { flex-direction: row; align-items: center; text-align: left; gap: 14px; padding: 14px 18px; }
+.bubble.wide .bubble-avatar { flex: none; }
+.bubble.wide .bubble-text { align-items: flex-start; gap: 3px; flex: 1; }
+.bubble.wide .bubble-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.bubble.wide:hover { transform: translateY(-4px) scale(1.015); }
 .bubble-skel { pointer-events: none; animation: hl-shimmer 1.6s ease-in-out infinite; }
 .skel { background: var(--ov-06); border-radius: 99px; }
 
@@ -675,7 +698,11 @@ body.modal-open { overflow: hidden; }
   .bubble { padding: 12px 8px; gap: 7px; border-radius: 20px; }
   .bubble-avatar { width: 44px; height: 44px; font-size: 11px; }
   .bubble-name { font-size: 12px; }
-  .bubble-pin { top: 8px; left: 10px; }
+  .hive-pinned { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .bubble.wide { padding: 10px 12px; gap: 10px; }
+  .bubble.wide .bubble-avatar { width: 40px; height: 40px; }
+  .bubble.wide .bubble-name { font-size: 13px; }
+  .fleet-meta { margin-left: 0; white-space: normal; }
   /* Phones: the 30-bar strip cannot shrink meaningfully below ~200px, so it
      drops to its own full-width line inside the row (desktop never wraps). */
   .row { padding: 11px 12px; gap: 9px; flex-wrap: wrap; }
@@ -691,6 +718,7 @@ body.modal-open { overflow: hidden; }
   .modal-hdr, .modal-body, .modal-foot { padding-left: 18px; padding-right: 18px; }
   .hdr-actions { width: 100%; }
   .hdr-actions .btn { flex: 1; }
+  .hdr-dash .hdr-actions { width: 100%; }
   .legend { gap: 10px 14px; }
   .mini-bars { width: 72px; }
 }
