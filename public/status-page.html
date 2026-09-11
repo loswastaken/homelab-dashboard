@@ -75,9 +75,11 @@
     @keyframes hl-spin { to { transform: rotate(360deg); } }
 
     /* ─── Frame ─────────────────────────────────────────────────────────── */
+    /* Fluid up to 1240px: on a desktop the rows flow into two columns (below),
+       so a typical page fits without scrolling instead of a tall 760px column. */
     main {
-      max-width: 760px; margin: 0 auto; padding: 44px 24px 88px;
-      display: flex; flex-direction: column; gap: 20px;
+      max-width: 1240px; margin: 0 auto; padding: 28px 28px 56px;
+      display: flex; flex-direction: column; gap: 14px;
       animation: hl-in .3s ease both;
     }
     .caption { font: 500 9.5px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--t-mono); }
@@ -88,7 +90,7 @@
     /* ─── Banner ────────────────────────────────────────────────────────── */
     .banner {
       display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
-      padding: 16px 20px; border-radius: 22px;
+      padding: 14px 18px; border-radius: 22px;
       background: oklch(0.80 0.13 158 / .10); box-shadow: inset 0 0 0 1px oklch(0.80 0.13 158 / .22);
     }
     .banner-dot { width: 13px; height: 13px; flex: none; border-radius: 99px; background: var(--ok); color: var(--ok); animation: hl-pulse 2.4s ease-out infinite; }
@@ -105,13 +107,14 @@
     .banner.maintenance .banner-msg { color: oklch(0.90 0.06 265); }
 
     /* ─── Title ─────────────────────────────────────────────────────────── */
-    .page-hdr { text-align: center; display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
-    .page-hdr h1 { font-size: 26px; font-weight: 600; letter-spacing: -.015em; line-height: 1.15; overflow-wrap: anywhere; }
-    .page-hdr p { font-size: 14px; color: var(--t-sec); max-width: 560px; margin: 0 auto; overflow-wrap: anywhere; }
+    .page-hdr { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 4px 6px 0; }
+    .page-title { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .page-hdr h1 { font-size: 24px; font-weight: 600; letter-spacing: -.015em; line-height: 1.15; overflow-wrap: anywhere; }
+    .page-hdr p { font-size: 13.5px; color: var(--t-sec); overflow-wrap: anywhere; }
 
-    /* ─── Controls ──────────────────────────────────────────────────────── */
-    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .refreshed { margin-right: auto; font: 400 11.5px var(--font-mono); color: var(--t-mono); min-height: 1.2em; }
+    /* ─── Controls (right side of the title row) ────────────────────────── */
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: none; }
+    .refreshed { font: 400 11.5px var(--font-mono); color: var(--t-mono); white-space: nowrap; }
     .seg-group { display: flex; gap: 5px; padding: 5px; border-radius: 99px; background: var(--bg-well); }
     .seg-opt {
       padding: 8px 16px; border-radius: 99px; font-size: 12.5px; font-weight: 700;
@@ -130,22 +133,22 @@
     .refresh-btn.spinning .refresh-icon { animation: hl-spin .8s linear infinite; }
 
     /* ─── Service rows ──────────────────────────────────────────────────── */
-    .svc-list { display: flex; flex-direction: column; gap: 9px; }
-    .svc-row { border-radius: 20px; background: var(--ov-035); box-shadow: var(--hairline); transition: background .2s; min-width: 0; }
+    .svc-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
+    .svc-row { border-radius: 18px; background: var(--ov-035); box-shadow: var(--hairline); transition: background .2s; min-width: 0; }
     .svc-row:hover, .svc-row.open { background: var(--ov-05); }
     .svc-head {
-      display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; padding: 12px 16px;
-      cursor: pointer; user-select: none; width: 100%; text-align: left; min-width: 0; border-radius: 20px;
+      display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; padding: 10px 14px;
+      cursor: pointer; user-select: none; width: 100%; text-align: left; min-width: 0; border-radius: 18px;
     }
     .svc-tile {
-      width: 40px; height: 40px; flex: none; border-radius: 14px;
-      display: flex; align-items: center; justify-content: center; font: 700 11px var(--font-mono);
+      width: 36px; height: 36px; flex: none; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center; font: 700 10.5px var(--font-mono);
       background: var(--ov-06); color: var(--t-sec);
     }
-    .svc-info { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .svc-name { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .svc-cat { font: 400 11px var(--font-mono); color: var(--t-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .bars { flex: 2 1 90px; min-width: 0; display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+    .svc-info { flex: 1 1 120px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .svc-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .svc-cat { font: 400 10.5px var(--font-mono); color: var(--t-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bars { flex: 2 1 90px; min-width: 0; display: flex; align-items: flex-end; gap: 3px; height: 26px; }
     .bar { flex: 1; min-width: 0; border-radius: 99px; position: relative; transition: filter .15s; }
     .bar.ok    { background: oklch(0.62 0.09 158); }
     .bar.warn  { background: oklch(0.78 0.13 75); }
@@ -160,7 +163,14 @@
       white-space: nowrap; z-index: 20; pointer-events: none;
     }
     .svc-dot { width: 9px; height: 9px; flex: none; border-radius: 99px; }
-    .svc-uptime { width: 64px; flex: none; text-align: right; font: 500 14px var(--font-mono); }
+    .svc-uptime { width: 58px; flex: none; text-align: right; font: 500 13.5px var(--font-mono); }
+    /* Wide screens: two columns of rows; an expanded row takes the full width
+       so its chart gets room. */
+    @media (min-width: 1000px) {
+      .svc-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .svc-row.open { grid-column: 1 / -1; }
+      .log { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
     .chev { flex: none; width: 14px; text-align: center; color: var(--t-faint); font-size: 18px; line-height: 1; transition: transform .22s var(--spring); }
     .svc-row.open .chev { transform: rotate(90deg); color: var(--t-sec); }
 
@@ -183,19 +193,19 @@
 
     /* ─── Incident log ──────────────────────────────────────────────────── */
     .panel {
-      padding: 22px; border-radius: 28px; background: var(--bg-panel); box-shadow: var(--hairline);
-      display: flex; flex-direction: column; gap: 12px; min-width: 0;
+      padding: 18px 20px; border-radius: 24px; background: var(--bg-panel); box-shadow: var(--hairline);
+      display: flex; flex-direction: column; gap: 10px; min-width: 0;
     }
     .panel-hdr { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .log { display: flex; flex-direction: column; gap: 9px; }
+    .log { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .log-row {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 13px 16px;
-      border-radius: 20px; background: var(--ov-035); transition: background .18s;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px;
+      border-radius: 16px; background: var(--ov-035); transition: background .18s; min-width: 0;
     }
     .log-row:hover { background: var(--ov-07); }
     .log-dot { width: 9px; height: 9px; flex: none; border-radius: 99px; }
-    .log-name { width: 200px; flex: none; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .log-cause { flex: 1; min-width: 160px; font-size: 13px; color: var(--t-sec); }
+    .log-name { flex: 1 1 150px; min-width: 0; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-cause { flex: 1 1 130px; min-width: 0; font-size: 12.5px; color: var(--t-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .log-when { font: 400 12px var(--font-mono); color: var(--t-mono); white-space: nowrap; }
 
     /* ─── Empty / loading / error states ───────────────────────────────── */
@@ -208,22 +218,23 @@
     }
     .state .btn:hover { background: var(--ov-11); }
     .state .btn.primary { background: var(--ok); color: var(--on-green); font-weight: 700; }
-    .empty-list { padding: 34px 16px; text-align: center; color: var(--t-faint); font-size: 13.5px; border-radius: 20px; background: var(--ov-035); }
-    .foot { text-align: center; font: 400 11px var(--font-mono); color: var(--t-mono); padding-top: 8px; }
+    .empty-list { padding: 26px 16px; text-align: center; color: var(--t-faint); font-size: 13.5px; border-radius: 18px; background: var(--ov-035); }
+    .foot { text-align: center; font: 400 11px var(--font-mono); color: var(--t-mono); padding-top: 4px; }
 
     /* ─── Responsive ────────────────────────────────────────────────────── */
     @media (max-width: 640px) {
-      main { padding: 24px 16px 60px; gap: 16px; }
-      .banner { padding: 14px 16px; border-radius: 20px; }
-      .banner-msg { font-size: 16.5px; }
-      .page-hdr h1 { font-size: 22px; }
-      .svc-head { flex-wrap: wrap; padding: 12px 14px; row-gap: 10px; }
-      .svc-info { flex: 1 1 120px; }
-      .bars { flex: 1 1 100%; order: 10; height: 24px; }
-      .svc-uptime { width: 60px; font-size: 13.5px; }
-      .svc-tile { width: 36px; height: 36px; border-radius: 12px; }
-      .panel { padding: 16px; border-radius: 24px; }
-      .log-name { width: auto; flex: 1 1 140px; }
+      main { padding: 20px 14px 48px; gap: 12px; }
+      .banner { padding: 12px 14px; border-radius: 20px; }
+      .banner-msg { font-size: 16px; }
+      .page-hdr h1 { font-size: 21px; }
+      .controls { width: 100%; }
+      .controls .seg-group { flex: 1; }
+      .controls .seg-opt { flex: 1; text-align: center; padding: 8px 10px; }
+      .svc-head { flex-wrap: wrap; padding: 10px 12px; row-gap: 8px; }
+      .svc-info { flex: 1 1 100px; }
+      .bars { flex: 1 1 100%; order: 10; height: 22px; }
+      .svc-uptime { width: 54px; font-size: 13px; }
+      .panel { padding: 14px; border-radius: 22px; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -422,17 +433,22 @@
         <span class="banner-meta" data-updated>${esc(updated)}</span>
       </section>`;
     }
+    // Title row: name + blurb on the left, range switcher + refresh on the right.
+    // The "Updated" label lives in the banner; it only moves here when the
+    // banner is hidden, so it is never shown twice.
     html += `<header class="page-hdr">
-      <h1>${esc(title)}</h1>
-      ${page.description ? `<p>${esc(page.description)}</p>` : ''}
-    </header>`;
-    html += `<div class="controls">
-      <span class="refreshed" data-updated>${esc(updated)}</span>
-      <div class="seg-group" role="group" aria-label="Time range">
-        ${Object.keys(RANGES).map(k => `<button type="button" class="seg-opt${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`).join('')}
+      <div class="page-title">
+        <h1>${esc(title)}</h1>
+        ${page.description ? `<p>${esc(page.description)}</p>` : ''}
       </div>
-      <button type="button" class="refresh-btn${isRefreshing ? ' spinning' : ''}" id="refresh-btn" title="Refresh" aria-label="Refresh"${isRefreshing ? ' disabled' : ''}><span class="refresh-icon">↻</span></button>
-    </div>`;
+      <div class="controls">
+        ${page.showOverallBanner === false ? `<span class="refreshed" data-updated>${esc(updated)}</span>` : ''}
+        <div class="seg-group" role="group" aria-label="Time range">
+          ${Object.keys(RANGES).map(k => `<button type="button" class="seg-opt${rangeKey === k ? ' active' : ''}" data-range="${k}">${RANGES[k].label}</button>`).join('')}
+        </div>
+        <button type="button" class="refresh-btn${isRefreshing ? ' spinning' : ''}" id="refresh-btn" title="Refresh" aria-label="Refresh"${isRefreshing ? ' disabled' : ''}><span class="refresh-icon">↻</span></button>
+      </div>
+    </header>`;
 
     if (!DATA.services.length) {
       html += `<div class="empty-list">No services on this page yet.</div>`;
@@ -475,7 +491,7 @@
           <span class="svc-name">${esc(svc.name || '')}</span>
           ${svc.category ? `<span class="svc-cat">${esc(svc.category.name)}</span>` : ''}
         </span>
-        <span class="bars" title="${esc(bucketLabel)} per bar">${barsHtml(buckets, { minH: 19, maxH: 30, lowH: 13 })}</span>
+        <span class="bars" title="${esc(bucketLabel)} per bar">${barsHtml(buckets, { minH: 17, maxH: 26, lowH: 11 })}</span>
         <span class="svc-dot" style="background:${acc(hue)}" title="${esc(STATUS[st].label)}"></span>
         <span class="svc-uptime" style="color:${acc(hue)}">${st === 'maintenance' && up == null ? 'maint' : fmtPct(up, 1)}</span>
         <span class="chev">›</span>
