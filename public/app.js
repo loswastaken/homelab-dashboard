@@ -225,7 +225,10 @@
       else if (kind === 'maint') h = Math.round((minH + lowH) / 2);
       else if (kind === 'empty') h = lowH;
       const tip = b.empty ? '' : ` data-tip="${App.esc(b.label)}: ${App.fmtPct(b.uptime, 2)}"`;
-      return `<span class="bar ${kind}" style="height:${h}px"${tip}></span>`;
+      // 'empty' slots get their own class: `.empty` is the empty-state block
+      // (40px padding), and sharing the name inflated every placeholder pill.
+      const cls = kind === 'empty' ? 'bar bar-empty' : 'bar ' + kind;
+      return `<span class="${cls}" style="height:${h}px"${tip}></span>`;
     }).join('');
   };
   App.tickBuckets = function (svc) {
