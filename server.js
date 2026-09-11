@@ -613,10 +613,36 @@ app.use((req, res, next) => {
 // exact-path '/status' management screen is distinct from the public
 // '/status/:slug' route registered before the gate.
 
+// Asset URLs in the shell carry the build SHA (`/app.js?v=<sha>`) so a new
+// deploy is a new URL: browsers and Cloudflare can never keep serving the
+// previous build's scripts against the new server. The shell itself is sent
+// with no-store, and versioned assets get a one-year immutable TTL (below).
+// Dev builds use the process start time so every restart busts the cache.
+const ASSET_VERSION = BUILD_SHA && BUILD_SHA !== 'dev' ? BUILD_SHA.slice(0, 7) : String(Date.now());
 const SPA_INDEX = path.join(__dirname, 'public', 'index.html');
+let spaHtml = '';
+try { spaHtml = fs.readFileSync(SPA_INDEX, 'utf8').replace(/__V__/g, ASSET_VERSION); }
+catch (e) { console.error('[spa] could not read index.html:', e.message); }
 for (const route of ['/', '/uptime', '/status', '/settings']) {
-  app.get(route, (_, res) => res.sendFile(SPA_INDEX));
+  app.get(route, (_, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (spaHtml) res.type('html').send(spaHtml);
+    else res.sendFile(SPA_INDEX);
+  });
 }
+app.get('/index.html', (_, res) => res.redirect(302, '/'));
+
+// Cache policy for static files: versioned assets (?v=) are immutable for a
+// year; HTML and the service worker are always revalidated. serve-static only
+// sets Cache-Control when it isn't already present, so this runs first.
+app.use((req, res, next) => {
+  if (/\.(js|css)$/.test(req.path) && typeof req.query.v === 'string' && req.query.v) {
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (/\.html$/.test(req.path) || req.path === '/sw.js') {
+    res.set('Cache-Control', 'no-cache');
+  }
+  next();
+});
 // Old standalone pages — keep bookmarks working.
 app.get('/history.html',      (_, res) => res.redirect(301, '/uptime'));
 app.get('/status-pages.html', (_, res) => res.redirect(301, '/status'));
